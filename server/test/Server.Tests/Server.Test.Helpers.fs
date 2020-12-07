@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Test.Helpers
+module LuaChecker.Server.Test.Helpers
 open LuaChecker
 open LuaChecker.Server
 open LuaChecker.Server.Json
@@ -167,6 +167,7 @@ type ConnectionConfig = {
     /// e.g. : `fun t -> if Debugger.IsAttached then ...`
     timeoutMap: TimeSpan -> TimeSpan
     backgroundCheckDelay: TimeSpan
+    serverPlatform: PlatformID option
 }
 module ConnectionConfig =
     let defaultValue = {
@@ -174,6 +175,7 @@ module ConnectionConfig =
         writeTimeout = TimeSpan.FromSeconds 5.
         timeoutMap = fun x -> if Debugger.IsAttached then Timeout.InfiniteTimeSpan else x
         backgroundCheckDelay = TimeSpan.Zero
+        serverPlatform = Some PlatformID.Win32NT
     }
 type Client<'K,'V,'L,'C,'F> = {
     clientToServer: Stream
@@ -302,6 +304,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
             |> Server.create (fun c ->
                 { c with
                     fileSystem = fileSystem
+                    platform = config.serverPlatform
                     resourcePaths = ["./resources.xml"]
                     backgroundCheckDelay = config.backgroundCheckDelay
                 }
