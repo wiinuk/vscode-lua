@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Utf8Serializable.fs" />
+    <Compile Include="types.fs" />
+    <Compile Include="Json.fs" />
+    <Compile Include="MessageReader.fs" />
+    <Compile Include="MessageWriter.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JsonExtensions\LuaChecker.JsonExtensions.fsproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="phantomEmit.fs" />
+    <Compile Include="jsonFSharpRecordConverter.internal.fs" />
+    <Compile Include="JsonFSharpRecordConverterEmitter.fs" />
+    <Compile Include="JsonFSharpRecordConverter.fs" />
+    <Compile Include="JsonFSharpRecordOptionalFieldConverter.fs" />
+    <Compile Include="JsonValueOptionConverter.fs" />
+    <Compile Include="JsonStringEnumConverter`1.fs" />
+    <Compile Include="jsonElementParser.fs" />
+    <Compile Include="FSharpRecordParser.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.Emit" Version="4.7.0" />
+    <PackageReference Include="System.Text.Json" Version="4.7.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Primitives\LuaChecker.Primitives.fsproj" />
+  </ItemGroup>
+
+</Project>

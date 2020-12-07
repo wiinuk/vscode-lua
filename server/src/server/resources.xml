@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources p1:noNamespaceSchemaLocation="resources.xsd" xmlns:p1="http://www.w3.org/2001/XMLSchema-instance">
+  <diagnostic-messages>
+    <RequireAnyToken>RequireAnyToken</RequireAnyToken>
+    <RequireFieldSep>RequireFieldSep</RequireFieldSep>
+    <RequireToken>RequireToken({0})</RequireToken>
+    <RequireBinaryOp>RequireBinaryOp</RequireBinaryOp>
+    <RequireUnaryOp>RequireUnaryOp</RequireUnaryOp>
+    <RequireLiteral>RequireLiteral</RequireLiteral>
+    <RequireName>RequireName</RequireName>
+    <RequireString>RequireString</RequireString>
+    <RequireFunctionCall>RequireFunctionCall</RequireFunctionCall>
+    <RequireVar>RequireVar</RequireVar>
+    <DisallowedLeadingNewLine>DisallowedLeadingNewLine</DisallowedLeadingNewLine>
+    <RequireAnyStat>RequireAnyStat</RequireAnyStat>
+    <RequireAnyField>RequireAnyField</RequireAnyField>
+    <RequireAnyFieldKey>RequireAnyFieldKey</RequireAnyFieldKey>
+    <RequireAnyTypeSign>RequireAnyTypeSign</RequireAnyTypeSign>
+    <TypeMismatch>TypeMismatch({0}, {1})</TypeMismatch>
+    <RequireField>RequireField({0}, {1}, {2})</RequireField>
+    <UndefinedField>UndefinedField({0}, {1})</UndefinedField>
+    <KindMismatch>KindMismatch({0}, {1})</KindMismatch>
+    <ConstraintMismatch>ConstraintMismatch({0}, {1})</ConstraintMismatch>
+    <ConstraintAndTypeMismatch>ConstraintAndTypeMismatch({0}, {1})</ConstraintAndTypeMismatch>
+    <TagSpaceConstraintMismatch>TagSpaceConstraintMismatch({0}, {1}, {2}, {3})</TagSpaceConstraintMismatch>
+    <ParseError>ParseError({0})</ParseError>
+    <UnifyError>UnifyError({0})</UnifyError>
+    <ReturnValueIgnored>ReturnValueIgnored</ReturnValueIgnored>
+    <NameNotFound>NameNotFound({0})</NameNotFound>
+    <IndirectGlobalRequireUse>IndirectGlobalRequireUse</IndirectGlobalRequireUse>
+    <ModuleNotFound>ModuleNotFound({0}, {1})</ModuleNotFound>
+    <ExternalModuleError>ExternalModuleError({0}, {1})</ExternalModuleError>
+    <RecursiveModuleReference>RecursiveModuleReference({0})</RecursiveModuleReference>
+    <UnrecognizableGlobalPackageUse>UnrecognizableGlobalPackageUse</UnrecognizableGlobalPackageUse>
+    <TypeNameNotFound>TypeNameNotFound({0})</TypeNameNotFound>
+    <TypeArityMismatch>TypeArityMismatch({0}, {1})</TypeArityMismatch>
+    <DuplicateFieldKey>DuplicateFieldKey({0}, {1})</DuplicateFieldKey>
+    <RedeclarationOfSpecialGlobalVariable>RedeclarationOfSpecialGlobalVariable({0}, {1}, {2})</RedeclarationOfSpecialGlobalVariable>
+    <RedeclarationOfBasicType>RedeclarationOfBasicType({0})</RedeclarationOfBasicType>
+    <RedeclarationOfTypeVariable>RedeclarationOfTypeVariable({0}, {1})</RedeclarationOfTypeVariable>
+    <UndeterminedGlobalVariableEnvironment>UndeterminedGlobalVariableEnvironment({0}, {1})</UndeterminedGlobalVariableEnvironment>
+    <GlobalNameCollision>GlobalNameCollision({0}, {1}, {2}, {3})</GlobalNameCollision>
+    <GlobalTypeCollision>GlobalTypeCollision({0}, {1}, {2}, {3})</GlobalTypeCollision>
+    <UnrecognizedFeatureName>UnrecognizedFeatureName({0})</UnrecognizedFeatureName>
+    <UnexpectedMultiType>UnexpectedMultiType</UnexpectedMultiType>
+    <RequireMultiType>RequireMultiType</RequireMultiType>
+    <DuplicateTag>DuplicateTag({0})</DuplicateTag>
+    <FieldParentTagNotFound>FieldParentTagNotFound</FieldParentTagNotFound>
+    <GenericTagParentSyntaxNotFound>GenericTagParentSyntaxNotFound</GenericTagParentSyntaxNotFound>
+    <TypeTagParentSyntaxNotFound>TypeTagParentSyntaxNotFound</TypeTagParentSyntaxNotFound>
+    <Info>Info</Info>
+    <Warning>Warning</Warning>
+    <Error>Error</Error>
+    <NoFeatures>NoFeatures</NoFeatures>
+    <GlobalRequire>GlobalRequire</GlobalRequire>
+    <GlobalPackage>GlobalPackage</GlobalPackage>
+    <GenericTypeParameters>GenericTypeParameters</GenericTypeParameters>
+    <GenericTypeSubstitute>GenericTypeSubstitute({0}, {1})</GenericTypeSubstitute>
+    <OtherFieldLocation>OtherFieldLocation</OtherFieldLocation>
+    <OtherTagLocation>OtherTagLocation</OtherTagLocation>
+  </diagnostic-messages>
+  <log-messages>
+    <LoadResourceFrom>LoadResourceFrom({0})</LoadResourceFrom>
+    <ServerStarting>ServerStarting</ServerStarting>
+    <ServerTerminatedNormally>ServerTerminatedNormally</ServerTerminatedNormally>
+    <RequestCanceled>RequestCanceled({0})</RequestCanceled>
+    <ResponseSending>ResponseSending({0})</ResponseSending>
+    <NotificationSending>NotificationSending({0})</NotificationSending>
+    <MessageParseError>MessageParseError({0})</MessageParseError>
+    <ReceivedExitNotification>ReceivedExitNotification</ReceivedExitNotification>
+    <MessageReceived>MessageReceived({0})</MessageReceived>
+    <UnknownRequest>UnknownRequest({0}, {1}, {2})</UnknownRequest>
+    <UnknownNotification>UnknownNotification({0}, {1})</UnknownNotification>
+  </log-messages>
+</resources>

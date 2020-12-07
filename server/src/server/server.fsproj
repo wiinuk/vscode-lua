@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <OtherFlags>--warnon:1182,3218,3180</OtherFlags>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="resources.xsd">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Content Include="resources.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="resources.ja-jp.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="ResourcesSchemaGen.fsx" />
+    <Compile Include="Log.fs" />
+    <Compile Include="SR.fs" />
+    <Compile Include="Server.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\checker\LuaChecker.Checker.fsproj" />
+    <ProjectReference Include="..\Protocol\LuaChecker.Protocol.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FSharp.Data" Version="3.3.3" />
+    <PackageReference Include="ZString" Version="2.2.0" />
+    <ProjectReference Include="..\checker\LuaChecker.Checker.fsproj" />
+  </ItemGroup>
+  <Target Name="_GenerateResourcesScheme" BeforeTargets="AfterResolveReferences" Inputs="@(ReferencePath);ResourcesSchemaGen.fsx" Outputs="resources.xsd">
+    <Exec Command="dotnet fsi --quiet --exec --define:GEN --use:ResourcesSchemaGen.fsx" />
+  </Target>
+</Project>

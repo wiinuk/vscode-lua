@@ -1,0 +1,160 @@
+﻿module LuaChecker.Server.Program
+open LuaChecker
+open LuaChecker.Primitives
+open LuaChecker.Server
+open LuaChecker.Server.Server
+open LuaChecker.Server.Json
+open LuaChecker.Server.Protocol
+open LuaChecker.Server.Log
+open LuaChecker.Text.Json
+open LuaChecker.Text.Json.Parsing
+open System
+open System.Collections.Concurrent
+open System.Text
+open System.Text.Json
+open System.Threading
+
+
+let serializeJsonRpcResponse id x =
+    Json.serialize {
+        jsonrpc = JsonRpcVersion.``2.0``
+        id = id
+        result = x
+    }
+    |> ReadOnlyMemory
+
+type private M = LuaChecker.Server.Protocol.Methods
+module Server = Server.Interfaces
+
+let options = ParserOptions.createFromParsers [
+    FSharpRecordParserFactory()
+    FSharpOptionParserFactory()
+    FSharpValueOptionParserFactory()
+    FSharpRecordOptionalFieldParserFactory()
+    FSharpUnitParser()
+]
+
+let parse<'T> e = JsonElementParser.parse<'T> options e
+
+let processNotification server ps = function
+    | M.initialized -> Server.initialized server
+    | M.``textDocument/didOpen`` -> Server.didOpenTextDocument server <| parse<_> ps
+    | M.``textDocument/didChange`` -> Server.didChangeTextDocument server <| parse<_> ps
+    | M.``textDocument/didClose`` -> Server.didCloseTextDocument server <| parse<_> ps
+
+    //| M.``workspace/didChangeConfiguration`` -> Server.didChangeConfiguration server ps
+    | M.``textDocument/didSave`` -> Server.didSaveTextDocument server <| parse<_> ps
+    | M.``workspace/didChangeWatchedFiles`` -> Server.didChangeWatchedFiles server <| parse<_> ps
+
+    | method -> ifWarn { Log.Format(server.resources.LogMessages.UnknownNotification, method, ps) }; Async.completed
+
+let inline wrapJsonInOut serverMethod ps id = async {
+    let! r = serverMethod (parse<_> ps)
+    return serializeJsonRpcResponse id r
+}
+
+let processRequest server id ps = function
+    | M.initialize -> wrapJsonInOut (Server.initialize server) ps id
+
+    | M.``textDocument/hover`` -> wrapJsonInOut (Server.hover server) ps id
+    //| M.``workspace/didChangeWorkspaceFolders`` ->
+
+    | M.shutdown -> wrapJsonInOut (Server.shutdown server) ps id
+
+    | method ->
+        ifError { Log.Format(server.resources.LogMessages.UnknownRequest, id, method, ps) }
+        async.Return ReadOnlyMemory.Empty
+
+type MainThreadMessage =
+    | Notification of Methods * task: unit Async
+    | Request of id: int * task: byte ReadOnlyMemory Async * cancel: CancellationTokenSource
+    | Quit
+
+type Pipe = {
+    messageQueue: MainThreadMessage BlockingCollection
+    pendingRequests: ConcurrentDictionary<int, CancellationTokenSource>
+}
+
+let (?) (json: JsonElement) (name: string) = json.GetProperty name
+
+let processMessage server pipe = function
+    | { JsonRpcMessage.method = M.``$/cancelRequest``; ``params`` = ps } ->
+        let id = ps?id.GetInt32()
+
+        let mutable cancel = null
+        if pipe.pendingRequests.TryGetValue(id, &cancel) then
+            cancel.Cancel()
+            ifInfo { Log.Format(server.resources.LogMessages.RequestCanceled, id) }
+
+    | { id = Undefined; method = method; ``params`` = ps } ->
+        let task = processNotification server ps method
+        pipe.messageQueue.Add(Notification(method, task))
+
+    | { id = Defined id; method = method; ``params`` = json } ->
+        let task = processRequest server id json method
+        let cancel = new CancellationTokenSource()
+        pipe.messageQueue.Add <| Request(id, task, cancel)
+        pipe.pendingRequests.[id] <- cancel
+
+let processMessages server pipe =
+    let rec aux() =
+        let r =
+            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods>> server.input
+            with :? JsonException -> Error MessageReader.ErrorKind.DeserializeFailure
+
+        match r with
+        | Error MessageReader.ErrorKind.EndOfSource -> ()
+        | Error MessageReader.ErrorKind.RequireContentLengthHeader -> ifWarn { trace "Message was ignored." }; aux()
+        | Error MessageReader.ErrorKind.DeserializeFailure -> ifWarn { trace "JSON RPC format is invalid." }; aux()
+        | Error e -> ifError { Log.Format(server.resources.LogMessages.MessageParseError, e) }
+        | Ok { method = M.exit } -> ifInfo { Log.Format server.resources.LogMessages.ReceivedExitNotification }
+        | Ok request ->
+            ifDebug { Log.Format(server.resources.LogMessages.MessageReceived, request) }
+            processMessage server pipe request
+            aux()
+    aux()
+    pipe.messageQueue.Add Quit
+
+let backgroundWorker server pipe = async {
+    do! Async.SwitchToNewThread()
+    try processMessages server pipe
+    with e -> ifError { trace "%A" e }
+}
+
+let receiveMessages server pipe =
+    let rec aux() =
+        match pipe.messageQueue.Take() with
+        | Quit -> ()
+        | Notification(_, task) -> Async.RunSynchronously task; aux()
+        | Request(id, task, cancel) ->
+            try
+                let response = Async.RunSynchronously(task, 0, cancel.Token)
+                ifDebug { Log.Format(server.resources.LogMessages.ResponseSending, Encoding.UTF8.GetString response.Span) }
+                MessageWriter.writeUtf8 server.output response.Span
+
+            with :? OperationCanceledException ->
+                ifInfo { Log.Format(server.resources.LogMessages.RequestCanceled, id) }
+
+            aux()
+    aux()
+
+let connect server =
+    let idToPendingRequest = ConcurrentDictionary()
+    use messageQueue = new BlockingCollection<_>(8)
+    let pipe = { pendingRequests = idToPendingRequest; messageQueue = messageQueue }
+    backgroundWorker server pipe |> Async.Start
+    receiveMessages server pipe
+
+[<EntryPoint>]
+let main _ =
+    let input = MessageReader.borrowStream <| Console.OpenStandardInput()
+    use output = MessageWriter.borrowStream <| Console.OpenStandardOutput()
+    let server = Server.create id (input, output)
+    try
+        ifInfo { trace "%s" server.resources.LogMessages.ServerStarting }
+        connect server
+        ifInfo { trace "%s" server.resources.LogMessages.ServerTerminatedNormally }
+        0
+    with e ->
+        ifError { trace "%A" e }
+        1

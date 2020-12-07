@@ -1,0 +1,81 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<resources xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="resources.xsd">
+  <diagnostic-messages>
+    <RequireField>フィールド `{1}` ( 型 `{2}` ) が見つかりませんでした。見つかったフィールド `{0}`</RequireField>
+    <UndefinedField>型 `{0}` にフィールド `{1}` が見つかりませんでした</UndefinedField>
+    <TypeMismatch>型 `{0}` と `{1}` が一致しません</TypeMismatch>
+    <UnifyError>一般的な型エラー: {0}</UnifyError>
+    <NameNotFound>`{0}` が見つかりませんでした</NameNotFound>
+    <ReturnValueIgnored>戻り値が無視されました</ReturnValueIgnored>
+    <ModuleNotFound>モジュール `{0}` が見つかりませんでした。&#x0A;探した場所：&#x0A;{1}</ModuleNotFound>
+    <IndirectGlobalRequireUse>モジュール名を解析できません。`require("&lt;モジュール名&gt;")` のような形式なら解析できます</IndirectGlobalRequireUse>
+    <ExternalModuleError>他のモジュールで問題が見つかりました：{0}&#x0A;内容：{1}</ExternalModuleError>
+    <RecursiveModuleReference>モジュールが自分自身を参照しています：{0}</RecursiveModuleReference>
+    <ConstraintMismatch>制約 `{0}` と `{1}` が一致しませんでした</ConstraintMismatch>
+    <KindMismatch>種類 `{0}` と `{1}` が一致しませんでした</KindMismatch>
+    <ConstraintAndTypeMismatch>制約 `{0}` が必要です。型 `{1}` は制約を満たしませんでした</ConstraintAndTypeMismatch>
+    <TagSpaceConstraintMismatch>型は `{0}` から `{1}` までである必要があります。指定された型 `{2}` の中に `{3}` がありません</TagSpaceConstraintMismatch>
+    <UnrecognizableGlobalPackageUse>パッケージのパスを解析できません。`package.path = package.path .. ";&lt;パス&gt;"` のような形式なら解析できます</UnrecognizableGlobalPackageUse>
+    <TypeNameNotFound>型 `{0}` が見つかりませんでした。型変数を指定したいときは、1文字の名前か'T'から始まる名前 ( `a`、`V`、`TResult`、`TElement` など ) を使ってください</TypeNameNotFound>
+    <TypeArityMismatch>長さ {0} の型引数が必要です。長さ 3 の型引数は `Type&lt;_, _, _&gt;` のように指定します。長さ 0 の型引数は `Type` のように指定します。今の型引数の長さは {1} です</TypeArityMismatch>
+    <DuplicateFieldKey>フィールド `{0}` が重複しています</DuplicateFieldKey>
+    <RedeclarationOfSpecialGlobalVariable>前からあった `{0}` ( {1} ) は隠されました。`{0}` の扱いは `{2}` に変更されます</RedeclarationOfSpecialGlobalVariable>
+    <RedeclarationOfBasicType>基本型 `{0}` は再宣言できません</RedeclarationOfBasicType>
+    <RedeclarationOfTypeVariable>型変数 `{0}` は再宣言できません</RedeclarationOfTypeVariable>
+    <UndeterminedGlobalVariableEnvironment>この場所で `require` を使うとグローバル環境が不確定になります。可能なら `require` をソースの一番上に移すことを検討してください。&#x0A;モジュール:&#x0A;{0}&#x0A;モジュールによって追加されるグローバル変数:&#x0A;{1}</UndeterminedGlobalVariableEnvironment>
+    <GlobalNameCollision>`{0}` の複数のグローバル宣言が一致しませんでした:&#x0A;{1}&#x0A;{2}{3}</GlobalNameCollision>
+    <GlobalTypeCollision>`{0}` の複数の型定義が一致しませんでした:&#x0A;{1}&#x0A;{2}{3}</GlobalTypeCollision>
+    <UnrecognizedFeatureName>特徴 `{0}` は認識できません</UnrecognizedFeatureName>
+    <UnexpectedMultiType>ここに複型を指定することはできません</UnexpectedMultiType>
+    <RequireMultiType>複型が必要です。`()` や `(number,)` や `(number, string, ...)` や `...` などが有効です</RequireMultiType>
+    <DuplicateTag>タグ `{0}` が重複しています</DuplicateTag>
+    <FieldParentTagNotFound>親タグ ( `@class` など ) がこのタグの前に必要です。このタグは無視されます</FieldParentTagNotFound>
+    <GenericTagParentSyntaxNotFound>親構文 ( `@class` など ) がこのタグの後に必要です。このタグは無視されます</GenericTagParentSyntaxNotFound>
+    <TypeTagParentSyntaxNotFound>親構文 ( `local` など ) がこのタグの後に必要です。このタグは無視されます</TypeTagParentSyntaxNotFound>
+
+    <Error>エラー</Error>
+    <Warning>警告</Warning>
+    <Info>情報</Info>
+
+    <NoFeatures>通常の変数</NoFeatures>
+    <GlobalRequire>モジュールの解決</GlobalRequire>
+    <GlobalPackage>解決パスの追加</GlobalPackage>
+
+    <GenericTypeParameters>ジェネリックパラメーター</GenericTypeParameters>
+    <GenericTypeSubstitute>{0} は {1}</GenericTypeSubstitute>
+    <OtherFieldLocation>他のフィールドの場所</OtherFieldLocation>
+    <OtherTagLocation>他のタグの場所</OtherTagLocation>
+
+    <DisallowedLeadingNewLine>トークンの前の改行は無効です</DisallowedLeadingNewLine>
+    <RequireAnyField>フィールドが必要です</RequireAnyField>
+    <RequireAnyStat>式が必要です</RequireAnyStat>
+    <RequireAnyToken>数値、文字列、名前、他のキーワードなどが必要です</RequireAnyToken>
+    <RequireBinaryOp>`+`、`*` などの二項演算子が必要です</RequireBinaryOp>
+    <RequireUnaryOp>`-`、`#` などの単項演算子が必要です</RequireUnaryOp>
+    <RequireFunctionCall>関数呼び出しが必要です</RequireFunctionCall>
+    <RequireLiteral>`true`、`false`、`nil`、数値、文字列などの即値が必要です</RequireLiteral>
+    <RequireName>名前が必要です</RequireName>
+    <RequireString>文字列が必要です</RequireString>
+    <RequireToken>`{0}` が必要です</RequireToken>
+    <RequireFieldSep>`,`、`;` などのフィールド区切りが必要です</RequireFieldSep>
+    <RequireVar>名前や `x.f`、`x[n]` などの変数式が必要です</RequireVar>
+    <RequireAnyFieldKey>フィールドのキーが必要です。 例: `key`、`"key"`、`123`、`true`</RequireAnyFieldKey>
+    <RequireAnyTypeSign>型が必要です。例: `string`、`table&lt;number, a&gt;`、`{{ x: _, y: any }}`、`TElement[]`</RequireAnyTypeSign>
+    <ParseError>"一般的な構文エラー: {0}</ParseError>
+  </diagnostic-messages>
+
+  <log-messages>
+    <LoadResourceFrom>リソースを読み込みました。場所：{0}</LoadResourceFrom>
+    <ServerStarting>サーバーを開始しています</ServerStarting>
+    <ServerTerminatedNormally>サーバーが正常に終了しました</ServerTerminatedNormally>
+    <UnknownRequest>不明な要求を受信しました[{0}] {1} `{2}`</UnknownRequest>
+    <ResponseSending>返信：{0}</ResponseSending>
+    <MessageReceived>メッセージを受信：{0}</MessageReceived>
+    <MessageParseError>メッセージ解析エラー</MessageParseError>
+    <NotificationSending>通知を送信：{0}</NotificationSending>
+    <ReceivedExitNotification>`exit` 通知を受信しました</ReceivedExitNotification>
+    <RequestCanceled>要求 {0} がキャンセルされました</RequestCanceled>
+    <UnknownNotification>不明な通知 {0}：{1}</UnknownNotification>
+  </log-messages>
+
+</resources>

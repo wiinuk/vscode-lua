@@ -1,0 +1,8 @@
+* text=auto
+
+*.fs text eol=lf
+*.fsx text eol=lf
+*.fsproj text eol=lf
+
+*.xsd text eol=lf
+*.xml text eol=lf

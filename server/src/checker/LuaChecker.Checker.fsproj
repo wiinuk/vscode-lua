@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <OtherFlags>--warnon:1182</OtherFlags>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="TypeSystem.types.fs" />
+    <Compile Include="TypeSystem.fs" />
+    <Compile Include="TypedSyntaxes.types.fs" />
+    <Compile Include="TypedSyntaxes.fs" />
+    <Compile Include="Checkers.types.fs" />
+    <Compile Include="Project.fs" />
+    <Compile Include="Checkers.fs" />
+    <Compile Include="TypedSyntax.HitTest.fs" />
+    <Compile Include="Checker.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Collections.Immutable" Version="5.0.0" />
+    <PackageReference Include="ZString" Version="2.2.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Primitives\LuaChecker.Primitives.fsproj" />
+    <ProjectReference Include="..\LuaChecker.Syntax\LuaChecker.Syntax.fsproj" />
+  </ItemGroup>
+</Project>

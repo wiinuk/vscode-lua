@@ -1,0 +1,384 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:element name="resources">
+    <xsd:complexType>
+      <xsd:all>
+        <xsd:element name="diagnostic-messages" type="diagnostic-messages" />
+        <xsd:element name="log-messages" type="log-messages" />
+      </xsd:all>
+    </xsd:complexType>
+  </xsd:element>
+  <xsd:complexType name="diagnostic-messages">
+    <xsd:all>
+      <xsd:element name="RequireAnyToken" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireFieldSep" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireToken" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireBinaryOp" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireUnaryOp" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireLiteral" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireName" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireString" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireFunctionCall" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireVar" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="DisallowedLeadingNewLine" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireAnyStat" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireAnyField" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireAnyFieldKey" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireAnyTypeSign" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="TypeMismatch" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireField" type="pattern-4">
+        <xsd:annotation>
+          <xsd:documentation>actualFields: string -&gt; requireKey: string -&gt; requireType: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UndefinedField" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>selfType: string -&gt; fieldKey: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="KindMismatch" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ConstraintMismatch" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ConstraintAndTypeMismatch" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="TagSpaceConstraintMismatch" type="pattern-5">
+        <xsd:annotation>
+          <xsd:documentation>expectedLowerBound: string -&gt; expectedUpperBound: string -&gt; actualType: string -&gt; requireElement: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ParseError" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnifyError" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ReturnValueIgnored" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="NameNotFound" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="IndirectGlobalRequireUse" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ModuleNotFound" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>moduleName: string -&gt; searchedModulePaths: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ExternalModuleError" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>modulePath: string -&gt; diagnostic: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RecursiveModuleReference" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>modulePath: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnrecognizableGlobalPackageUse" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="TypeNameNotFound" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="TypeArityMismatch" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>expectedArity: int -&gt; actualArity: int -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="DuplicateFieldKey" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; otherFieldSpan: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RedeclarationOfSpecialGlobalVariable" type="pattern-4">
+        <xsd:annotation>
+          <xsd:documentation>name: string -&gt; oldKind: string -&gt; newKind: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RedeclarationOfBasicType" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RedeclarationOfTypeVariable" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>name: string -&gt; oldTypeLocations: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UndeterminedGlobalVariableEnvironment" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>modulePath: string -&gt; additionalGlobals: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GlobalNameCollision" type="pattern-5">
+        <xsd:annotation>
+          <xsd:documentation>name: string -&gt; decl1: string -&gt; decl2: string -&gt; decls: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GlobalTypeCollision" type="pattern-5">
+        <xsd:annotation>
+          <xsd:documentation>name: string -&gt; type1: string -&gt; type2: string -&gt; types: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnrecognizedFeatureName" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>featureName: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnexpectedMultiType" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireMultiType" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="DuplicateTag" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>otherTag: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="FieldParentTagNotFound" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GenericTagParentSyntaxNotFound" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="TypeTagParentSyntaxNotFound" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="Info" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="Warning" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="Error" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="NoFeatures" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GlobalRequire" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GlobalPackage" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GenericTypeParameters" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="GenericTypeSubstitute" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>typeParameterName: string -&gt; typeName: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="OtherFieldLocation" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="OtherTagLocation" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+    </xsd:all>
+  </xsd:complexType>
+  <xsd:complexType name="log-messages">
+    <xsd:all>
+      <xsd:element name="LoadResourceFrom" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>resourcePath: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ServerStarting" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ServerTerminatedNormally" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequestCanceled" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>requestId: int -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ResponseSending" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>contents: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="NotificationSending" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>message: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="MessageParseError" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>error: ErrorKind -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ReceivedExitNotification" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="MessageReceived" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>message: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnknownRequest" type="pattern-4">
+        <xsd:annotation>
+          <xsd:documentation>requestId: int -&gt; method: Methods -&gt; params: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnknownNotification" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>method: Methods -&gt; params: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+    </xsd:all>
+  </xsd:complexType>
+  <xsd:simpleType name="pattern-1">
+    <xsd:restriction base="xsd:string">
+      <xsd:pattern value="([^{}]|\{\{|\}\})*" />
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="pattern-5">
+    <xsd:restriction base="xsd:string">
+      <xsd:pattern value="([^{}]|\{\{|\}\})*(\{[0123]\}([^{}]|\{\{|\}\})*)*" />
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="pattern-4">
+    <xsd:restriction base="xsd:string">
+      <xsd:pattern value="([^{}]|\{\{|\}\})*(\{[012]\}([^{}]|\{\{|\}\})*)*" />
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="pattern-3">
+    <xsd:restriction base="xsd:string">
+      <xsd:pattern value="([^{}]|\{\{|\}\})*(\{[01]\}([^{}]|\{\{|\}\})*)*" />
+    </xsd:restriction>
+  </xsd:simpleType>
+  <xsd:simpleType name="pattern-2">
+    <xsd:restriction base="xsd:string">
+      <xsd:pattern value="([^{}]|\{\{|\}\})*(\{[0]\}([^{}]|\{\{|\}\})*)*" />
+    </xsd:restriction>
+  </xsd:simpleType>
+</xsd:schema>

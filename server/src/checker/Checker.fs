@@ -1,0 +1,221 @@
+﻿module LuaChecker.Checker
+open LuaChecker.Primitives
+open LuaChecker.TypeSystem
+open System.Collections.Concurrent
+
+
+let standardTypeSystem =
+    let valueKind = NamedKind "value"
+    let multiKind = NamedKind "multi"
+    let nilConstant = TypeConstant("nil", valueKind)
+    let booleanConstant = TypeConstant("boolean", valueKind)
+    let numberConstant = TypeConstant("number", valueKind)
+    let stringConstant = TypeConstant("string", valueKind)
+    let valueType0 c = NamedType(c, [])
+    let emptyConstant = TypeConstant("()", multiKind)
+    let tableConstant = TypeConstant("table", FunKind([valueKind; valueKind], valueKind))
+    let threadConstant = TypeConstant("thread", FunKind([multiKind; multiKind], valueKind))
+    let consConstant = TypeConstant("(::)", FunKind([valueKind; multiKind], multiKind))
+    let funConstant = TypeConstant("(fun)", FunKind([multiKind; multiKind], valueKind))
+
+    let literalNaming = function
+        | Syntaxes.Nil -> "nil"
+        | Syntaxes.False -> "false"
+        | Syntaxes.True -> "true"
+        | Syntaxes.Number _ -> "n"
+        | Syntaxes.String x -> x
+
+    /// type(x: tag..): x
+    let tagOrUpperConstraint lowerBound = TagSpaceConstraint(lowerBound = lowerBound, upperBound = TagSpace.full)
+
+    /// e.g. `type(x: 10..): x`
+    let makeLiteral x = fun location ->
+        TagSpace.ofLiteral x
+        |> tagOrUpperConstraint
+        |> Constraints.makeWithLocation location
+        |> Type.newVarWith (literalNaming x) 1000000 valueKind
+        |> Type.makeWithLocation location
+
+    let literalCacheMaxCount = 256
+    let literalCache = ConcurrentDictionary<_,_>()
+    let makeLiteralFunc = System.Func<_,_> makeLiteral
+
+    let literalCache0 =
+        seq {
+            Syntaxes.Nil
+            Syntaxes.False
+            Syntaxes.True
+            for x in -10. .. 1. .. 10. do
+                Syntaxes.Number x
+
+            Syntaxes.String ""
+            for c in 0 .. 128 do
+                Syntaxes.String <| string (char c)
+        }
+        |> Seq.fold (fun map x -> Map.add x (makeLiteral x) map) Map.empty
+
+    /// type(a: x..): a
+    let literal struct(x, location) =
+        match Map.tryFind x literalCache0 with
+        | ValueSome t -> t location
+        | _ ->
+
+        if literalCacheMaxCount < literalCache.Count then
+            literalCache.Clear()
+        literalCache.GetOrAdd(x, valueFactory = makeLiteralFunc) location
+    {
+        nilConstant = nilConstant
+        nil = valueType0 nilConstant
+        booleanConstant = booleanConstant
+        boolean = valueType0 booleanConstant
+        numberConstant = numberConstant
+        number = valueType0 numberConstant
+        stringConstant = stringConstant
+        string = valueType0 stringConstant
+        literal = literal
+
+        tableConstant = tableConstant
+        table = fun struct(k, v) -> NamedType(tableConstant, [k; v])
+        unTable = function NamedType(t, [k; v]) when t = tableConstant -> ValueSome(k, v) | _ -> ValueNone
+        threadConstant = threadConstant
+        thread = fun struct(i, o) -> NamedType(threadConstant, [i; o])
+        unThread = function NamedType(t, [i; o]) when t = threadConstant -> ValueSome(i, o) | _ -> ValueNone
+
+        emptyConstant = emptyConstant
+        empty = NamedType(emptyConstant, [])
+        cons = fun struct(t, m) -> NamedType(consConstant, [t; m])
+        unCons = function NamedType(t, [x; m]) when t = consConstant -> ValueSome(x, m) | _ -> ValueNone
+
+        /// `fun(...): ...`
+        fnConstant = funConstant
+        fn = fun struct(p, r) -> NamedType(funConstant, [p; r])
+        unFn = function NamedType(t, [p; r]) when t = funConstant -> ValueSome(p, r) | _ -> ValueNone
+
+        valueKind = valueKind
+        multiKind = multiKind
+}
+
+let standardGlobals types = Map [
+    // require: type(r...) -> fun(string) -> r...
+    "require", {
+        scheme =
+            types.fn(
+                TypeSystem.multi1 types (Type.makeWithEmptyLocation types.string) [],
+                Type.newVar "result" 1 types.multiKind |> Type.makeWithEmptyLocation
+            )
+            |> Type.makeWithEmptyLocation
+            |> Scheme.generalize 0
+
+        declarationKind = DeclarationKind.GlobalRequire
+        location = None
+    }
+    // package: { path: string }
+    "package", {
+        scheme = Type.makeWithEmptyLocation <| InterfaceType (Map [
+            FieldKey.String "path", types.string |> Type.makeWithEmptyLocation
+        ])
+        declarationKind = DeclarationKind.GlobalPackage
+        location = None
+    }
+]
+let private systemType code = { typeKind = TypeDefinitionKind.System code; locations = [] }
+let standardTypes = Map [
+    "nil", systemType SystemTypeCode.Nil
+    "boolean", systemType SystemTypeCode.Boolean
+    "number", systemType SystemTypeCode.Number
+    "string", systemType SystemTypeCode.String
+    "table", systemType SystemTypeCode.Table
+    "thread", systemType SystemTypeCode.Thread
+]
+let standardEnv packagePath = {
+    typeSystem = standardTypeSystem
+    derivedTypes = TypeCache.create standardTypeSystem
+    initialGlobalEnv = {
+        names = standardGlobals standardTypeSystem |> Map.map (fun _ -> NonEmptyList.singleton)
+        types = standardTypes |> Map.map (fun _ -> NonEmptyList.singleton)
+    }
+    packagePath = packagePath
+}
+
+let checkCached project path =
+    match Project.tryFind path project with
+    | ValueNone -> None, Seq.empty, project
+    | ValueSome sourceFile -> Checkers.checkSourceFileCached project path sourceFile
+
+let updateDescendants file project =
+    project.pathToSourceFile
+    |> HashMap.fold (fun struct(project, descendants) sourcePath sourceFile ->
+        match sourceFile.stage with
+        | BeforeParse _ -> project, descendants
+
+        // parse error
+        | AnalysisComplete(None, _) -> project, descendants
+
+        | AnalysisComplete(Some s, _) ->
+            if not <| Set.contains file s.typedTree.state.ancestorModulePaths then project, descendants else
+
+            // sourceFile が file を参照していた
+            let sourceFile = {
+                stage = BeforeParse
+                source = sourceFile.source
+            }
+            Project.addSourceFileNoCheck sourcePath sourceFile project, sourcePath::descendants
+
+    ) (project, [])
+
+let checkSourceCore project filePath source =
+    match Checkers.parse project.projectRare.fileSystem source with
+    | Error e ->
+        let sourceFile = {
+            stage = AnalysisComplete(None, e)
+            source = source
+        }
+        let project = Project.addSourceFileNoCheck filePath sourceFile project
+        None, e, project
+
+    | Ok syntaxTree ->
+        Checkers.checkSyntaxAndCache project filePath source syntaxTree
+
+///<summary>(&lt;=)</summary>
+let isOlder source1 source2 =
+    match source1, source2 with
+    | InMemory(_, v1), InMemory(_, v2) -> v1 <= v2
+    | InFs(_, v1), InFs(_, v2) -> v1 <= v2
+    | _ -> false
+
+let parseAndCheckCached project filePath source =
+    match Project.tryFind filePath project with
+    | ValueSome sourceFile when isOlder source sourceFile.source ->
+        let tree, e, project = Checkers.checkSourceFileCached project filePath sourceFile
+        tree, e, project, []
+
+    | _ ->
+        let tree, e, project = checkSourceCore project filePath source
+        let struct(project, descendants) = updateDescendants filePath project
+        tree, e, project, descendants
+
+let addOrUpdateSourceFile file project =
+    let sourceFile = {
+        stage = BeforeParse
+        source = InFs(file, project.projectRare.fileSystem.lastWriteTime file)
+    }
+    let project = Project.addSourceFileNoCheck file sourceFile project
+    updateDescendants file project
+
+let removeSourceFile file project =
+    let project = Project.remove file project
+    updateDescendants file project
+
+let hitTest project visitor visitorThis path position =
+    match Project.tryFind path project with
+    | ValueNone -> ValueNone, project
+    | ValueSome sourceFile ->
+
+    match Checkers.checkSourceFileCached project path sourceFile with
+    | None, _, project -> ValueNone, project
+    | Some tree, _, project -> Block.hitTest visitor visitorThis position tree.entity, project
+
+let isAncestor old young project =
+    match Project.tryFind young project with
+    | ValueSome { stage = AnalysisComplete(Some check, _) } -> Set.contains old check.typedTree.state.ancestorModulePaths
+    | _ -> false

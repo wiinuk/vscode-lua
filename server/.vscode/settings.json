@@ -1,0 +1,25 @@
+{
+    "cSpell.words": [
+        "Arity",
+        "Callstack",
+        "Cysharp",
+        "Entitize",
+        "Formattable",
+        "Monoid",
+        "Serializable",
+        "Xunit",
+        "byref",
+        "downto",
+        "inref",
+        "languageclient",
+        "netcoreapp",
+        "nowarn",
+        "nuget",
+        "stackalloc",
+        "typedefof",
+        "unregister",
+        "voption",
+        "warnon"
+    ],
+    "dotnet-test-explorer.testProjectPath": "**/*.sln",
+}
