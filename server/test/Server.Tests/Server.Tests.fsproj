@@ -1,12 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net5.0</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\src\server\ResourcesSchemaGen.fsx" Link="ResourcesSchemaGen.fsx" />
+    <None Include="../../src/server/ResourcesSchemaGen.fsx" Link="ResourcesSchemaGen.fsx" />
     <Compile Include="Server.Test.Helpers.fs" />
     <Compile Include="Server.Tests.fs" />
   </ItemGroup>
@@ -30,8 +30,8 @@
     <ProjectReference Include="..\..\src\server\server.fsproj" />
   </ItemGroup>
 
-  <Target Name="_GenerateResourcesScheme" BeforeTargets="AfterResolveReferences" Inputs="@(ReferencePath);..\..\src\server\ResourcesSchemaGen.fsx" Outputs="resources.xsd">
-    <Exec Command="dotnet fsi --quiet --exec --define:GEN --use:..\..\src\server\ResourcesSchemaGen.fsx -- --schema-only" />
+  <Target Name="_GenerateResourcesScheme" BeforeTargets="AfterResolveReferences" Inputs="@(ReferencePath);../../src/server/ResourcesSchemaGen.fsx" Outputs="resources.xsd">
+    <Exec Command="dotnet fsi --quiet --exec --define:GEN --use:../../src/server/ResourcesSchemaGen.fsx -- --schema-only" />
   </Target>
 
 </Project>

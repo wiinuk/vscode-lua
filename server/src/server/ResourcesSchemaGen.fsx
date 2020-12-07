@@ -3,8 +3,8 @@
 #r "System.Xml.Linq"
 #r "../checker/bin/Debug/netstandard2.0/LuaChecker.Checker.dll"
 #r "../LuaChecker.Syntax/bin/Debug/netstandard2.0/LuaChecker.Syntax.dll"
-#r "../protocol/bin/Debug/netstandard2.1/LuaChecker.Protocol.dll"
-#r "../protocol/bin/Debug/netstandard2.1/LuaChecker.JsonExtensions.dll"
+#r "../Protocol/bin/Debug/netstandard2.1/LuaChecker.Protocol.dll"
+#r "../Protocol/bin/Debug/netstandard2.1/LuaChecker.JsonExtensions.dll"
 open FSharp.Reflection
 open LuaChecker.Server.Protocol
 open System
