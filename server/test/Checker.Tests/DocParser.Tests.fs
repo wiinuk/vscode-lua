@@ -1,4 +1,4 @@
-﻿module LuaChecker.Parser.Document.Tests
+module LuaChecker.Parser.Document.Tests
 open FsCheck
 open LuaChecker
 open LuaChecker.Checker.Test.Utils
@@ -393,6 +393,22 @@ let [<Fact(DisplayName = "---@type { \"\\10\": a }")>] newLineInLongStringInType
             options = {
                 printConfig.options with
                     stringStyle = Printer.LongString
+            }
+    }
+
+let [<Fact(DisplayName = "--[[---@type a[] ]]")>] arrayTypeInLongDocument() =
+    [
+        document "" [
+            TypeTag(arrayType (type0 "a"))
+            |> withEmptySpan
+        ]
+    ]
+    |> roundTripTest {
+        printConfig with
+            options =
+            { printConfig.options with
+                style = LongDocuments 0
+                lastNewLine = true
             }
     }
 
