@@ -60,6 +60,9 @@ let showTokens tokenKinds = seq {
         " "
         yield! showTrivias config.leadingTrivias
         yield! Printer.showKind config.config k
+        match k, config.trailingTrivias with
+        | K.Sub, (LineComment _, _)::_ -> " "
+        | _ -> ()
         yield! showTrivias config.trailingTrivias
 }
 
