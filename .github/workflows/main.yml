@@ -61,7 +61,8 @@ jobs:
 
       - run: npm install
       - run: npm run pack
-      - uses: actions/upload-artifact@v1
+      - run: ls
+      - uses: actions/upload-artifact@v2
         with:
           name: package.vsix
           path: ./*.vsix
