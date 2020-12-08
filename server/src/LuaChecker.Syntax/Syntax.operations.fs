@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Syntax
+namespace LuaChecker.Syntax
 open LuaChecker
 open LuaChecker.Syntaxes
 open LuaChecker.Syntax
@@ -41,7 +41,7 @@ module Name =
         "true"; "until"; "while";
     ]
     let isValid n =
-        Regex.IsMatch(n, @"^[\p{L}_][\p{L}0-9_]*$") &&
+        Regex.IsMatch(n, @"^[\p{L}_][\p{L}0-9_]*\z") &&
         not (Set.contains n reservedNames)
 
 module TableConstructor =
