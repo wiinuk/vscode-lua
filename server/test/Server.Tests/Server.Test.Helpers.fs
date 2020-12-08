@@ -87,6 +87,8 @@ type ProtocolMessage =
     // request & response
     | Initialize of InitializeParams
     | InitializeResponse of InitializeResult
+    | Hover of HoverParams
+    | HoverResponse of Hover voption
     | Shutdown
     | ShutdownResponse
 
@@ -237,6 +239,14 @@ let clientWrite client actions = async {
 
         | DidChangeWatchedFiles x -> writeNotification Methods.``workspace/didChangeWatchedFiles`` x
         | DidSave x -> writeNotification Methods.``textDocument/didSave`` x
+
+        | Hover x ->
+            writeRequest m Methods.``textDocument/hover`` x (fun e ->
+                Program.parse<_> e |> HoverResponse
+            )
+
+        | HoverResponse _
+            -> failwith $"invalid client response: %A{m}"
 
         | InitializeResponse _
         | PublishDiagnostics _
