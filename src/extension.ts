@@ -1,41 +1,27 @@
-"use strict"
-
 import * as path from "path"
 import { ExtensionContext, window as Window, workspace } from "vscode"
 import { LanguageClient, LanguageClientOptions, RevealOutputChannelOn, ServerOptions, Executable, TransportKind } from "vscode-languageclient"
+import * as supportedRuntimeSpecs from "./supported-runtime-specs.json"
 
 let client: LanguageClient | null = null
 
 function getPlatform() {
-    switch (process.platform) {
-        // mac os
-        case "darwin":
-            switch (process.arch) {
-                case "x64": return { rid: "osx-x64" }
-            }
-        case "linux":
-            switch (process.arch) {
-                case "x64": return { rid: "linux-x64" }
-                case "ia32": return { rid: "linux-x86" }
-                case "arm": return { rid: "linux-arm" }
-            }
-        case "win32":
-            switch (process.arch) {
-                case "x64": return { rid: "win-x64", extension: ".exe" }
-                case "ia32": return { rid: "win-x86", extension: ".exe" }
-                case "arm": return { rid: "win-arm", extension: ".exe" }
-            }
-    }
-    throw new Error(`not implemented: '${process.platform}', '${process.arch}'`)
+    const { platform, arch } = process
+
+    const spec = supportedRuntimeSpecs.find(runtime =>
+        runtime.platform === platform && runtime.arch === arch
+    )
+    if (spec) { return spec }
+
+    throw new Error(`not implemented: '${platform}', '${arch}'`)
 }
 
 export function activate(context: ExtensionContext): void {
     const serverProjectDir = context.asAbsolutePath(path.join("server", "src", "server"))
-    const { rid, extension = "" } = getPlatform()
-    const serverPath = path.join(
-        serverProjectDir, "bin", "Release", "net5.0",
-        rid, "publish", "server" + extension
-    )
+    const { rid, platform } = getPlatform()
+    const extension = platform === "win32" ? ".exe" : ""
+
+    const serverPath = context.asAbsolutePath(path.join("server", "bin", rid, "server" + extension))
     const serverCommand: Executable = {
         command: serverPath,
         args: [],
