@@ -60,7 +60,7 @@ jobs:
           node-version: 14.x
 
       - run: npm run pack
-      - users: actions/upload-artifact@v1
+      - uses: actions/upload-artifact@v1
         with:
           name: package.vsix
           path: ./*.vsix
