@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Tests
+module LuaChecker.Server.Tests
 open FsCheck
 open FsCheck.Xunit
 open LuaChecker
@@ -93,5 +93,32 @@ let [<Fact>] didChangeError() = async {
                 error (0, 12) (0, 13) 1004 "ConstraintMismatch(1.., ..string)"
             |]
         }
+    ]
+}
+
+let [<Fact>] hoverType() = async {
+    let! r = serverActions id [
+        "local x = 1 + 2" &> ("C:/main.lua", 1)
+        Send <| Hover {
+            textDocument = { uri = Uri "file:///C:/main.lua" }
+            position = { line = 0; character = 6 }
+        }
+    ]
+    r =? [
+        PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }
+        {
+            contents = {
+                kind = MarkupKind.markdown
+                value = String.concat "\n" [
+                    "```lua"
+                    "---@generic x: number.."
+                    "x: x"
+                    "```"
+                ]
+            }
+            range = Undefined
+        }
+        |> ValueSome
+        |> HoverResponse
     ]
 }

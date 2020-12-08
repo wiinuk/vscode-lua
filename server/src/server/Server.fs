@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Server
+module LuaChecker.Server.Server
 open Cysharp.Text
 open LuaChecker
 open LuaChecker.Checker
@@ -507,29 +507,22 @@ let create withOptions (input, output) =
     }
 
 
-let renderGenericAnnotationsInLua (b: Utf16ValueStringBuilder byref) = function
+let renderGenericAnnotationsInLua (b: Utf16ValueStringBuilder byref) (scope: _ inref) (state: _ byref) = function
     | [] -> ()
     | ps ->
-        let mutable state = TypePrintState.create TypeWriteOptions.Default
-        let scope = TypePrintScope.empty
-
-        for TypeParameter(displayName, _, c) in ps do
-            b.Append "---@generic '"; b.Append displayName
-            if not <| Constraints.isAny c then
-                b.Append " : "
-                b.AppendConstraints(c.kind, &scope, &state)
-
+        for p in ps do
+            b.Append "---@generic "; TypeParameterExtensions.Append(&b, p, &scope, &state)
             b.Append '\n'
 
 let reset (x: 'T byref when 'T :> IResettableBufferWriter<_> and 'T : struct) = x.Reset()
 
-let renderInstantiatedVar (Messages M) (varSymbol: Utf16ValueStringBuilder inref) (genScheme: Scheme, pts) =
+let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSymbol: Utf16ValueStringBuilder inref) (genScheme: Scheme, pts) =
     use mutable b = ZString.CreateStringBuilder()
 
     let struct(ps, t) = Scheme.takeHeadParameters [] genScheme
     b.Append "```lua\n"
-    renderGenericAnnotationsInLua &b ps
-    b.Append(varSymbol.AsSpan()); b.Append ": "; b.Append t; b.Append '\n'
+    renderGenericAnnotationsInLua &b &scope &state ps
+    b.Append(varSymbol.AsSpan()); b.Append ": "; TypeExtensions.Append(&b, t.kind, &scope, &state); b.Append '\n'
     b.Append '\n'
     b.Append "-- "; b.Append M.GenericTypeParameters; b.Append '\n'
 
@@ -542,7 +535,7 @@ let renderInstantiatedVar (Messages M) (varSymbol: Utf16ValueStringBuilder inref
     | [] -> ()
     | _ ->
         for struct(TypeParameterId(id, _), { Token.kind = t }) in pts do
-            b1.Append '\''; b1.Append id
+            b1.Append id
             TypeExtensions.Append(&b2, t, &scope, &state)
 
             b.Append "-- "; b.AppendFormat(M.GenericTypeSubstitute, b1, b2); b.Append '\n'
@@ -553,15 +546,18 @@ let renderInstantiatedVar (Messages M) (varSymbol: Utf16ValueStringBuilder inref
     b.ToString()
 
 let renderVarCore server (varSymbol: _ inref) t info =
+    let scope = TypePrintScope.empty
+    let mutable state = TypePrintState.create TypeWriteOptions.Default
+
     match info with
-    | ValueSome { schemeInstantiation = ValueSome x } -> renderInstantiatedVar server &varSymbol x
+    | ValueSome { schemeInstantiation = ValueSome x } -> renderInstantiatedVar server &scope &state &varSymbol x
     | _ ->
 
     let struct(ps, t) = Scheme.takeHeadParameters [] t
     use mutable b = ZString.CreateStringBuilder()
     b.Append "```lua\n"
-    renderGenericAnnotationsInLua &b ps
-    b.Append(varSymbol.AsSpan()); b.Append ": "; b.Append t
+    renderGenericAnnotationsInLua &b &scope &state ps
+    b.Append(varSymbol.AsSpan()); b.Append ": "; b.Append(t.kind, &scope, &state)
     b.Append "\n```"
     b.ToString()
 
@@ -590,10 +586,13 @@ let renderModulePath server modulePath =
     b.ToString()
 
 let renderSimpleType (b: Utf16ValueStringBuilder byref) t =
+    let scope = TypePrintScope.empty
+    let mutable state = TypePrintState.create TypeWriteOptions.Default
+
     let struct(ps, t) = Scheme.takeHeadParameters [] t
     b.Append "```lua\n"
-    renderGenericAnnotationsInLua &b ps
-    b.Append t
+    renderGenericAnnotationsInLua &b &scope &state ps
+    b.Append(t.kind, &scope, &state)
     b.Append "\n```"
 
 let renderLiteral server t info =
@@ -692,13 +691,13 @@ module Interfaces =
                 for path in descendants do
                     addBackgroundCheckList server path
     }
-    let hover server (p: {| textDocument: TextDocumentIdentifier; position: Position |}) = async {
-        let path = DocumentPath.ofUri server.root p.textDocument.uri
+    let hover server { HoverParams.textDocument = textDocument; position = position } = async {
+        let path = DocumentPath.ofUri server.root textDocument.uri
         match Documents.tryFind path server.documents with
         | ValueNone -> return ValueNone
         | ValueSome document ->
 
-        let index = Document.positionToIndex p.position document
+        let index = Document.positionToIndex position document
         let result, project = Checker.hitTest server.project prettyTokenInfo server path index
         server.project <- project
 
