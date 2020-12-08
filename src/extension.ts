@@ -1,27 +1,77 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
+import * as path from "path"
+import { ExtensionContext, window as Window, workspace } from "vscode"
+import { LanguageClient, LanguageClientOptions, RevealOutputChannelOn, ServerOptions, Executable, TransportKind } from "vscode-languageclient"
+import * as supportedRuntimeSpecs from "./supported-runtime-specs.json"
 
-// this method is called when your extension is activated
-// your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
+let client: LanguageClient | null = null
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "vscode-lua" is now active!');
+function getPlatform() {
+    const { platform, arch } = process
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('vscode-lua.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
+    const spec = supportedRuntimeSpecs.find(runtime =>
+        runtime.platform === platform && runtime.arch === arch
+    )
+    if (spec) { return spec }
 
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from vscode-lua!');
-	});
-
-	context.subscriptions.push(disposable);
+    throw new Error(`not implemented: '${platform}', '${arch}'`)
 }
 
-// this method is called when your extension is deactivated
-export function deactivate() {}
+export function activate(context: ExtensionContext): void {
+    const serverProjectDir = context.asAbsolutePath(path.join("server", "src", "server"))
+    const { rid, platform } = getPlatform()
+    const extension = platform === "win32" ? ".exe" : ""
+
+    const serverPath = context.asAbsolutePath(path.join("server", "bin", rid, "server" + extension))
+    const serverCommand: Executable = {
+        command: serverPath,
+        args: [],
+        options: {
+            cwd: process.cwd(),
+        },
+    }
+    const debugCommand: Executable = {
+        command: "dotnet",
+        args: ["run"],
+        options: {
+            cwd: serverProjectDir,
+            shell: true,
+            env: {
+                ...process.env,
+                ["DOTNET_CLI_UI_LANGUAGE"]: "en",
+            },
+        }
+    }
+    const serverOptions: ServerOptions = {
+        run: serverCommand,
+        debug: debugCommand,
+        transport: TransportKind.stdio,
+    }
+    const clientOptions: LanguageClientOptions = {
+        documentSelector: [{ scheme: "file", language: "lua", }],
+        diagnosticCollectionName: "sample",
+        revealOutputChannelOn: RevealOutputChannelOn.Never,
+        synchronize: {
+            fileEvents: [
+                workspace.createFileSystemWatcher("**/*.lua")
+            ]
+        }
+    }
+
+    try {
+        client = new LanguageClient("Lua LSP Server", serverOptions, clientOptions)
+    }
+    catch (err) {
+        Window.showErrorMessage("The extension couldn't be started. See the output channel for details.")
+        return
+    }
+    client.registerProposedFeatures()
+
+    context.subscriptions.push(
+        client.start(),
+    )
+}
+
+export function deactivate(): Thenable<void> | undefined {
+    if (!client) { return }
+    return client.stop()
+}

@@ -11,7 +11,7 @@ type Position = Position of line: int * character: int
 module LineMap =
     let create source =
         let rec aux (lineStarts: _ ResizeArray) lineStart (source: string) =
-            let i = source.IndexOf('\n', lineStart)
+            let i = source.IndexOf('\n', startIndex = lineStart)
             if 0 <= i then
                 lineStarts.Add lineStart
                 aux lineStarts (i + 1) source

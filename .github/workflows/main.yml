@@ -16,7 +16,7 @@ env:
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
 
 jobs:
-  build:
+  test:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v1
         with:
-          node-version: 10.x
+          node-version: 14.x
 
       - run: npm install
       - run: xvfb-run -a npm test
@@ -45,3 +45,24 @@ jobs:
 
       - run: npm test
         if: runner.os != 'Linux'
+
+  pack:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 5.0.100
+
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 14.x
+
+      - run: npm install
+      - run: npm run pack
+      - run: ls
+      - uses: actions/upload-artifact@v2
+        with:
+          name: package.vsix
+          path: ./*.vsix
