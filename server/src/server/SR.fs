@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Server
+namespace LuaChecker.Server
 open FSharp.Data
 open LuaChecker.Server.Log
 open System.Globalization
@@ -38,7 +38,7 @@ module ServerResources =
                 let r =
                     try
                         let resource = ServerResources.Load path
-                        ifInfo { Log.Format(resource.LogMessages.LoadResourceFrom, Path.GetFullPath path) }
+                        ifInfo { Log.Format(resource.LogMessages.LoadResourceFrom, Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path))) }
                         Ok resource
 
                     with e -> Error e
