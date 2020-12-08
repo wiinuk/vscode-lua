@@ -440,6 +440,12 @@ let [<Fact(DisplayName = "---@type { \"\\n\": a }")>] constrainedType() =
     ]
     |> typeSignRoundTripTest
 
+let [<Fact(DisplayName = "---@type { \"a\\n\": a }")>] aAndNewLineInField() =
+    stringInterfaceType [
+        "a\n", type0 "a"
+    ]
+    |> typeSignRoundTripTest
+
 let [<Fact(DisplayName = "---@global a a")>] simpleGlobal() =
     [
         document "" [
