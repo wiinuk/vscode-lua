@@ -109,7 +109,12 @@ let [<Fact>] hoverType() = async {
         {
             contents = {
                 kind = MarkupKind.markdown
-                value = ""
+                value = String.concat "\n" [
+                    "```lua"
+                    "---@generic x: number.."
+                    "x: x"
+                    "```"
+                ]
             }
             range = Undefined
         }
