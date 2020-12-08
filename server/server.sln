@@ -24,11 +24,13 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{1B05EB73-7F7C-4AB2-A989-227DF8EC367A}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
+		CommonBuildSettings.targets = CommonBuildSettings.targets
+		pack.fsx = pack.fsx
 	EndProjectSection
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Server.Tests", "test\Server.Tests\Server.Tests.fsproj", "{822A474D-E6CC-44A1-B527-0039222DCE9C}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "LuaChecker.Syntax", "src\LuaChecker.Syntax\LuaChecker.Syntax.fsproj", "{3391E4E8-23A4-46E2-BFFE-CD088C696062}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "LuaChecker.Syntax", "src\LuaChecker.Syntax\LuaChecker.Syntax.fsproj", "{3391E4E8-23A4-46E2-BFFE-CD088C696062}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
