@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Text.Json
+namespace LuaChecker.Text.Json
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
@@ -97,11 +97,35 @@ type EnumToIntegerParser<'T when 'T :> Enum and 'T : struct>() =
         | TypeCode.UInt64 -> let mutable r = e.GetUInt64() in Unsafe.As &r
         | _ -> raise <| JsonException()
 
+[<Sealed>]
+type EnumToStringParser<'T>() =
+    inherit JsonElementParser<'T>()
+    static let stringToValue =
+        let map = Dictionary<string,'T>()
+        for v in Enum.GetValues typeof<'T> do
+            map.Add(Enum.GetName(typeof<'T>, v), v :?> 'T)
+        map
+
+    override _.Parse(e, _) =
+        if e.ValueKind <> JsonValueKind.String then raise <| JsonException()
+        let mutable result = Unchecked.defaultof<_>
+        if not <| stringToValue.TryGetValue(e.GetString(), &result) then raise <| JsonException() else
+        result
+
+[<AttributeUsage(AttributeTargets.Class ||| AttributeTargets.Struct ||| AttributeTargets.Enum)>]
+type JsonElementParserAttribute(parserType: Type) =
+    inherit Attribute()
+    member _.ParserType = parserType
+
 type EnumParserFactory() =
     inherit JsonElementParserFactory()
 
     override _.CanParse t = t.IsEnum
     override _.CreateParser(t, _) =
+        match t.GetCustomAttributes<JsonElementParserAttribute>() |> Seq.tryHead with
+        | Some a -> createParser a.ParserType null
+        | _ ->
+
         let t = typedefof<EnumToIntegerParser<AttributeTargets>>.MakeGenericType(t)
         createParser t null
 

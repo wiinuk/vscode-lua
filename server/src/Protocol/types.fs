@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Server.Protocol
+namespace LuaChecker.Server.Protocol
 open System
 open LuaChecker.Text.Json
 
@@ -152,6 +152,7 @@ type TextDocumentIdentifier = {
 /// `string | number`
 type ProgressToken = JsonElement
 
+[<JsonElementParser(typeof<EnumToStringParser<MarkupKind>>)>]
 type MarkupKind =
     | plaintext = 0uy
     | markdown = 1uy
@@ -212,4 +213,9 @@ type DidChangeTextDocumentParams = {
 [<Struct>]
 type DidChangeWatchedFilesParams = {
     changes: FileEvent array
+}
+[<Struct>]
+type HoverParams = {
+    textDocument: TextDocumentIdentifier
+    position: Position
 }

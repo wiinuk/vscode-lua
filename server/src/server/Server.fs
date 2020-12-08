@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Server
+module LuaChecker.Server.Server
 open Cysharp.Text
 open LuaChecker
 open LuaChecker.Checker
@@ -692,13 +692,13 @@ module Interfaces =
                 for path in descendants do
                     addBackgroundCheckList server path
     }
-    let hover server (p: {| textDocument: TextDocumentIdentifier; position: Position |}) = async {
-        let path = DocumentPath.ofUri server.root p.textDocument.uri
+    let hover server { HoverParams.textDocument = textDocument; position = position } = async {
+        let path = DocumentPath.ofUri server.root textDocument.uri
         match Documents.tryFind path server.documents with
         | ValueNone -> return ValueNone
         | ValueSome document ->
 
-        let index = Document.positionToIndex p.position document
+        let index = Document.positionToIndex position document
         let result, project = Checker.hitTest server.project prettyTokenInfo server path index
         server.project <- project
 
