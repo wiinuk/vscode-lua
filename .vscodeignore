@@ -1,3 +1,5 @@
+.github/**
+.nuget/**
 .vscode/**
 .vscode-test/**
 out/test/**
@@ -9,3 +11,7 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
+
+server/**
+!server/bin/
+!server/docs/
