@@ -95,7 +95,6 @@ let [<Fact>] didChangeError() = async {
         }
     ]
 }
-
 let [<Fact>] hoverType() = async {
     let! r = serverActions id [
         "local x = 1 + 2" &> ("C:/main.lua", 1)
@@ -120,5 +119,36 @@ let [<Fact>] hoverType() = async {
         }
         |> ValueSome
         |> HoverResponse
+    ]
+}
+let [<Fact>] externalModuleErrorMessage() = async {
+    let! r = serverActions id [
+        "return 1 .. 2" &> ("C:/lib.lua", 1)
+        "local x = require 'lib'" &> ("C:/main.lua", 1)
+    ]
+    r =? [
+        PublishDiagnostics {
+            uri = "file:///C:/lib.lua"
+            diagnostics = [|
+                error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
+                error (0, 12) (0, 13) 1004 "ConstraintMismatch(2.., ..string)"
+            |]
+        }
+        PublishDiagnostics {
+            uri = "file:///C:/main.lua"
+            diagnostics = [|
+                { error (0, 18) (0, 23) 1104 "ExternalModuleError(C:\\lib.lua, (1,8 - 1,9) Error: ConstraintMismatch(1.., ..string))" with
+                    relatedInformation = Defined [|
+                        {
+                            location = {
+                                uri = "file:///C:/lib.lua"
+                                range = range (0, 7) (0, 8)
+                            }
+                            message = "ConstraintMismatch(1.., ..string)"
+                        }
+                    |]
+                }
+            |]
+        }
     ]
 }
