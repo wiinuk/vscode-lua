@@ -1,4 +1,7 @@
-﻿# 構文
+﻿# 認識できるアノテーションの構文と意味
+
+## 構文
+
 ```abnf
 escape = "amp" | "quot" | "apos" | "lt" | "gt" | [0-9]+ | "#" [0-9a-fA-F]+
 comments0 = ( [^@\n&] | "&" escape ";" )*
@@ -19,14 +22,18 @@ trivia =
   | longDocument
 ```
 
-## --[[---@tag]] 形式のドキュメントコメント
-### --[[---@tag]] 形式のドキュメントコメントの例
+### --[[---@tag]] 形式のドキュメントコメント
+
+#### --[[---@tag]] 形式のドキュメントコメントの例
+
 ```lua
 local x = --[[---@type string]](42)
 ```
 
-# @type
-## @type の構文
+## @type
+
+### @type の構文
+
 ```abnf
 fieldKey =
   | "true"
@@ -112,20 +119,23 @@ type = functionType
 typeTag = "@type" type
 ```
 
-### @type を認識できる場所
+#### @type を認識できる場所
+
 - 式を囲む括弧 `(` `)` の左
 
   式の型を無条件に注釈された型として扱う。型安全ではない
 
   例:
+
   ```lua
   local x = --[[---@type string]](42)
   -- Ok: x: string
   ```
 
-## @type の意味
+### @type の意味
 
-### 型変数のスコープ
+#### 型変数のスコープ
+
 スコープにない型変数 `T` が指定された場合、
 最も近い `---@generic` タグがつけられる親要素をスコープとする。
 `---@generic` タグがつけられる親要素がない場合、チャンクをスコープとする
@@ -152,27 +162,32 @@ local function f()
   end
 end
 
-for _ = 0..0 do
+for _ = 0, 0 do
   ---@type T
   local x4 = "" -- Error: 型の不一致、for 式はスコープを作らない
 end
 ```
 
-### 複型変数のスコープ
+#### 複型変数のスコープ
+
 ```lua
 -- 名前付き複型変数 `V...` のスコープは型変数のスコープと同じ
 ```
 
-### 名前なし複型変数の自動名付け
+#### 名前なし複型変数の自動名付け
+
 同じ関数型内の名前なし複型変数は同じ複型変数になる
+
 ```lua
 ---@type fun(fun(...): (...), fun(...): (...), ...): (...)
 -- は以下と同じ意味
 ---@type fun(fun(T...): (T...), fun(U...): (U...), V...): (V...)
 ```
 
-### 明示的に指定された型引数のスコープ
+#### 明示的に指定された型引数のスコープ
+
 @generic で明示的に指定された型引数は、親 @type の中と、子 @generic からしか見えない
+
 ```lua
 -- 型引数を明示的に指定した場合
 local id = --[[---@generic a @type fun(a): a]](42)
@@ -185,22 +200,30 @@ local x1 = id"a" -- Ok: x1: string
 local x2 = id(7) -- Error: number と string の不一致
 ```
 
-# @global
-## @global の構文
+## @global
+
+### @global の構文
+
 ```abnf
 globalTag = "@global" name type
 ```
-### @global を認識できる場所
+
+#### @global を認識できる場所
+
 - 空ブロックの中
+
   ```lua
   ---@global n t
   ```
+
   ```lua
   do
     ---@global n t
   end
   ```
+
 - 文の前後
+
   ```lua
   ---@global n t
   local function f() end
@@ -209,7 +232,8 @@ globalTag = "@global" name type
   ---@global n t
   ```
 
-## @global の意味
+### @global の意味
+
 ```lua
 ---@global MyNaN number
 local n = MyNaN -- Ok：`MyNaN` が使える
@@ -240,7 +264,8 @@ y(10)  -- Ok
 y("a") -- Ok
 ```
 
-### 追加的グローバル環境と伝播
+#### 追加的グローバル環境と伝播
+
 - モジュール M の追加的グローバル環境とは以下を合わせたもの
   - M で宣言や代入によって追加されたグローバル環境
   - M の親モジュールの追加的グローバル環境
@@ -276,7 +301,8 @@ local s = Lib1State -- Ok：`lib1.lua` で宣言されている
 local s = Lib2Counter -- Ok：`lib2.lua` で宣言されている
 ```
 
-### @global 同士の衝突
+#### @global 同士の衝突
+
 - 変数宣言時の衝突エラーは即報告する
 - 親モジュールによって導入された変数の衝突のエラーは、変数の使用時に報告する
 
@@ -303,7 +329,8 @@ local x = Id -- Error：`lib1.lua(0,3)` と `lib2.lua(0,3)` で宣言されて�
 local x = Lucky -- Ok：エラーは出ない
 ```
 
-### @global と local の衝突
+#### @global と local の衝突
+
 ```lua
 local function f()
   local X = 10
@@ -316,18 +343,21 @@ end
 local x2 = X -- Ok：宣言されたグローバル変数 `X` を使える。`x2` の型は `string`
 ```
 
-# @class
+## @class
 
-## @class の構文
+### @class の構文
+
 ```abnf
 interfaceTag = "@class" name (":" type)?
 propertyTag = "@field" ("public" | "protected" | "private")? fieldKey type
 ```
 
-### @class を認識できる場所
+#### @class を認識できる場所
+
 - @global と同じ
 
-## @class の例
+### @class の例
+
 ```lua
 ---@class set : table<K, nil>
 
@@ -339,7 +369,8 @@ propertyTag = "@field" ("public" | "protected" | "private")? fieldKey type
 ---@field z T
 ```
 
-## @class の意味
+### @class の意味
+
 - 「親型」と「指定されたキーと値の型を持つインターフェース型」の交差型を、別名として定義する
   - `newTypeName = (?self & parentType & { field1: fieldType1 } & { field2: fieldType2 } & …)`
 - 前に `@class` のない `@field` は無視される
@@ -418,8 +449,10 @@ local w = S4.w -- Ok: w: string
 ---@field vertex fun(self, i: number): (x: number, y: number)
 ```
 
-# @generic
-## @generic の構文
+## @generic
+
+### @generic の構文
+
 ```abnf
 typeParameter =
   | name (":" constraints)?
@@ -428,8 +461,10 @@ typeParameter =
 genericTag = "@generic" typeParameter ("," typeParameter)*
 ```
 
-### @generic を認識できる場所
+#### @generic を認識できる場所
+
 - `@class` の前
+
   ```lua
   ---@generic Contents
   ---@class Box
@@ -437,6 +472,7 @@ genericTag = "@generic" typeParameter ("," typeParameter)*
   ```
 
 - `@field` の前
+
   ```lua
   ---@class ArrayUtils
   ---@generic T
@@ -444,17 +480,20 @@ genericTag = "@generic" typeParameter ("," typeParameter)*
   ```
 
 - `@type` の前
+
   ```lua
   local id = --[[---@generic T @type fun(T): T]](42)
   ```
 
 - `@global` の前
+
   ```lua
   ---@generic Args...
   ---@global id fun(Args...): Args...
   ```
 
-## @generic の意味
+### @generic の意味
+
 - 親要素と型制約の中でのみ見える、指定された名前の型引数を使えるようにする
 - 親要素
   - `@class`
@@ -470,6 +509,7 @@ genericTag = "@generic" typeParameter ("," typeParameter)*
 - 重複した型引数名の種類と制約は単一化され、エラーがあったら報告される
 - 複型引数と複型でない型引数を同時に同じ名前で宣言することはできない
 - 複型引数は必ず名前の後に "..." をつける必要がある
+
 ```lua
 ---@generic number
 ---@class Vector2
