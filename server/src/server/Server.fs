@@ -2,7 +2,6 @@ module LuaChecker.Server.Server
 open Cysharp.Text
 open LuaChecker
 open LuaChecker.Checker
-open LuaChecker.Parser
 open LuaChecker.Primitives
 open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
@@ -322,9 +321,9 @@ and showDiagnostic server path (Diagnostic(span, severity, kind)) =
     let severity = showSeverity server severity
     let kind = showDiagnosticKind server kind
     match tryFindRange server.documents path span with
-    | ValueNone -> sprintf "(%d, %d) %s: %s" span.start span.end' severity kind
+    | ValueNone -> sprintf "(%d, %d) %s: %s" (span.start + 1) (span.end' + 1) severity kind
     | ValueSome r ->
-        sprintf "(%d,%d - %d,%d) %s: %s" r.start.line r.start.character r.``end``.line r.``end``.character severity kind
+        sprintf "(%d,%d - %d,%d) %s: %s" (r.start.line + 1) (r.start.character + 1) (r.``end``.line + 1) (r.``end``.character + 1) severity kind
 
 let marshalDiagnosticKindToTags = function
     | K.DuplicateFieldKey _
