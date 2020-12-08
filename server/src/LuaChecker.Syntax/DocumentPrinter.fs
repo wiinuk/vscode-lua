@@ -1,4 +1,4 @@
-﻿module LuaChecker.Syntax.DocumentPrinter
+module LuaChecker.Syntax.DocumentPrinter
 open LuaChecker
 open LuaChecker.Primitives
 open LuaChecker.Syntax
@@ -329,7 +329,18 @@ let document options d = seq {
     | LongDocument _ -> yield! documentAsLineComment options d
     | LongDocuments eqCount ->
         let eqCount = max 0 eqCount
-        yield! longCommentStart eqCount; yield! documentAsLineComment options d; yield! longCommentEnd eqCount
+        yield! longCommentStart eqCount
+        yield! documentAsLineComment options d
+
+        let (Document(_, tags)) = d.kind
+        match List.tryLast tags with
+        | Some { kind = TypeTag { kind = ArrayType _ } } ->
+            // `--[[ ---@type …[]]]` -> `--[[ ---@type …[] ]]`
+            " "
+
+        | _ -> ()
+
+        yield! longCommentEnd eqCount
 }
 /// `--- …⏎--- …` or `--[[ --- … ]]⏎--[[ --- … ]]`
 let documents options ds = seq {

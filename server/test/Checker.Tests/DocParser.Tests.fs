@@ -1,4 +1,4 @@
-﻿module LuaChecker.Parser.Document.Tests
+module LuaChecker.Parser.Document.Tests
 open FsCheck
 open LuaChecker
 open LuaChecker.Checker.Test.Utils
@@ -396,6 +396,22 @@ let [<Fact(DisplayName = "---@type { \"\\10\": a }")>] newLineInLongStringInType
             }
     }
 
+let [<Fact(DisplayName = "--[[---@type a[] ]]")>] arrayTypeInLongDocument() =
+    [
+        document "" [
+            TypeTag(arrayType (type0 "a"))
+            |> withEmptySpan
+        ]
+    ]
+    |> roundTripTest {
+        printConfig with
+            options =
+            { printConfig.options with
+                style = LongDocuments 0
+                lastNewLine = true
+            }
+    }
+
 let [<Fact>] typeSignRoundTrip() = checkWith (fun c -> { c with MaxTest = c.MaxTest * 2 }) typeSignRoundTripTest
 
 let [<Fact(DisplayName = "---@type a")>] simpleTypeTag() =
@@ -421,6 +437,12 @@ let [<Fact(DisplayName = "---@type (fun(): ...: a)[]")>] funTypeConstrainedVarRe
 let [<Fact(DisplayName = "---@type { \"\\n\": a }")>] constrainedType() =
     stringInterfaceType [
         "\n", type0 "a"
+    ]
+    |> typeSignRoundTripTest
+
+let [<Fact(DisplayName = "---@type { \"a\\n\": a }")>] aAndNewLineInField() =
+    stringInterfaceType [
+        "a\n", type0 "a"
     ]
     |> typeSignRoundTripTest
 

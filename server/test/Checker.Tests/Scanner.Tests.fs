@@ -1,4 +1,4 @@
-﻿module LuaChecker.Scanner.Tests
+module LuaChecker.Scanner.Tests
 open FsCheck
 open LuaChecker
 open LuaChecker.Syntax
@@ -60,6 +60,9 @@ let showTokens tokenKinds = seq {
         " "
         yield! showTrivias config.leadingTrivias
         yield! Printer.showKind config.config k
+        match k, config.trailingTrivias with
+        | K.Sub, (LineComment _, _)::_ -> " "
+        | _ -> ()
         yield! showTrivias config.trailingTrivias
 }
 
@@ -271,6 +274,19 @@ let mulRoundTrip() =
 [<Fact>]
 let tokensRoundTrip() = check roundTripWithNoiseTest
 
+[<Fact>]
+let subAndLineCommentRoundTrip() =
+    roundTripWithNoiseTest
+        [
+            TokenKind.Sub,
+            { TokenPrintConfig.Default with
+                trailingTrivias =
+                [
+                    LineComment (NonNull ""), PositiveInt 1
+                ]
+            }
+        ]
+        (NonNull "") (NonNull "")
 
 [<Fact>]
 let lineMap() =
