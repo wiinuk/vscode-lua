@@ -65,38 +65,28 @@ let processRequest server id ps = function
         ifError { Log.Format(server.resources.LogMessages.UnknownRequest, id, method, ps) }
         async.Return ReadOnlyMemory.Empty
 
-type MainThreadMessage =
-    | Notification of Methods * task: unit Async
-    | Request of id: int * task: byte ReadOnlyMemory Async * cancel: CancellationTokenSource
-    | Quit
-
-type Pipe = {
-    messageQueue: MainThreadMessage BlockingCollection
-    pendingRequests: ConcurrentDictionary<int, CancellationTokenSource>
-}
-
 let (?) (json: JsonElement) (name: string) = json.GetProperty name
 
-let processMessage server pipe = function
+let processMessage server = function
     | { JsonRpcMessage.method = Defined M.``$/cancelRequest``; ``params`` = Defined ps } ->
         let id = ps?id.GetInt32()
 
         let mutable cancel = null
-        if pipe.pendingRequests.TryGetValue(id, &cancel) then
+        if server.pipe.pendingRequests.TryGetValue(id, &cancel) then
             cancel.Cancel()
             ifInfo { Log.Format(server.resources.LogMessages.RequestCanceled, id) }
 
     | { id = Undefined; method = Defined method; ``params`` = ps } ->
         let ps = OptionalField.defaultValue (JsonElement()) ps
         let task = processNotification server ps method
-        pipe.messageQueue.Add(Notification(method, task))
+        server.pipe.messageQueue.Add(Notification(method, task))
 
     | { id = Defined id; method = Defined method; ``params`` = json } ->
         let json = OptionalField.defaultValue (JsonElement()) json
         let task = processRequest server id json method
         let cancel = new CancellationTokenSource()
-        pipe.messageQueue.Add <| Request(id, task, cancel)
-        pipe.pendingRequests.[id] <- cancel
+        server.pipe.messageQueue.Add <| Request(id, task, cancel)
+        server.pipe.pendingRequests.[id] <- cancel
 
     // TODO: response
     | { id = Defined id; result = Defined result } ->
@@ -110,7 +100,7 @@ let processMessage server pipe = function
     | _ ->
         raise <| NotImplementedException()
 
-let processMessages server pipe =
+let processMessages server =
     let rec aux() =
         let r =
             try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonRpcResponseError>> server.input
@@ -124,20 +114,20 @@ let processMessages server pipe =
         | Ok { method = Defined M.exit } -> ifInfo { Log.Format server.resources.LogMessages.ReceivedExitNotification }
         | Ok request ->
             ifDebug { Log.Format(server.resources.LogMessages.MessageReceived, request) }
-            processMessage server pipe request
+            processMessage server request
             aux()
     aux()
-    pipe.messageQueue.Add Quit
+    server.pipe.messageQueue.Add Quit
 
-let backgroundWorker server pipe = async {
+let backgroundWorker server = async {
     do! Async.SwitchToNewThread()
-    try processMessages server pipe
+    try processMessages server
     with e -> ifError { trace "%A" e }
 }
 
-let receiveMessages server pipe =
+let receiveMessages server =
     let rec aux() =
-        match pipe.messageQueue.Take() with
+        match server.pipe.messageQueue.Take() with
         | Quit -> ()
         | Notification(_, task) -> Async.RunSynchronously task; aux()
         | Request(id, task, cancel) ->
@@ -153,17 +143,15 @@ let receiveMessages server pipe =
     aux()
 
 let connect server =
-    let idToPendingRequest = ConcurrentDictionary()
-    use messageQueue = new BlockingCollection<_>(8)
-    let pipe = { pendingRequests = idToPendingRequest; messageQueue = messageQueue }
-    backgroundWorker server pipe |> Async.Start
-    receiveMessages server pipe
+    backgroundWorker server |> Async.Start
+    receiveMessages server
 
 [<EntryPoint>]
 let main _ =
     let input = MessageReader.borrowStream <| Console.OpenStandardInput()
     use output = MessageWriter.borrowStream <| Console.OpenStandardOutput()
-    let server = Server.create id (input, output)
+    use messageQueue = new BlockingCollection<_>(8)
+    let server = Server.create id (input, output, messageQueue)
     try
         ifInfo { trace "%s" server.resources.LogMessages.ServerStarting }
         connect server

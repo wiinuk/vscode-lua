@@ -85,6 +85,16 @@ module BackgroundChecker =
         delay = initialDelay
     }
 
+type MainThreadMessage =
+    | Notification of Methods * task: unit Async
+    | Request of id: int * task: byte ReadOnlyMemory Async * cancel: CancellationTokenSource
+    | Quit
+
+type Pipe = {
+    messageQueue: MainThreadMessage BlockingCollection
+    pendingRequests: ConcurrentDictionary<int, CancellationTokenSource>
+}
+
 type Server = {
     mutable resources: ServerResources.Resources
     mutable root: Uri
@@ -94,6 +104,7 @@ type Server = {
     output: MessageWriter.MessageWriter
 
     backgroundChecker: BackgroundChecker
+    pipe: Pipe
 }
 
 Utf16ValueStringBuilder.RegisterTryFormat(fun (value: _ ReadOnlyMemory) output written _ ->
@@ -494,7 +505,7 @@ module ServerCreateOptions =
             "standard.d.lua"
         ]
     }
-let create withOptions (input, output) =
+let create withOptions (input, output, messageQueue) =
     let options = withOptions ServerCreateOptions.defaultOptions
     let packagePath = TopEnv.packagePath options.luaPath (defaultArg options.platform Environment.OSVersion.Platform) options.luaExeDirectory
     let rootUri = Uri "file:///"
@@ -505,6 +516,10 @@ let create withOptions (input, output) =
             Path.Combine(Environment.CurrentDirectory, path) |> Path.GetFullPath |> Uri |> DocumentPath.ofUri rootUri
         ]
         |> Checker.addInitialGlobalModules project
+
+    let pipe =
+        let idToPendingRequest = ConcurrentDictionary()
+        { pendingRequests = idToPendingRequest; messageQueue = messageQueue }
     {
         resources = ServerResources.loadFile options.resourcePaths
         root = rootUri
@@ -514,6 +529,7 @@ let create withOptions (input, output) =
         output = output
 
         backgroundChecker = BackgroundChecker.create options.backgroundCheckDelay
+        pipe = pipe
     }
 
 

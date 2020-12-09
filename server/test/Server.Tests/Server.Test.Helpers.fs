@@ -319,11 +319,12 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     let globalModulePaths = Server.ServerCreateOptions.defaultOptions.globalModulePaths
     copyTextFilesFromRealFileSystem fileSystem globalModulePaths
 
+    use messageQueue = new BlockingCollection<_>(8)
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
         use writer = MessageWriter.borrowStream serverToClient
         let server =
-            (reader, writer)
+            (reader, writer, messageQueue)
             |> Server.create (fun c ->
                 { c with
                     fileSystem = fileSystem
