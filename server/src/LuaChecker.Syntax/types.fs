@@ -87,7 +87,7 @@ module DocumentPath =
     let toUri(DocumentPath x) = Uri x
     let ofUri (baseUri: Uri) (x: Uri) =
         let x = if x.IsAbsoluteUri then x else Uri(baseUri, x)
-        DocumentPath <| Uri("file:///" + x.LocalPath).LocalPath
+        DocumentPath <| Uri("file://" + x.LocalPath).LocalPath
 
     let equalityComparer caseSensitive =
         if caseSensitive then
