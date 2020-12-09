@@ -472,7 +472,7 @@ module Helpers =
     let addInitialGlobalModulesFromRealFileSystem p paths =
         let paths = [
             for path in paths do
-                let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
+                let path = Path.Combine(System.Environment.CurrentDirectory, path) |> System.Uri
                 DocumentPath.ofUri (System.Uri "file:///") path
         ]
         for path in paths do
