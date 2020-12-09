@@ -195,3 +195,28 @@ let isAncestor old young project =
     match Project.tryFind young project with
     | ValueSome { stage = AnalysisComplete(Some check, _) } -> Set.contains old check.typedTree.state.ancestorModulePaths
     | _ -> false
+
+let addInitialGlobalModules project globalModulePaths =
+    let project, globalEnv =
+        globalModulePaths
+        |> List.fold (fun (project, globalEnv) globalModulePath ->
+            let lastWriteTime =
+                try project.projectRare.fileSystem.lastWriteTime globalModulePath
+                with _ -> System.DateTime.MinValue
+
+            let chunk, _, project, _ = parseAndCheckCached project globalModulePath (InFs(globalModulePath, lastWriteTime))
+            match chunk with
+            | Some chunk -> project, Env.merge NonEmptyList.append NonEmptyList.append globalEnv chunk.state.additionalGlobalEnv
+            | _ -> project, globalEnv
+
+        ) (project, project.projectRare.initialGlobal.initialGlobalEnv)
+
+    { project with
+        projectRare =
+        { project.projectRare with
+            initialGlobal =
+            { project.projectRare.initialGlobal with
+                initialGlobalEnv = globalEnv
+            }
+        }
+    }
