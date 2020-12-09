@@ -27,12 +27,16 @@ type ServerMessages =
 
     | RequestCanceled of requestId: int
     | ResponseSending of contents: string
-    | NotificationSending of message: JsonRpcMessage<JsonElement, Methods>
+    | NotificationSending of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
     | MessageParseError of error: MessageReader.ErrorKind
     | ReceivedExitNotification
-    | MessageReceived of message: JsonRpcMessage<JsonElement, Methods>
+    | MessageReceived of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
     | UnknownRequest of requestId: int * method: Methods * ``params``: JsonElement
     | UnknownNotification of method: Methods * ``params``: JsonElement
+    | InvalidMessageFormat of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
+    | ErrorResponseReceived of id: int * error: JsonRpcResponseError option
+    | RequestSending of json: string
+    | ResponseHandlerNotFound of id: int * result: JsonElement
 
 let makeFormatPattern parameterCount =
     let chars0 = @"([^{}]|\{\{|\}\})*"

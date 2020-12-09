@@ -354,6 +354,26 @@
           <xsd:documentation>method: Methods -&gt; params: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
+      <xsd:element name="InvalidMessageFormat" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>message: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ErrorResponseReceived" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>id: int -&gt; error: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequestSending" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>json: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ResponseHandlerNotFound" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>id: int -&gt; result: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
     </xsd:all>
   </xsd:complexType>
   <xsd:simpleType name="pattern-1">
