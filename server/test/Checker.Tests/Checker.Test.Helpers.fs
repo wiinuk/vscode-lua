@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Checker.Test
+namespace LuaChecker.Checker.Test
 open LuaChecker
 open LuaChecker.Checker
 open LuaChecker.Primitives
@@ -469,6 +469,17 @@ module Helpers =
         luaExeDir: string option
         withTypeEnv: 'TypeEnv -> 'TypeEnv
     }
+    let addInitialGlobalModulesFromRealFileSystem p paths =
+        let paths = [
+            for path in paths do
+                let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
+                DocumentPath.ofUri (System.Uri "file:///") path
+        ]
+        for path in paths do
+            p.projectRare.fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toLocalPath path))
+
+        addInitialGlobalModules p paths
+
     let projectActions withConfig actions =
         let fs = FileSystem.memory()
         let config = withConfig {
@@ -482,6 +493,8 @@ module Helpers =
         let env = standardEnv packagePath
         let env = { env with initialGlobalEnv = { env.initialGlobalEnv with types = config.withTypeEnv env.initialGlobalEnv.types } }
         let p = Project.empty fs env config.caseSensitiveModuleResolve
+        let p = addInitialGlobalModulesFromRealFileSystem p ["./standard.d.lua"]
+
         let checks, _ =
             actions
             |> List.mapFold (fun p -> function

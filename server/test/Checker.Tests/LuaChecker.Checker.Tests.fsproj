@@ -8,6 +8,9 @@
     <ProjectReference Include="..\..\src\Protocol\LuaChecker.Protocol.fsproj" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\src\server\standard.d.lua" Link="standard.d.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <Compile Include="Checker.Test.Utils.fs" />
     <Compile Include="Scanner.Tests.fs" />
     <Compile Include="Parser.Tests.fs" />
