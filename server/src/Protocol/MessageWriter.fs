@@ -70,4 +70,4 @@ let writeJson { outputBuffer = outputBuffer; writer = writer; writerBuffer = wri
     output.Write writerBuffer.WrittenSpan
 
 let writeJsonRpcResponse writer (response: _ JsonRpcResponse) = writeJson writer response
-let writeJsonRpcNotification writer (notification: JsonRpcMessage<_,_>) = writeJson writer notification
+let writeJsonRpcNotification writer (notification: JsonRpcMessage<_,_,_>) = writeJson writer notification

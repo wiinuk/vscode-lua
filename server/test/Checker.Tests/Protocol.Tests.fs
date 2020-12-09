@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Protocol.Tests
+module LuaChecker.Server.Protocol.Tests
 open FsCheck
 open LuaChecker
 open LuaChecker.Checker.Test.Utils
@@ -55,7 +55,7 @@ let readSimpleMessage() =
     input.Write(ReadOnlySpan m)
     input.Position <- 0L
 
-    MessageReader.read utf8JsonSerializable reader =? Ok { jsonrpc = JsonRpcVersion.``2.0``; id = Undefined; method = Methods.greeting; ``params`` = Params.Hello }
+    MessageReader.read utf8JsonSerializable reader =? Ok (JsonRpcMessage.notification Methods.greeting (Defined Params.Hello))
     MessageReader.read utf8JsonSerializable reader =? Error ErrorKind.EndOfSource
     MessageReader.read utf8JsonSerializable reader =? Error ErrorKind.EndOfSource
 
@@ -72,7 +72,21 @@ let messageRoundTripProperty message =
     MessageReader.read utf8JsonSerializable reader =? Error ErrorKind.EndOfSource
 
 [<Fact>]
-let messageRoundTrip() = check <| fun (x: JsonRpcMessage<Params, Methods>) -> messageRoundTripProperty x
+let messageRoundTrip() = check <| fun x ->
+    let x: JsonRpcMessage<Params, Methods, Params> =
+        match x with
+        | Choice1Of4(m, ps) -> JsonRpcMessage.notification m ps
+        | Choice2Of4(id, m, ps) -> JsonRpcMessage.request id m ps
+        | Choice3Of4(id, r) -> JsonRpcMessage.successResponse id r
+        | Choice4Of4(id, e) ->
+            e
+            |> Option.map (fun (code, NonNull message) ->
+                { code = code; message = message; data = Undefined }
+            )
+            |> OptionalField.ofOption
+            |> JsonRpcMessage.errorResponse id
+
+    messageRoundTripProperty x
 
 [<Fact>]
 let serializeJsonRpcVersion() =
@@ -91,8 +105,8 @@ let writeSimpleMessage() =
     let message = {
         jsonrpc = JsonRpcVersion.``2.0``
         id = Defined 10
-        method = Methods.``textDocument/publishDiagnostics``
-        ``params`` = {
+        method = Defined Methods.``textDocument/publishDiagnostics``
+        ``params`` = Defined {
             uri = "A:/dir/file.ext"
             diagnostics = [|
                 {
@@ -109,6 +123,8 @@ let writeSimpleMessage() =
                 }
             |]
         }
+        result = Undefined
+        error = Undefined
     }
     let expected = "Content-Length: 266\r\n\r\n" + """{"jsonrpc":"2.0","id":10,"method":"textDocument/publishDiagnostics","params":{"uri":"A:/dir/file.ext","diagnostics":[{"range":{"start":{"line":0,"character":1},"end":{"line":2,"character":3}},"severity":3,"code":30,"source":"source text","message":"message text"}]}}"""
 
@@ -123,12 +139,11 @@ let writerToReaderMessageRoundTripProperty idAndParams =
 
     let expectedMessages =
         idAndParams
-        |> List.map (fun (PositiveInt id, ``params``) -> {
-            jsonrpc = JsonRpcVersion.``2.0``
-            id = Defined id
-            method = Methods.``textDocument/publishDiagnostics``
-            ``params`` = (``params``: PublishDiagnosticsParams)
-        })
+        |> List.map (fun (PositiveInt id, ``params``) ->
+            JsonRpcMessage.request id
+                Methods.``textDocument/publishDiagnostics``
+                (Defined(``params``: PublishDiagnosticsParams))
+        )
 
     for m in expectedMessages do MessageWriter.writeJson w m
 

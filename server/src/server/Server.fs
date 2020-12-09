@@ -112,15 +112,14 @@ let writeNotification server message =
     ifDebug { Log.Format(server.resources.LogMessages.NotificationSending, message) }
     MessageWriter.writeJsonRpcNotification server.output message
 
-let publishDiagnostics server filePath diagnostics = writeNotification server {
-    jsonrpc = JsonRpcVersion.``2.0``
-    id = Undefined
-    method = Methods.``textDocument/publishDiagnostics``
-    ``params`` = {
+let publishDiagnostics server filePath diagnostics =
+    {
         uri = DocumentPath.toUri(filePath).ToString()
         diagnostics = diagnostics
     }
-}
+    |> Defined
+    |> JsonRpcMessage.notification Methods.``textDocument/publishDiagnostics`` 
+    |> writeNotification server
 
 let marshalPosition (Position(line, char)) = {
     line = line

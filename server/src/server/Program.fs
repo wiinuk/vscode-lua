@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Program
+module LuaChecker.Server.Program
 open LuaChecker
 open LuaChecker.Primitives
 open LuaChecker.Server
@@ -78,7 +78,7 @@ type Pipe = {
 let (?) (json: JsonElement) (name: string) = json.GetProperty name
 
 let processMessage server pipe = function
-    | { JsonRpcMessage.method = M.``$/cancelRequest``; ``params`` = ps } ->
+    | { JsonRpcMessage.method = Defined M.``$/cancelRequest``; ``params`` = Defined ps } ->
         let id = ps?id.GetInt32()
 
         let mutable cancel = null
@@ -86,20 +86,34 @@ let processMessage server pipe = function
             cancel.Cancel()
             ifInfo { Log.Format(server.resources.LogMessages.RequestCanceled, id) }
 
-    | { id = Undefined; method = method; ``params`` = ps } ->
+    | { id = Undefined; method = Defined method; ``params`` = ps } ->
+        let ps = OptionalField.defaultValue (JsonElement()) ps
         let task = processNotification server ps method
         pipe.messageQueue.Add(Notification(method, task))
 
-    | { id = Defined id; method = method; ``params`` = json } ->
+    | { id = Defined id; method = Defined method; ``params`` = json } ->
+        let json = OptionalField.defaultValue (JsonElement()) json
         let task = processRequest server id json method
         let cancel = new CancellationTokenSource()
         pipe.messageQueue.Add <| Request(id, task, cancel)
         pipe.pendingRequests.[id] <- cancel
 
+    // TODO: response
+    | { id = Defined id; result = Defined result } ->
+        raise <| NotImplementedException()
+
+    // TODO: error response
+    | { id = Defined id; result = Undefined; error = error } ->
+        raise <| NotImplementedException()
+
+    // TODO: 無効な形式のメッセージを受け取ったことを記録する
+    | _ ->
+        raise <| NotImplementedException()
+
 let processMessages server pipe =
     let rec aux() =
         let r =
-            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods>> server.input
+            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonRpcResponseError>> server.input
             with :? JsonException -> Error MessageReader.ErrorKind.DeserializeFailure
 
         match r with
@@ -107,7 +121,7 @@ let processMessages server pipe =
         | Error MessageReader.ErrorKind.RequireContentLengthHeader -> ifWarn { trace "Message was ignored." }; aux()
         | Error MessageReader.ErrorKind.DeserializeFailure -> ifWarn { trace "JSON RPC format is invalid." }; aux()
         | Error e -> ifError { Log.Format(server.resources.LogMessages.MessageParseError, e) }
-        | Ok { method = M.exit } -> ifInfo { Log.Format server.resources.LogMessages.ReceivedExitNotification }
+        | Ok { method = Defined M.exit } -> ifInfo { Log.Format server.resources.LogMessages.ReceivedExitNotification }
         | Ok request ->
             ifDebug { Log.Format(server.resources.LogMessages.MessageReceived, request) }
             processMessage server pipe request

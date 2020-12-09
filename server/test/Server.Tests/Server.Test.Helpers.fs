@@ -220,28 +220,28 @@ let clientWrite client actions = async {
 
     let mutable id = 1
     let writeNotification method ps =
-        MessageWriter.writeJson output { jsonrpc = JsonRpcVersion.``2.0``; id = Undefined; method = method; ``params`` = ps }
+        MessageWriter.writeJson output <| JsonRpcMessage.notification method ps
 
     let writeRequest message method ps parser =
-        MessageWriter.writeJson output { jsonrpc = JsonRpcVersion.``2.0``; id = Defined id; method = method; ``params`` = ps }
+        MessageWriter.writeJson output <| JsonRpcMessage.request id method ps
         responseHandlers.AddOrUpdate(id, (message, parser), fun _ v -> v) |> ignore
         Interlocked.Increment &id |> ignore
 
     let writeMessage m =
         match m with
-        | Initialize x -> Program.parse<_> >> InitializeResponse |> writeRequest m Methods.initialize x
+        | Initialize x -> Program.parse<_> >> InitializeResponse |> writeRequest m Methods.initialize (Defined x)
         | Initialized -> writeNotification Methods.initialized Undefined
         | Shutdown -> (fun _ -> ShutdownResponse) |> writeRequest m Methods.shutdown Undefined
         | Exit -> writeNotification Methods.exit Undefined
 
-        | DidOpen x -> writeNotification Methods.``textDocument/didOpen`` x
-        | DidChange x -> writeNotification Methods.``textDocument/didChange`` x
+        | DidOpen x -> writeNotification Methods.``textDocument/didOpen`` <| Defined x
+        | DidChange x -> writeNotification Methods.``textDocument/didChange`` <| Defined x
 
-        | DidChangeWatchedFiles x -> writeNotification Methods.``workspace/didChangeWatchedFiles`` x
-        | DidSave x -> writeNotification Methods.``textDocument/didSave`` x
+        | DidChangeWatchedFiles x -> writeNotification Methods.``workspace/didChangeWatchedFiles`` <| Defined x
+        | DidSave x -> writeNotification Methods.``textDocument/didSave`` <| Defined x
 
         | Hover x ->
-            writeRequest m Methods.``textDocument/hover`` x (fun e ->
+            writeRequest m Methods.``textDocument/hover`` (Defined x) (fun e ->
                 Program.parse<_> e |> HoverResponse
             )
 
