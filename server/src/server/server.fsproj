@@ -17,6 +17,9 @@
     <Content Include="resources.ja-jp.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="standard.d.lua">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <None Include="ResourcesSchemaGen.fsx" />
     <Compile Include="Log.fs" />
     <Compile Include="SR.fs" />
