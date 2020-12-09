@@ -196,3 +196,10 @@ let documentPathRoundTrip() =
 let escapedDocumentPath() =
     let d = DocumentPath.ofUri null (Uri "file:///c%3A/dir/file.ext")
     d =? DocumentPath.ofUri null (DocumentPath.toUri d)
+
+[<Fact>]
+let pathToDocumentPathRoundTrip() =
+    let absolutePath = Environment.CurrentDirectory
+
+    DocumentPath.ofUri null (Uri absolutePath)
+    |> DocumentPath.toLocalPath =? absolutePath
