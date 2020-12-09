@@ -1,4 +1,4 @@
-﻿module LuaChecker.Checker.Basics.Tests
+module LuaChecker.Checker.Basics.Tests
 open LuaChecker
 open LuaChecker.TypeSystem
 open LuaChecker.Checker.Test.Utils
@@ -916,3 +916,13 @@ let returnTypeOfDifferentLengthBinaryOp() =
     =? type1WithConstraints (C.tagOrUpper (TagSpace.allNumber + TagSpace.nil)) (fun r ->
         multi [r]
     )
+
+[<Fact>]
+let standardLibraryIsAutomaticallyLoaded() =
+    projectSchemes id [
+        "return math.max(3, 4)" &> "main"
+
+        Check "main"
+    ] =? [
+        Ok types.number
+    ]

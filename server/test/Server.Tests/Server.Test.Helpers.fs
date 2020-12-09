@@ -297,6 +297,16 @@ let clientRead { responseHandlers = responseHandlers; logs = logs; serverToClien
         | Error x -> failwithf "message read error: %A %A" x reader
     aux()
 }
+
+let copyTextFilesFromRealFileSystem fileSystem paths =
+    let paths = [
+        for path in paths do
+            let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
+            DocumentPath.ofUri (System.Uri "file:///") path
+    ]
+    for path in paths do
+        fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toLocalPath path))
+
 let serverActionsWithBoilerPlate withConfig actions = async {
     let config = withConfig ConnectionConfig.defaultValue
     let writeTimeout = config.timeoutMap(config.writeTimeout).TotalMilliseconds |> int
@@ -306,6 +316,9 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     use serverToClient = new BlockingStream(ReadTimeout = readTimeout, WriteTimeout = writeTimeout)
 
     let fileSystem = FileSystem.memory()
+    let globalModulePaths = Server.ServerCreateOptions.defaultOptions.globalModulePaths
+    copyTextFilesFromRealFileSystem fileSystem globalModulePaths
+
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
         use writer = MessageWriter.borrowStream serverToClient
@@ -317,6 +330,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
                     platform = config.serverPlatform
                     resourcePaths = ["./resources.xml"]
                     backgroundCheckDelay = config.backgroundCheckDelay
+                    globalModulePaths = globalModulePaths
                 }
             )
         Program.connect server

@@ -1,4 +1,4 @@
-﻿namespace LuaChecker
+namespace LuaChecker
 open LuaChecker.Primitives
 
 
@@ -44,3 +44,25 @@ module Env =
         names = Map.empty
         types = Map.empty
     }
+    let merge mergeNames mergeTypes child parent =
+        let types =
+            parent.types
+            |> Map.fold (fun types parentName parentDefs ->
+                let mergedDefs =
+                    match Map.tryFind parentName types with
+                    | ValueSome ds -> mergeTypes ds parentDefs
+                    | _ -> parentDefs
+                Map.add parentName mergedDefs types
+            ) child.types
+
+        let names =
+            parent.names
+            |> Map.fold (fun names parentName parentDefs ->
+                let mergedDefs =
+                    match Map.tryFind parentName names with
+                    | ValueSome defs -> mergeNames defs parentDefs
+                    | _ -> parentDefs
+                Map.add parentName mergedDefs names
+            ) child.names
+
+        { types = types; names = names }

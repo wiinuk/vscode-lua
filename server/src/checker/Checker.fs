@@ -1,4 +1,4 @@
-﻿module LuaChecker.Checker
+module LuaChecker.Checker
 open LuaChecker.Primitives
 open LuaChecker.TypeSystem
 open System.Collections.Concurrent
@@ -94,30 +94,6 @@ let standardTypeSystem =
         valueKind = valueKind
         multiKind = multiKind
 }
-
-let standardGlobals types = Map [
-    // require: type(r...) -> fun(string) -> r...
-    "require", {
-        scheme =
-            types.fn(
-                TypeSystem.multi1 types (Type.makeWithEmptyLocation types.string) [],
-                Type.newVar "result" 1 types.multiKind |> Type.makeWithEmptyLocation
-            )
-            |> Type.makeWithEmptyLocation
-            |> Scheme.generalize 0
-
-        declarationKind = DeclarationKind.GlobalRequire
-        location = None
-    }
-    // package: { path: string }
-    "package", {
-        scheme = Type.makeWithEmptyLocation <| InterfaceType (Map [
-            FieldKey.String "path", types.string |> Type.makeWithEmptyLocation
-        ])
-        declarationKind = DeclarationKind.GlobalPackage
-        location = None
-    }
-]
 let private systemType code = { typeKind = TypeDefinitionKind.System code; locations = [] }
 let standardTypes = Map [
     "nil", systemType SystemTypeCode.Nil
@@ -131,7 +107,7 @@ let standardEnv packagePath = {
     typeSystem = standardTypeSystem
     derivedTypes = TypeCache.create standardTypeSystem
     initialGlobalEnv = {
-        names = standardGlobals standardTypeSystem |> Map.map (fun _ -> NonEmptyList.singleton)
+        names = Map.empty
         types = standardTypes |> Map.map (fun _ -> NonEmptyList.singleton)
     }
     packagePath = packagePath
@@ -219,3 +195,28 @@ let isAncestor old young project =
     match Project.tryFind young project with
     | ValueSome { stage = AnalysisComplete(Some check, _) } -> Set.contains old check.typedTree.state.ancestorModulePaths
     | _ -> false
+
+let addInitialGlobalModules project globalModulePaths =
+    let project, globalEnv =
+        globalModulePaths
+        |> List.fold (fun (project, globalEnv) globalModulePath ->
+            let lastWriteTime =
+                try project.projectRare.fileSystem.lastWriteTime globalModulePath
+                with _ -> System.DateTime.MinValue
+
+            let chunk, _, project, _ = parseAndCheckCached project globalModulePath (InFs(globalModulePath, lastWriteTime))
+            match chunk with
+            | Some chunk -> project, Env.merge NonEmptyList.append NonEmptyList.append globalEnv chunk.state.additionalGlobalEnv
+            | _ -> project, globalEnv
+
+        ) (project, project.projectRare.initialGlobal.initialGlobalEnv)
+
+    { project with
+        projectRare =
+        { project.projectRare with
+            initialGlobal =
+            { project.projectRare.initialGlobal with
+                initialGlobalEnv = globalEnv
+            }
+        }
+    }
