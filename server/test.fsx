@@ -9,5 +9,7 @@ let absolutePath  = Path.Combine(currentDir, localPath)
 printfn $"absolutePath: {absolutePath}"
 let absoluteUri = Uri absolutePath
 printfn $"absoluteUri: {absoluteUri}"
-let absoluteUriToPath = Uri("file:///" + absoluteUri.LocalPath).LocalPath
+let absoluteUriToLocalPath = absoluteUri.LocalPath
+printfn $"absoluteUriToLocalPath: {absoluteUriToLocalPath}"
+let absoluteUriToPath = Uri("file:///" + absoluteUriToLocalPath).LocalPath
 printfn $"absoluteUriToPath: {absoluteUriToPath}"
