@@ -342,25 +342,6 @@ module private Helpers =
         | _::_ -> trySetSchemeInstantiationInfo scheme tvs instantiated e
         | _ -> struct(e, instantiated)
 
-    let extendGlobalTypesFromParentModule additionalGlobalEnv parentTypes =
-        let { Env.types = types } = Local.get additionalGlobalEnv
-
-        let types =
-            parentTypes
-            |> Map.fold (fun types parentName parentDefs ->
-                let mergedDefs =
-                    match Map.tryFind parentName types with
-                    | ValueSome ds ->
-
-                        // TODO: 型定義が互換性を持つなら統合する
-                        NonEmptyList.append ds parentDefs
-
-                    | _ -> parentDefs
-                Map.add parentName mergedDefs types
-            ) types
-
-        additionalGlobalEnv.Value <- { additionalGlobalEnv.Value with types = types }
-
     let unifyDecl env d1 d2 =
         if d1.declarationKind <> d2.declarationKind then
             true
@@ -375,35 +356,28 @@ module private Helpers =
         | _, _, false -> NonEmptyList(d, ds @ ds')
         | _, _, true -> NonEmptyList.append dds dds'
 
-    let extendGlobalNamesFromParentModule env names parentNames =
-        parentNames
-        |> Map.fold (fun names parentName parentDefs ->
-            let mergedDefs =
-                match Map.tryFind parentName names with
-                | ValueSome defs -> mergeNames env defs parentDefs
-                | _ -> parentDefs
-            Map.add parentName mergedDefs names
-        ) names
-
     let extendGlobalEnvironmentFromParentModule env span modulePath { T.additionalGlobalEnv = parentEnv } =
 
-        // 親モジュールのグローバル型を環境に導入する
-        if not <| Map.isEmpty parentEnv.types then
-            extendGlobalTypesFromParentModule env.rare.noUpdate.additionalGlobalEnv parentEnv.types
+        // 親モジュールのグローバル環境を現在の環境に導入する
+        env.rare.noUpdate.additionalGlobalEnv
+        |> Local.modify (fun childEnv ->
+            Env.merge
+                (mergeNames env)
 
-        // 親モジュールのグローバル変数を環境に導入する
-        if not <| Map.isEmpty parentEnv.names then
-            let g = env.rare.noUpdate.additionalGlobalEnv
-            let names = extendGlobalNamesFromParentModule env g.Value.names parentEnv.names
-            g.Value <- { g.Value with names = names }
+                // TODO: 型定義が互換性を持つなら統合する
+                NonEmptyList.append
 
-            // チャンクトップレベル = エラーが無ければ必ず実行される
-            if not env.rare.isChunkTop then
+                childEnv
+                parentEnv
+        )
 
-                // グローバル環境が不確定になってしまうので警告
-                // 例えば `if x then require 'lib1' else end` のような場合
-                // `x` の値によってグローバル変数が定義されるかが決まる
-                reportWarn env span <| DiagnosticKind.UndeterminedGlobalVariableEnvironment(modulePath, parentEnv.names)
+        // チャンクトップレベル = エラーが無ければ必ず実行される
+        if not <| Map.isEmpty parentEnv.names && not env.rare.isChunkTop then
+
+            // グローバル環境が不確定になってしまうので警告
+            // 例えば `if x then require 'lib1' else end` のような場合
+            // `x` の値によってグローバル変数が定義されるかが決まる
+            reportWarn env span <| DiagnosticKind.UndeterminedGlobalVariableEnvironment(modulePath, parentEnv.names)
 
     let reportMostSeriousErrorOnModuleRequire env span modulePath e =
         match mostSeriousDiagnostic e with
@@ -437,6 +411,10 @@ module private Helpers =
         projectRef.Value <- project
         reportMostSeriousErrorOnModuleRequire env span modulePath e
         tree
+
+    let appendAncestorModulePaths env modulePaths =
+        let ancestors = env.rare.noUpdate.ancestorModulePaths
+        ancestors.Value <- ancestors.Value + modulePaths
 
 let literalType (Types types) x location = types.literal(x, location)
 
@@ -1000,8 +978,7 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
         reportWarn env nameSpan <| DiagnosticKind.ModuleNotFound(moduleName, moduleFiles)
 
         // モジュール候補のパスを自分の先祖として追加
-        let ancestors = env.rare.noUpdate.ancestorModulePaths
-        ancestors.Value <- ancestors.Value + Set.ofList moduleFiles
+        appendAncestorModulePaths env <| Set.ofList moduleFiles
 
         None, newMultiVarType env TypeNames.lostByError |@ callLocation
 
@@ -1013,9 +990,7 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
 
     // モジュールのパスとモジュールの先祖のパスを自分の先祖に追加
     match chunk with
-    | Some chunk ->
-        let ancestors = env.rare.noUpdate.ancestorModulePaths
-        ancestors.Value <- Set.add modulePath ancestors.Value + chunk.state.ancestorModulePaths
+    | Some chunk -> appendAncestorModulePaths env <| Set.add modulePath chunk.state.ancestorModulePaths
     | _ -> ()
 
     // 戻り値型を求める
