@@ -472,7 +472,7 @@ module Helpers =
     let addInitialGlobalModulesFromRealFileSystem p paths =
         let paths = [
             for path in paths do
-                let path = Path.Combine(System.Environment.CurrentDirectory, path) |> System.Uri
+                let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
                 DocumentPath.ofUri (System.Uri "file:///") path
         ]
         for path in paths do
@@ -493,7 +493,7 @@ module Helpers =
         let env = standardEnv packagePath
         let env = { env with initialGlobalEnv = { env.initialGlobalEnv with types = config.withTypeEnv env.initialGlobalEnv.types } }
         let p = Project.empty fs env config.caseSensitiveModuleResolve
-        let p = addInitialGlobalModulesFromRealFileSystem p ["standard.d.lua"]
+        let p = addInitialGlobalModulesFromRealFileSystem p ["./standard.d.lua"]
 
         let checks, _ =
             actions
