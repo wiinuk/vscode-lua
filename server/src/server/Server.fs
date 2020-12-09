@@ -480,6 +480,7 @@ type ServerCreateOptions = {
     platform: PlatformID option
     luaExeDirectory: string option
     caseSensitiveModuleResolve: bool
+    globalModulePaths: string list
 }
 module ServerCreateOptions =
     let defaultOptions = {
@@ -490,15 +491,26 @@ module ServerCreateOptions =
         platform = None
         luaExeDirectory = None
         caseSensitiveModuleResolve = true
+        globalModulePaths = [
+            "standard.d.lua"
+        ]
     }
 let create withOptions (input, output) =
     let options = withOptions ServerCreateOptions.defaultOptions
     let packagePath = TopEnv.packagePath options.luaPath (defaultArg options.platform Environment.OSVersion.Platform) options.luaExeDirectory
+    let rootUri = Uri "file:///"
+
+    let project = Project.empty options.fileSystem (Checker.standardEnv packagePath) options.caseSensitiveModuleResolve
+    let project =
+        [ for path in options.globalModulePaths ->
+            Path.Combine(Environment.CurrentDirectory, path) |> Path.GetFullPath |> Uri |> DocumentPath.ofUri rootUri
+        ]
+        |> Checker.addInitialGlobalModules project
     {
         resources = ServerResources.loadFile options.resourcePaths
-        root = Uri "file:///"
+        root = rootUri
         documents = Map.empty
-        project = Project.empty options.fileSystem (Checker.standardEnv packagePath) options.caseSensitiveModuleResolve
+        project = project
         input = input
         output = output
 
