@@ -118,7 +118,7 @@ let receiveMessages server =
         match server.pipe.messageQueue.Take() with
         | Quit -> ()
         | Notification(_, task) -> Async.RunSynchronously task; aux()
-        | Request(id, task, cancel) ->
+        | Response(id, task, cancel) ->
             try
                 let response = Async.RunSynchronously(task, 0, cancel.Token)
                 ifDebug { Log.Format(server.resources.LogMessages.ResponseSending, Encoding.UTF8.GetString response.Span) }

@@ -87,7 +87,7 @@ module BackgroundChecker =
 
 type MainThreadMessage =
     | Notification of Methods * task: unit Async
-    | Request of id: int * task: byte ReadOnlyMemory Async * cancel: CancellationTokenSource
+    | Response of id: int * task: byte ReadOnlyMemory Async * cancel: CancellationTokenSource
     | Quit
 
 type Pipe = {
@@ -120,7 +120,7 @@ let putResponseTask server id task =
         return serializeJsonRpcResponse id r
     }
     let cancel = new CancellationTokenSource()
-    server.pipe.messageQueue.Add <| Request(id, task, cancel)
+    server.pipe.messageQueue.Add <| Response(id, task, cancel)
     server.pipe.pendingRequests.[id] <- cancel
 
 Utf16ValueStringBuilder.RegisterTryFormat(fun (value: _ ReadOnlyMemory) output written _ ->
