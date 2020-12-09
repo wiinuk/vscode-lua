@@ -17,7 +17,7 @@
     <TagSpaceConstraintMismatch>型は `{0}` から `{1}` までである必要があります。指定された型 `{2}` の中に `{3}` がありません</TagSpaceConstraintMismatch>
     <UnrecognizableGlobalPackageUse>パッケージのパスを解析できません。`package.path = package.path .. ";&lt;パス&gt;"` のような形式なら解析できます</UnrecognizableGlobalPackageUse>
     <TypeNameNotFound>型 `{0}` が見つかりませんでした。型変数を指定したいときは、1文字の名前か'T'から始まる名前 ( `a`、`V`、`TResult`、`TElement` など ) を使ってください</TypeNameNotFound>
-    <TypeArityMismatch>長さ {0} の型引数が必要です。長さ 3 の型引数は `Type&lt;_, _, _&gt;` のように指定します。長さ 0 の型引数は `Type` のように指定します。今の型引数の長さは {1} です</TypeArityMismatch>
+    <TypeArityMismatch>{0}個の型引数が必要です。3個の型引数は `Type&lt;_, _, _&gt;` のように指定します。0個の型引数は `Type` のように指定します。今の型引数は {1} 個です</TypeArityMismatch>
     <DuplicateFieldKey>フィールド `{0}` が重複しています</DuplicateFieldKey>
     <RedeclarationOfSpecialGlobalVariable>前からあった `{0}` ( {1} ) は隠されました。`{0}` の扱いは `{2}` に変更されます</RedeclarationOfSpecialGlobalVariable>
     <RedeclarationOfBasicType>基本型 `{0}` は再宣言できません</RedeclarationOfBasicType>
