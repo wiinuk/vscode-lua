@@ -106,6 +106,22 @@ type Server = {
     backgroundChecker: BackgroundChecker
     pipe: Pipe
 }
+let serializeJsonRpcResponse id x =
+    Json.serialize {
+        jsonrpc = JsonRpcVersion.``2.0``
+        id = id
+        result = x
+    }
+    |> ReadOnlyMemory
+
+let putResponseTask server id task =
+    let task = async {
+        let! r = task
+        return serializeJsonRpcResponse id r
+    }
+    let cancel = new CancellationTokenSource()
+    server.pipe.messageQueue.Add <| Request(id, task, cancel)
+    server.pipe.pendingRequests.[id] <- cancel
 
 Utf16ValueStringBuilder.RegisterTryFormat(fun (value: _ ReadOnlyMemory) output written _ ->
     if value.Span.TryCopyTo output then
@@ -644,7 +660,7 @@ let prettyTokenInfo = {
 
 module Interfaces =
     let initialized _ = Async.completed
-    let initialize server { rootUri = rootUri } = async {
+    let initialize server id { rootUri = rootUri } = putResponseTask server id <| async {
         match rootUri with
         | ValueSome root -> server.root <- root
         | _ -> ()
@@ -660,7 +676,7 @@ module Interfaces =
             }
         }
     }
-    let shutdown _ () = Async.completed
+    let shutdown server id () = putResponseTask server id Async.completed
 
     let didChangeConfiguration _ (p: struct {| settings: JsonElement |}) =
         ifInfo { trace "config updated: %s" <| p.settings.GetRawText() }
@@ -717,7 +733,7 @@ module Interfaces =
                 for path in descendants do
                     addBackgroundCheckList server path
     }
-    let hover server { HoverParams.textDocument = textDocument; position = position } = async {
+    let hover server id { HoverParams.textDocument = textDocument; position = position } = putResponseTask server id <| async {
         let path = DocumentPath.ofUri server.root textDocument.uri
         match Documents.tryFind path server.documents with
         | ValueNone -> return ValueNone

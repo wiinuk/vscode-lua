@@ -12,16 +12,7 @@ open System
 open System.Collections.Concurrent
 open System.Text
 open System.Text.Json
-open System.Threading
 
-
-let serializeJsonRpcResponse id x =
-    Json.serialize {
-        jsonrpc = JsonRpcVersion.``2.0``
-        id = id
-        result = x
-    }
-    |> ReadOnlyMemory
 
 type private M = LuaChecker.Server.Protocol.Methods
 module Server = Server.Interfaces
@@ -54,16 +45,16 @@ let inline wrapJsonInOut serverMethod ps id = async {
 }
 
 let processRequest server id ps = function
-    | M.initialize -> wrapJsonInOut (Server.initialize server) ps id
+    | M.initialize -> Server.initialize server id <| parse ps
 
-    | M.``textDocument/hover`` -> wrapJsonInOut (Server.hover server) ps id
+    | M.``textDocument/hover`` -> Server.hover server id <| parse ps
     //| M.``workspace/didChangeWorkspaceFolders`` ->
 
-    | M.shutdown -> wrapJsonInOut (Server.shutdown server) ps id
+    | M.shutdown -> Server.shutdown server id <| parse ps
 
     | method ->
         ifError { Log.Format(server.resources.LogMessages.UnknownRequest, id, method, ps) }
-        async.Return ReadOnlyMemory.Empty
+        Server.putResponseTask server id <| async.Return ReadOnlyMemory.Empty
 
 let (?) (json: JsonElement) (name: string) = json.GetProperty name
 
@@ -83,10 +74,7 @@ let processMessage server = function
 
     | { id = Defined id; method = Defined method; ``params`` = json } ->
         let json = OptionalField.defaultValue (JsonElement()) json
-        let task = processRequest server id json method
-        let cancel = new CancellationTokenSource()
-        server.pipe.messageQueue.Add <| Request(id, task, cancel)
-        server.pipe.pendingRequests.[id] <- cancel
+        processRequest server id json method
 
     // TODO: response
     | { id = Defined id; result = Defined result } ->
