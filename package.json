@@ -22,7 +22,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "dotnet test ./server && node ./out/test/runTest.js"
+    "test": "dotnet fsi --quiet --exec ./server/test.fsx"
   },
   "repository": {
     "type": "git",
