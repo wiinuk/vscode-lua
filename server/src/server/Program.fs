@@ -56,6 +56,16 @@ let processRequest server id ps = function
         ifError { Log.Format(server.resources.LogMessages.UnknownRequest, id, method, ps) }
         Server.putResponseTask server id <| async.Return ReadOnlyMemory.Empty
 
+let processSuccessResponse server id result =
+    let mutable handler = Unchecked.defaultof<_>
+    if server.requestIdToHandler.TryRemove(id, &handler) then
+        handler result
+    else
+        ifWarn { Log.Format(server.resources.LogMessages.ResponseHandlerNotFound, id, result) }
+
+let processErrorResponse server id error =
+    ifError { Log.Format(server.resources.LogMessages.ErrorResponseReceived, id, OptionalField.toOption error) }
+
 let (?) (json: JsonElement) (name: string) = json.GetProperty name
 
 let processMessage server = function
@@ -76,22 +86,19 @@ let processMessage server = function
         let json = OptionalField.defaultValue (JsonElement()) json
         processRequest server id json method
 
-    // TODO: response
     | { id = Defined id; result = Defined result } ->
-        raise <| NotImplementedException()
+        processSuccessResponse server id result
 
-    // TODO: error response
     | { id = Defined id; result = Undefined; error = error } ->
-        raise <| NotImplementedException()
+        processErrorResponse server id error
 
-    // TODO: 無効な形式のメッセージを受け取ったことを記録する
-    | _ ->
-        raise <| NotImplementedException()
+    | message ->
+        ifInfo { Log.Format(server.resources.LogMessages.InvalidMessageFormat, message) }
 
 let processMessages server =
     let rec aux() =
         let r =
-            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonRpcResponseError>> server.input
+            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonElement>> server.input
             with :? JsonException -> Error MessageReader.ErrorKind.DeserializeFailure
 
         match r with

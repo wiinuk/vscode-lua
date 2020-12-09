@@ -105,6 +105,7 @@ type Server = {
 
     backgroundChecker: BackgroundChecker
     pipe: Pipe
+    requestIdToHandler: ConcurrentDictionary<int, JsonElement -> unit>
 }
 let serializeJsonRpcResponse id x =
     Json.serialize {
@@ -546,6 +547,7 @@ let create withOptions (input, output, messageQueue) =
 
         backgroundChecker = BackgroundChecker.create options.backgroundCheckDelay
         pipe = pipe
+        requestIdToHandler = ConcurrentDictionary()
     }
 
 

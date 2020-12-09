@@ -8,9 +8,9 @@
     <OtherFlags>--warnon:1182,3218,3180</OtherFlags>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="resources.xsd">
+    <Content Include="resources.xsd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    </Content>
     <Content Include="resources.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
