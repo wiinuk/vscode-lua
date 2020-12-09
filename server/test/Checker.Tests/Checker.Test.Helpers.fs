@@ -493,7 +493,7 @@ module Helpers =
         let env = standardEnv packagePath
         let env = { env with initialGlobalEnv = { env.initialGlobalEnv with types = config.withTypeEnv env.initialGlobalEnv.types } }
         let p = Project.empty fs env config.caseSensitiveModuleResolve
-        let p = addInitialGlobalModulesFromRealFileSystem p ["./standard.d.lua"]
+        let p = addInitialGlobalModulesFromRealFileSystem p ["standard.d.lua"]
 
         let checks, _ =
             actions
