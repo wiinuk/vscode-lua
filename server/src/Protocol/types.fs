@@ -64,11 +64,6 @@ type Methods =
 type JsonRpcVersion =
     | ``2.0`` = 2uy
 
-type JsonRpcResponse<'T> = {
-    jsonrpc: JsonRpcVersion
-    id: int
-    result: 'T
-}
 module JsonRpcErrorCodes =
 
     // JSON RPC
@@ -104,7 +99,7 @@ module JsonRpcMessage =
         jsonrpc = JsonRpcVersion.``2.0``
         id = Undefined
         method = Defined method
-        ``params`` = ``params``
+        ``params`` = OptionalField.ofVOption ``params``
         result = Undefined
         error = Undefined
     }
@@ -112,7 +107,7 @@ module JsonRpcMessage =
         jsonrpc = JsonRpcVersion.``2.0``
         id = Defined id
         method = Defined method
-        ``params`` = ``params``
+        ``params`` = OptionalField.ofVOption ``params``
         result = Undefined
         error = Undefined
     }
@@ -127,7 +122,7 @@ module JsonRpcMessage =
     let errorResponse id error = {
         jsonrpc = JsonRpcVersion.``2.0``
         id = Defined id
-        error = error
+        error = OptionalField.ofVOption error
         method = Undefined
         ``params`` = Undefined
         result = Undefined
@@ -277,3 +272,61 @@ type HoverParams = {
     textDocument: TextDocumentIdentifier
     position: Position
 }
+
+type WatchKind =
+    | Create = 1uy
+    | Change = 2uy
+    | Delete = 4uy
+
+[<Struct>]
+type FileSystemWatcher = {
+    globPattern: string
+    kind: WatchKind OptionalField
+}
+
+[<Struct>]
+type DidChangeWatchedFilesRegistrationOptions = {
+    watchers: FileSystemWatcher array
+}
+
+[<RequireQualifiedAccess>]
+type RegisterOptions =
+    | DidChangeWatchedFiles of DidChangeWatchedFilesRegistrationOptions
+
+[<Struct>]
+type Registration = {
+    id: string
+    methodAndRegisterOptions: RegisterOptions
+}
+[<Struct>]
+type RegistrationParams = {
+    registrations: Registration array
+}
+
+[<Sealed>]
+type JsonRegistrationParser(options) =
+    inherit JsonElementParser<Registration>()
+
+    let methodsParser = EnumToStringParser<Methods>()
+    let didChangeWatchedFilesParamsParser = ParserOptions.getTypedParserOrRaise<DidChangeWatchedFilesRegistrationOptions> options
+
+    override _.Parse(e, options) = {
+        id = e.GetProperty("id").GetString()
+        methodAndRegisterOptions =
+            let method = methodsParser.Parse(e.GetProperty "method", options)
+            let registerOptions =
+                match e.TryGetProperty "registerOptions" with
+                | true, r -> r
+                | _ -> JsonElement()
+
+            match method with
+            | Methods.``workspace/didChangeWatchedFiles`` -> RegisterOptions.DidChangeWatchedFiles <| didChangeWatchedFilesParamsParser.Parse(registerOptions, options)
+            | _ -> failwith $"TODO: {method}"
+    }
+
+[<Sealed>]
+type JsonRegistrationParserFactory() =
+    inherit JsonElementParserFactory()
+
+    override _.CanParse t = t = typeof<Registration>
+    override _.CreateParser(_, options) = upcast JsonRegistrationParser options

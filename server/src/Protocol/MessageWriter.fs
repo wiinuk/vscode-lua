@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Protocol.MessageWriter
+module LuaChecker.Server.Protocol.MessageWriter
 open LuaChecker.Server
 open System
 open System.IO
@@ -69,5 +69,5 @@ let writeJson { outputBuffer = outputBuffer; writer = writer; writerBuffer = wri
     output.Write outputBuffer.WrittenSpan
     output.Write writerBuffer.WrittenSpan
 
-let writeJsonRpcResponse writer (response: _ JsonRpcResponse) = writeJson writer response
+let writeJsonRpcResponse writer (response: JsonRpcMessage<_,_,_>) = writeJson writer response
 let writeJsonRpcNotification writer (notification: JsonRpcMessage<_,_,_>) = writeJson writer notification
