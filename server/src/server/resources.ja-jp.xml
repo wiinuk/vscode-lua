@@ -76,6 +76,10 @@
     <ReceivedExitNotification>`exit` 通知を受信しました</ReceivedExitNotification>
     <RequestCanceled>要求 {0} がキャンセルされました</RequestCanceled>
     <UnknownNotification>不明な通知 {0}：{1}</UnknownNotification>
+    <InvalidMessageFormat>メッセージの形式が無効です：{0}</InvalidMessageFormat>
+    <ErrorResponseReceived>エラーを受信：{0}</ErrorResponseReceived>
+    <RequestSending>リクエストを送信：{0}</RequestSending>
+    <ResponseHandlerNotFound>応答ハンドラーが見つかりません。ID：{0}、返答：{1}</ResponseHandlerNotFound>
   </log-messages>
 
 </resources>

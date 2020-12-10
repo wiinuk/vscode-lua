@@ -164,7 +164,7 @@ let publishDiagnostics server filePath diagnostics =
         diagnostics = diagnostics
     }
     |> ValueSome
-    |> JsonRpcMessage.notification Methods.``textDocument/publishDiagnostics`` 
+    |> JsonRpcMessage.notification Methods.``textDocument/publishDiagnostics``
     |> writeNotification server
 
 let marshalPosition (Position(line, char)) = {
