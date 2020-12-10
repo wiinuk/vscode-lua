@@ -111,6 +111,7 @@ type Actions =
     | ReceiveRequest of tryResponse: (ProtocolMessage -> Result<ProtocolMessage, JsonRpcResponseError voption> option) * timeout: float<s> option
     | WaitUntil of predicate: (ProtocolMessage list -> bool) * timeout: float<s> option
 
+/// `Send(DidOpen { … })`
 let (&>) source (path, version) = Send <| DidOpen {
     textDocument = {
         text = source
@@ -454,7 +455,8 @@ let didSave path = Send <| DidSave {
         uri = Uri path
     }
 }
-let writeFile source path = WriteFile(DocumentPath.ofUri null (Uri path), source)
+/// `WriteFile(…)`
+let (?>) source path = WriteFile(DocumentPath.ofUri null (Uri path), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}
