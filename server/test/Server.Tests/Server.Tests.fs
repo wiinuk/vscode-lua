@@ -44,10 +44,11 @@ let [<Fact>] initializeAndExit() = async {
     let! r = serverActionsWithBoilerPlate id [
         Send <| Initialize { rootUri = ValueSome(Uri "file:///") }
         Send Initialized
+        receiveRequest 5.<_> <| function RegisterCapability _ -> Some RegisterCapabilityResponse | _ -> None
         Send Shutdown
         Send Exit
     ]
-    r =? [
+    normalizeMessages r =? normalizeMessages [
         InitializeResponse {
             capabilities = {
                 hoverProvider = true
@@ -58,6 +59,21 @@ let [<Fact>] initializeAndExit() = async {
                 }
             }
         }
+        RegisterCapability {
+            registrations = [|
+                {
+                    id = "ba98ad6e-1d88-493e-ae0c-4c6f56d69ada"
+                    methodAndRegisterOptions = RegisterOptions.DidChangeWatchedFiles {
+                        watchers = [|
+                            {
+                                globPattern = "**/*.lua"
+                                kind = Undefined
+                            }
+                        |]
+                    }
+                }
+            |]
+        }
         ShutdownResponse
     ]
 }
@@ -65,7 +81,9 @@ let [<Fact>] didOpen2() = async {
     let! r = serverActions id [
         "return require 'lib1'" &> ("C:/main.lua", 1)
         "return 123" &> ("C:/lib1.lua", 1)
-        WhenMessages(List.length >> (<=) 4, Some <| TimeSpan.FromSeconds 5.)
+        waitUntilExists 5.<_> <| function
+            | PublishDiagnostics { diagnostics = [||]; uri = uri } -> uri.Contains "main.lua"
+            | _ -> false
     ]
     r =? [
         PublishDiagnostics {
@@ -82,7 +100,9 @@ let [<Fact>] didChangeError() = async {
     let! r = serverActions id [
         "return 1 + 1" &> ("C:/main.lua", 1)
         didChangeFull "return 1 .. 1" ("C:/main.lua", 2)
-        WhenMessages(List.length >> (<=) 3, Some <| TimeSpan.FromSeconds 5.)
+        waitUntilExists 5.<_> <| function
+            | PublishDiagnostics { diagnostics = xs } -> Array.isEmpty xs |> not
+            | _ -> false
     ]
     r =? [
         PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }

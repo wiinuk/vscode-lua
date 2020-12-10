@@ -55,7 +55,7 @@ let readSimpleMessage() =
     input.Write(ReadOnlySpan m)
     input.Position <- 0L
 
-    MessageReader.read utf8JsonSerializable reader =? Ok (JsonRpcMessage.notification Methods.greeting (Defined Params.Hello))
+    MessageReader.read utf8JsonSerializable reader =? Ok (JsonRpcMessage.notification Methods.greeting (ValueSome Params.Hello))
     MessageReader.read utf8JsonSerializable reader =? Error ErrorKind.EndOfSource
     MessageReader.read utf8JsonSerializable reader =? Error ErrorKind.EndOfSource
 
@@ -83,7 +83,7 @@ let messageRoundTrip() = check <| fun x ->
             |> Option.map (fun (code, NonNull message) ->
                 { code = code; message = message; data = Undefined }
             )
-            |> OptionalField.ofOption
+            |> Option.unbox
             |> JsonRpcMessage.errorResponse id
 
     messageRoundTripProperty x
@@ -142,7 +142,7 @@ let writerToReaderMessageRoundTripProperty idAndParams =
         |> List.map (fun (PositiveInt id, ``params``) ->
             JsonRpcMessage.request id
                 Methods.``textDocument/publishDiagnostics``
-                (Defined(``params``: PublishDiagnosticsParams))
+                (ValueSome(``params``: PublishDiagnosticsParams))
         )
 
     for m in expectedMessages do MessageWriter.writeJson w m
