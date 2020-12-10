@@ -37,6 +37,7 @@ type ServerMessages =
     | ErrorResponseReceived of error: JsonRpcResponseError option
     | RequestSending of json: string
     | ResponseHandlerNotFound of id: int * result: JsonElement
+    | ResourceValidationError of message: string
 
 let makeFormatPattern parameterCount =
     let chars0 = @"([^{}]|\{\{|\}\})*"
@@ -263,16 +264,18 @@ module Xsd =
     let writeXml path (doc: XDocument) =
         use s = new MemoryStream()
         let nl = "\n"
+        let encoding = System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier = false)
         do
             let settings =
                 XmlWriterSettings(
                     NewLineChars = nl,
                     Indent = true,
-                    NewLineHandling = NewLineHandling.Entitize
+                    NewLineHandling = NewLineHandling.Entitize,
+                    Encoding = encoding
                 )
             use w = XmlWriter.Create(s, settings)
             doc.WriteTo w
-        let nl = System.Text.Encoding.UTF8.GetBytes nl
+        let nl = encoding.GetBytes nl
         s.Write(nl, 0, nl.Length)
         s.Flush()
         File.WriteAllBytes(path, s.ToArray())

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources p1:noNamespaceSchemaLocation="resources.xsd" xmlns:p1="http://www.w3.org/2001/XMLSchema-instance">
   <diagnostic-messages>
     <RequireAnyToken>RequireAnyToken</RequireAnyToken>
@@ -75,5 +75,6 @@
     <ErrorResponseReceived>ErrorResponseReceived({0})</ErrorResponseReceived>
     <RequestSending>RequestSending({0})</RequestSending>
     <ResponseHandlerNotFound>ResponseHandlerNotFound({0}, {1})</ResponseHandlerNotFound>
+    <ResourceValidationError>ResourceValidationError({0})</ResourceValidationError>
   </log-messages>
 </resources>

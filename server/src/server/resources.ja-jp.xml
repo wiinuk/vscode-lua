@@ -80,6 +80,7 @@
     <ErrorResponseReceived>エラーを受信：{0}</ErrorResponseReceived>
     <RequestSending>リクエストを送信：{0}</RequestSending>
     <ResponseHandlerNotFound>応答ハンドラーが見つかりません。ID：{0}、返答：{1}</ResponseHandlerNotFound>
+    <ResourceValidationError>リソースの検証に失敗しました：{0}</ResourceValidationError>
   </log-messages>
 
 </resources>
