@@ -172,3 +172,24 @@ let [<Fact>] externalModuleErrorMessage() = async {
         }
     ]
 }
+
+let [<Fact>] didChangeWatchedFiles() = async {
+    let! r = serverActions id [
+        "return 1 + 2" ?> "C:/lib.lua"
+        Send <| DidChangeWatchedFiles {
+            changes = [|
+                {
+                    uri = Uri "file:///C:/lib.lua"
+                    ``type`` = FileChangeType.Created
+                }
+            |]
+        }
+        "local x = require 'lib'" &> ("C:/main.lua", 1)
+    ]
+    r =? [
+        PublishDiagnostics {
+            uri = "file:///C:/main.lua"
+            diagnostics = [||]
+        }
+    ]
+}
