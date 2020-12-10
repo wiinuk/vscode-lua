@@ -72,7 +72,7 @@
     <UnknownRequest>UnknownRequest({0}, {1}, {2})</UnknownRequest>
     <UnknownNotification>UnknownNotification({0}, {1})</UnknownNotification>
     <InvalidMessageFormat>InvalidMessageFormat({0})</InvalidMessageFormat>
-    <ErrorResponseReceived>ErrorResponseReceived({0}, {1})</ErrorResponseReceived>
+    <ErrorResponseReceived>ErrorResponseReceived({0})</ErrorResponseReceived>
     <RequestSending>RequestSending({0})</RequestSending>
     <ResponseHandlerNotFound>ResponseHandlerNotFound({0}, {1})</ResponseHandlerNotFound>
   </log-messages>

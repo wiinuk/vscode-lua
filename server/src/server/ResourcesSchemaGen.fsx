@@ -1,4 +1,4 @@
-﻿#r "nuget: System.Text.Json"
+#r "nuget: System.Text.Json"
 #r "nuget: System.Xml.XDocument"
 #r "System.Xml.Linq"
 #r "../checker/bin/Debug/netstandard2.1/LuaChecker.Checker.dll"
@@ -34,7 +34,7 @@ type ServerMessages =
     | UnknownRequest of requestId: int * method: Methods * ``params``: JsonElement
     | UnknownNotification of method: Methods * ``params``: JsonElement
     | InvalidMessageFormat of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
-    | ErrorResponseReceived of id: int * error: JsonRpcResponseError option
+    | ErrorResponseReceived of error: JsonRpcResponseError option
     | RequestSending of json: string
     | ResponseHandlerNotFound of id: int * result: JsonElement
 

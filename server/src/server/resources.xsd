@@ -359,9 +359,9 @@
           <xsd:documentation>message: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
-      <xsd:element name="ErrorResponseReceived" type="pattern-3">
+      <xsd:element name="ErrorResponseReceived" type="pattern-2">
         <xsd:annotation>
-          <xsd:documentation>id: int -&gt; error: string -&gt; string</xsd:documentation>
+          <xsd:documentation>error: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
       <xsd:element name="RequestSending" type="pattern-2">
