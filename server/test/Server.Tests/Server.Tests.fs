@@ -193,3 +193,35 @@ let [<Fact>] didChangeWatchedFiles() = async {
         }
     ]
 }
+
+let [<Fact>] externalFileNoReply() = async {
+    let! r = serverActions id [
+        "return 1 + 2" ?> "C:/lib.lua"
+        "local x = require 'lib'" &> ("C:/main.lua", 1)
+    ]
+    r =? [
+        PublishDiagnostics {
+            uri = "file:///C:/main.lua"
+            diagnostics = [||]
+        }
+    ]
+}
+
+let [<Fact>] externalFileEdit() = async {
+    let! r = serverActions id [
+        "return 1" ?> "C:/lib.lua"
+        "local x = require 'lib' .. 'a'" &> ("C:/main.lua", 1)
+
+        "return 'x'" ?> "C:/lib.lua"
+        Send <| DidChangeWatchedFiles {
+            changes = [|
+                {
+                    uri = Uri "file:///C:/lib.lua"
+                    ``type`` = FileChangeType.Changed
+                }
+            |]
+        }
+    ]
+    r =? [
+    ]
+}
