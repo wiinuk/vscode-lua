@@ -17,16 +17,6 @@ open System.Text.Json
 type private M = LuaChecker.Server.Protocol.Methods
 module Server = Server.Interfaces
 
-let options = ParserOptions.createFromParsers [
-    FSharpRecordParserFactory()
-    FSharpOptionParserFactory()
-    FSharpValueOptionParserFactory()
-    FSharpRecordOptionalFieldParserFactory()
-    FSharpUnitParser()
-]
-
-let parse<'T> e = JsonElementParser.parse<'T> options e
-
 let processNotification server ps = function
     | M.initialized -> Server.initialized server
     | M.``textDocument/didOpen`` -> Server.didOpenTextDocument server <| parse<_> ps
@@ -56,15 +46,12 @@ let processRequest server id ps = function
         ifError { Log.Format(server.resources.LogMessages.UnknownRequest, id, method, ps) }
         Server.putResponseTask server id <| async.Return ReadOnlyMemory.Empty
 
-let processSuccessResponse server id result =
+let processResponse server id result =
     let mutable handler = Unchecked.defaultof<_>
     if server.requestIdToHandler.TryRemove(id, &handler) then
         handler result
     else
         ifWarn { Log.Format(server.resources.LogMessages.ResponseHandlerNotFound, id, result) }
-
-let processErrorResponse server id error =
-    ifError { Log.Format(server.resources.LogMessages.ErrorResponseReceived, id, OptionalField.toOption error) }
 
 let (?) (json: JsonElement) (name: string) = json.GetProperty name
 
@@ -87,10 +74,10 @@ let processMessage server = function
         processRequest server id json method
 
     | { id = Defined id; result = Defined result } ->
-        processSuccessResponse server id result
+        processResponse server id (Ok result)
 
     | { id = Defined id; result = Undefined; error = error } ->
-        processErrorResponse server id error
+        processResponse server id <| Error (OptionalField.toOption error)
 
     | message ->
         ifInfo { Log.Format(server.resources.LogMessages.InvalidMessageFormat, message) }
@@ -124,7 +111,14 @@ let receiveMessages server =
     let rec aux() =
         match server.pipe.messageQueue.Take() with
         | Quit -> ()
-        | Notification(_, task) -> Async.RunSynchronously task; aux()
+        | Notification(_, task) ->
+            if server.isShutdownMessageReceived then
+                ifInfo { trace "Cannot send a request after the shutdown request" }
+            else
+                Async.RunSynchronously task
+
+            aux()
+
         | Response(id, task, cancel) ->
             try
                 let response = Async.RunSynchronously(task, 0, cancel.Token)
@@ -133,6 +127,19 @@ let receiveMessages server =
 
             with :? OperationCanceledException ->
                 ifInfo { Log.Format(server.resources.LogMessages.RequestCanceled, id) }
+
+            aux()
+
+        | Request task ->
+            let id, request, handler = Async.RunSynchronously task
+            if server.isShutdownMessageReceived then
+                ifInfo { trace "Cannot send a request after the shutdown request" }
+            else
+                if server.requestIdToHandler.TryAdd(id, handler) then
+                    ifDebug { Log.Format(server.resources.LogMessages.RequestSending, Encoding.UTF8.GetString request.Span) }
+                    MessageWriter.writeUtf8 server.output request.Span
+                else
+                    ifError { trace $"Duplicate ID {id} handlers" }
 
             aux()
     aux()

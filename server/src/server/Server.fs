@@ -7,6 +7,7 @@ open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Syntax
 open LuaChecker.Text.Json
+open LuaChecker.Text.Json.Parsing
 open LuaChecker.TypedSyntaxes
 open LuaChecker.TypeSystem
 open System
@@ -88,6 +89,7 @@ module BackgroundChecker =
 type MainThreadMessage =
     | Notification of Methods * task: unit Async
     | Response of id: int * task: byte ReadOnlyMemory Async * cancel: CancellationTokenSource
+    | Request of task: Async<int * byte ReadOnlyMemory * (Result<JsonElement, JsonRpcResponseError option> -> unit)>
     | Quit
 
 type Pipe = {
@@ -105,14 +107,12 @@ type Server = {
 
     backgroundChecker: BackgroundChecker
     pipe: Pipe
-    requestIdToHandler: ConcurrentDictionary<int, JsonElement -> unit>
+    requestIdToHandler: ConcurrentDictionary<int, Result<JsonElement, JsonRpcResponseError option> -> unit>
+    mutable nextRequestId: int
+    mutable isShutdownMessageReceived: bool
 }
 let serializeJsonRpcResponse id x =
-    Json.serialize {
-        jsonrpc = JsonRpcVersion.``2.0``
-        id = id
-        result = x
-    }
+    Json.serialize (JsonRpcMessage.successResponse id x)
     |> ReadOnlyMemory
 
 let putResponseTask server id task =
@@ -123,6 +123,24 @@ let putResponseTask server id task =
     let cancel = new CancellationTokenSource()
     server.pipe.messageQueue.Add <| Response(id, task, cancel)
     server.pipe.pendingRequests.[id] <- cancel
+
+let private options = ParserOptions.createFromParsers [
+    JsonRegistrationParserFactory()
+    FSharpRecordParserFactory()
+    FSharpOptionParserFactory()
+    FSharpValueOptionParserFactory()
+    FSharpRecordOptionalFieldParserFactory()
+    FSharpUnitParser()
+]
+let parse<'T> e = JsonElementParser.parse<'T> options e
+
+let putRequestTask server task =
+    let task = async {
+        let! methods, ps, responseHandler = task
+        let id = Interlocked.Increment &server.nextRequestId
+        return id, Json.serialize (JsonRpcMessage.request id methods ps) |> ReadOnlyMemory, Result.map parse >> responseHandler
+    }
+    server.pipe.messageQueue.Add <| Request task
 
 Utf16ValueStringBuilder.RegisterTryFormat(fun (value: _ ReadOnlyMemory) output written _ ->
     if value.Span.TryCopyTo output then
@@ -145,7 +163,7 @@ let publishDiagnostics server filePath diagnostics =
         uri = DocumentPath.toUri(filePath).ToString()
         diagnostics = diagnostics
     }
-    |> Defined
+    |> ValueSome
     |> JsonRpcMessage.notification Methods.``textDocument/publishDiagnostics`` 
     |> writeNotification server
 
@@ -548,6 +566,8 @@ let create withOptions (input, output, messageQueue) =
         backgroundChecker = BackgroundChecker.create options.backgroundCheckDelay
         pipe = pipe
         requestIdToHandler = ConcurrentDictionary()
+        nextRequestId = 1
+        isShutdownMessageReceived = false
     }
 
 
@@ -661,7 +681,27 @@ let prettyTokenInfo = {
 }
 
 module Interfaces =
-    let initialized _ = Async.completed
+    let initialized server =
+        putRequestTask server <| async {
+            let options = {|
+                watchers = [|
+                    {| globPattern = "**/*.lua" |}
+                |]
+            |}
+            let ps = {|
+                registrations = [|
+                    {|
+                        id = Guid.NewGuid()
+                        method = Methods.``workspace/didChangeWatchedFiles``
+                        registerOptions = options
+                    |}
+                |]
+            |}
+            let responseHandler = function Error e -> ifWarn { Log.Format(server.resources.LogMessages.ErrorResponseReceived, e) } | Ok() -> ()
+            return  Methods.``client/registerCapability``, ValueSome ps, responseHandler
+        }
+        Async.completed
+
     let initialize server id { rootUri = rootUri } = putResponseTask server id <| async {
         match rootUri with
         | ValueSome root -> server.root <- root
@@ -678,7 +718,9 @@ module Interfaces =
             }
         }
     }
-    let shutdown server id () = putResponseTask server id Async.completed
+    let shutdown server id () = putResponseTask server id <| async {
+        server.isShutdownMessageReceived <- true
+    }
 
     let didChangeConfiguration _ (p: struct {| settings: JsonElement |}) =
         ifInfo { trace "config updated: %s" <| p.settings.GetRawText() }
