@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Log
+module LuaChecker.Server.Log
 open Cysharp.Text
 open System
 open System.Diagnostics
@@ -20,6 +20,7 @@ type Event = {
     stackTrace: StackTrace
     level: DetailLevel
     message: char ReadOnlyMemory
+    time: DateTime
 }
 [<AbstractClass>]
 type Logger() =
@@ -107,7 +108,7 @@ type StreamLogger(stream: Stream) =
 
     override _.Log event =
         let b = ZString.CreateUtf8StringBuilder()
-        b.AppendFormat("[{0:O}] {1} : {2} : {3}", DateTime.Now, event.source, showLevel event.level, event.message)
+        b.AppendFormat("[{0:O}] {1} : {2} : {3}", event.time, event.source, showLevel event.level, event.message)
         b.AppendLine()
         if DetailLevel.Output < event.level && event.level <= DetailLevel.Error then
             b.AppendLine event.stackTrace
@@ -135,6 +136,7 @@ type BackgroundLogger(sourceName, initialMaxDetail) =
             stackTrace = trace
             level = level
             message = message
+            time = DateTime.Now
         }
         bg.Post <| Log event
 
@@ -162,6 +164,11 @@ module Logger =
 
     let consoleLogger() = Console.OpenStandardOutput() |> streamLogger
     let standardErrorLogger() = Console.OpenStandardError() |> streamLogger
+    let debugLogger() = { new Logger() with
+        member _.Log event =
+            Debug.WriteLine("[{0:O}] {1} : {2} : {3}", event.time, event.source, showLevel event.level, event.message)
+            Debug.Flush()
+    }
 
     let create sourceName maxDetail = new BackgroundLogger(sourceName, maxDetail)
     let isEnabled (logger: Logger) level = logger.IsEnabled level
@@ -172,6 +179,7 @@ module Logger =
 let logger = Logger.create "<server>" DetailLevel.Trace
 Logger.add logger <| Logger.fileLogger "server.log"
 Logger.add logger <| Logger.standardErrorLogger()
+Logger.add logger <| Logger.debugLogger()
 
 let inline trace format =
     Printf.ksprintf (fun x c -> Logger.log logger c x) format
