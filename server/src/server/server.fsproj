@@ -23,6 +23,13 @@
     <None Include="ResourcesSchemaGen.fsx" />
     <Compile Include="Log.fs" />
     <Compile Include="SR.fs" />
+    <Compile Include="JsonElement.fs" />
+    <Compile Include="Documents.fs" />
+    <Compile Include="Marshalling.fs" />
+    <Compile Include="Agent.types.fs" />
+    <Compile Include="WriteAgent.fs" />
+    <Compile Include="ReadAgent.fs" />
+    <Compile Include="ProjectAgent.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
