@@ -133,7 +133,7 @@ let parseMessage x =
         let request =
             match m, x.``params`` with
             | Methods.``client/registerCapability``, Defined ps ->
-                RegisterCapability <| Server.parse<RegistrationParams> ps
+                RegisterCapability <| JsonElement.parse<RegistrationParams> ps
 
             | _ -> failwith $"TODO: request: %A{x}"
 
@@ -144,7 +144,7 @@ let parseMessage x =
         let x =
             match m, ps with
             | Methods.``textDocument/publishDiagnostics``, Defined ps ->
-                PublishDiagnostics <| Server.parse<PublishDiagnosticsParams> ps
+                PublishDiagnostics <| JsonElement.parse<PublishDiagnosticsParams> ps
 
             | _ -> failwithf "TODO: notification: %A" x
 
@@ -189,7 +189,7 @@ let pollingUntil timeout predicate = async {
 
     let mutable next = true
     let mutable result = true
-    let mutable remainingTimeout = timeout |> Option.defaultValue TimeSpan.MaxValue
+    let mutable remainingTimeout = if Timeout.InfiniteTimeSpan = timeout then TimeSpan.MaxValue else timeout
     let mutable sleepTime = initialSleep
 
     while next do
@@ -232,7 +232,7 @@ let clientWrite client actions = async {
 
     let writeMessage m =
         match m with
-        | Initialize x -> Server.parse<_> >> InitializeResponse |> writeRequest m Methods.initialize (ValueSome x)
+        | Initialize x -> JsonElement.parse<_> >> InitializeResponse |> writeRequest m Methods.initialize (ValueSome x)
         | Initialized -> writeNotification Methods.initialized ValueNone
         | Shutdown -> (fun _ -> ShutdownResponse) |> writeRequest m Methods.shutdown ValueNone
         | Exit -> writeNotification Methods.exit ValueNone
@@ -245,7 +245,7 @@ let clientWrite client actions = async {
 
         | Hover x ->
             writeRequest m Methods.``textDocument/hover`` (ValueSome x) (fun e ->
-                Server.parse<_> e |> HoverResponse
+                JsonElement.parse<_> e |> HoverResponse
             )
 
         | HoverResponse _
@@ -263,13 +263,13 @@ let clientWrite client actions = async {
             -> failwithf "TODO: %A" m
 
     let polling timeout action predicate = async {
-        let timeout = Option.map config.timeoutMap timeout
+        let timeout = config.timeoutMap timeout
         let! success = pollingUntil timeout predicate
         if not success then failwith $"timeout; underlying action: %A{action}; messages: %A{logs}"
     }
     let processAction action = async {
         match action with
-        | ReceiveRequest(handler, timeout) -> do! polling (Option.map floatToTimeSpan timeout) action <| fun () ->
+        | ReceiveRequest(handler, timeout) -> do! polling (Option.map floatToTimeSpan timeout |> Option.defaultValue Timeout.InfiniteTimeSpan) action <| fun () ->
             let r =
                 pendingRequests
                 |> Seq.tryPick (fun kv -> handler kv.Value |> Option.map (fun r -> kv.Key, r))
@@ -282,7 +282,7 @@ let clientWrite client actions = async {
 
             | _ -> false
 
-        | WaitUntil(predicate, timeout) -> do! polling (Option.map floatToTimeSpan timeout) action <| fun () ->
+        | WaitUntil(predicate, timeout) -> do! polling (Option.map floatToTimeSpan timeout |> Option.defaultValue Timeout.InfiniteTimeSpan) action <| fun () ->
             predicate <| Seq.toList logs
 
         | Sleep time -> do! floatToTimeSpan time |> Async.Sleep
@@ -338,8 +338,8 @@ let clientRead { responseHandlers = responseHandlers; receivedMessageLog = logs;
 let copyTextFilesFromRealFileSystem fileSystem paths =
     let paths = [
         for path in paths do
-            let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
-            DocumentPath.ofUri (System.Uri "file:///") path
+            let path = Uri(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path)))
+            DocumentPath.ofUri (Uri "file:///") path
     ]
     for path in paths do
         fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toLocalPath path))
@@ -356,22 +356,19 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     let globalModulePaths = Server.ServerCreateOptions.defaultOptions.globalModulePaths
     copyTextFilesFromRealFileSystem fileSystem globalModulePaths
 
-    use messageQueue = new BlockingCollection<_>(8)
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
         use writer = MessageWriter.borrowStream serverToClient
-        let server =
-            (reader, writer, messageQueue)
-            |> Server.create (fun c ->
-                { c with
-                    fileSystem = fileSystem
-                    platform = config.serverPlatform
-                    resourcePaths = ["./resources.xml"]
-                    backgroundCheckDelay = config.backgroundCheckDelay
-                    globalModulePaths = globalModulePaths
-                }
-            )
-        Program.connect server
+        (reader, writer)
+        |> Server.start (fun c ->
+            { c with
+                fileSystem = fileSystem
+                platform = config.serverPlatform
+                resourcePaths = ["./resources.xml"]
+                backgroundCheckDelay = config.backgroundCheckDelay
+                globalModulePaths = globalModulePaths
+            }
+        )
         serverToClient.CompleteWriting()
     }
     let client = {
@@ -394,6 +391,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     return Seq.toList client.receivedMessageLog
 }
 let receiveRequest timeout f = ReceiveRequest(f >> Option.map Ok, Some timeout)
+let waitUntilExists timeout predicate = WaitUntil(List.exists predicate, Some timeout)
 let serverActions withConfig messages = async {
     let! rs = serverActionsWithBoilerPlate withConfig [
         Send <| Initialize { rootUri = ValueSome(Uri "file:///") }
@@ -403,6 +401,9 @@ let serverActions withConfig messages = async {
             | _ -> None
         yield! messages
         Send Shutdown
+        waitUntilExists 5.<_> <| function
+            | ShutdownResponse -> true
+            | _ -> false
         Send Exit
     ]
     match rs with
@@ -477,5 +478,3 @@ let normalizeMessage = function
     | x -> x
 
 let normalizeMessages = List.map normalizeMessage
-
-let waitUntilExists timeout predicate = WaitUntil(List.exists predicate, Some timeout)
