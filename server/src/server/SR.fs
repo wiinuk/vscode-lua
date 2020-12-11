@@ -11,9 +11,9 @@ open System.Xml.Schema
 type ServerResources = XmlProvider<Schema = "resources.xsd">
 module ServerResources =
     let validateXml (xml: XDocument) (schema: XmlSchemaSet) =
-        let mutable validationException = None
-        xml.Validate(schema, fun _ e -> match e.Severity with XmlSeverityType.Warning -> () | _ -> validationException <- Some e.Exception)
-        validationException
+        let validationException = ref None
+        xml.Validate(schema, fun _ e -> match e.Severity with XmlSeverityType.Warning -> () | _ -> validationException := Some e.Exception)
+        !validationException
 
     let loadFile resourcePaths =
         let cultures = seq {
