@@ -264,6 +264,10 @@ type DidChangeTextDocumentParams = {
     contentChanges: TextDocumentContentChangeEvent array
 }
 [<Struct>]
+type DidCloseTextDocumentParams = {
+    textDocument: TextDocumentIdentifier
+}
+[<Struct>]
 type DidChangeWatchedFilesParams = {
     changes: FileEvent array
 }
