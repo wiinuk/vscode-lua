@@ -26,8 +26,6 @@ type ServerMessages =
     | ServerTerminatedNormally
 
     | RequestCanceled of requestId: int
-    | ResponseSending of contents: string
-    | NotificationSending of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
     | MessageParseError of error: MessageReader.ErrorKind
     | ReceivedExitNotification
     | MessageReceived of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
@@ -35,9 +33,9 @@ type ServerMessages =
     | UnknownNotification of method: Methods * ``params``: JsonElement
     | InvalidMessageFormat of message: JsonRpcMessage<JsonElement, Methods, JsonElement>
     | ErrorResponseReceived of error: JsonRpcResponseError option
-    | RequestSending of json: string
     | ResponseHandlerNotFound of id: int * result: JsonElement
     | ResourceValidationError of message: string
+    | MessageSending of json: string
 
 let makeFormatPattern parameterCount =
     let chars0 = @"([^{}]|\{\{|\}\})*"

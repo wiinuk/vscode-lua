@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <resources xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="resources.xsd">
   <diagnostic-messages>
     <RequireField>フィールド `{1}` ( 型 `{2}` ) が見つかりませんでした。見つかったフィールド `{0}`</RequireField>
@@ -69,18 +69,16 @@
     <ServerStarting>サーバーを開始しています</ServerStarting>
     <ServerTerminatedNormally>サーバーが正常に終了しました</ServerTerminatedNormally>
     <UnknownRequest>不明な要求を受信しました[{0}] {1} `{2}`</UnknownRequest>
-    <ResponseSending>返信：{0}</ResponseSending>
     <MessageReceived>メッセージを受信：{0}</MessageReceived>
     <MessageParseError>メッセージ解析エラー</MessageParseError>
-    <NotificationSending>通知を送信：{0}</NotificationSending>
     <ReceivedExitNotification>`exit` 通知を受信しました</ReceivedExitNotification>
     <RequestCanceled>要求 {0} がキャンセルされました</RequestCanceled>
     <UnknownNotification>不明な通知 {0}：{1}</UnknownNotification>
     <InvalidMessageFormat>メッセージの形式が無効です：{0}</InvalidMessageFormat>
     <ErrorResponseReceived>エラーを受信：{0}</ErrorResponseReceived>
-    <RequestSending>リクエストを送信：{0}</RequestSending>
     <ResponseHandlerNotFound>応答ハンドラーが見つかりません。ID：{0}、返答：{1}</ResponseHandlerNotFound>
     <ResourceValidationError>リソースの検証に失敗しました：{0}</ResourceValidationError>
+    <MessageSending>返信：{0}</MessageSending>
   </log-messages>
 
 </resources>

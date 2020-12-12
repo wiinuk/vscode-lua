@@ -64,8 +64,6 @@
     <ServerStarting>ServerStarting</ServerStarting>
     <ServerTerminatedNormally>ServerTerminatedNormally</ServerTerminatedNormally>
     <RequestCanceled>RequestCanceled({0})</RequestCanceled>
-    <ResponseSending>ResponseSending({0})</ResponseSending>
-    <NotificationSending>NotificationSending({0})</NotificationSending>
     <MessageParseError>MessageParseError({0})</MessageParseError>
     <ReceivedExitNotification>ReceivedExitNotification</ReceivedExitNotification>
     <MessageReceived>MessageReceived({0})</MessageReceived>
@@ -73,8 +71,8 @@
     <UnknownNotification>UnknownNotification({0}, {1})</UnknownNotification>
     <InvalidMessageFormat>InvalidMessageFormat({0})</InvalidMessageFormat>
     <ErrorResponseReceived>ErrorResponseReceived({0})</ErrorResponseReceived>
-    <RequestSending>RequestSending({0})</RequestSending>
     <ResponseHandlerNotFound>ResponseHandlerNotFound({0}, {1})</ResponseHandlerNotFound>
     <ResourceValidationError>ResourceValidationError({0})</ResourceValidationError>
+    <MessageSending>MessageSending({0})</MessageSending>
   </log-messages>
 </resources>

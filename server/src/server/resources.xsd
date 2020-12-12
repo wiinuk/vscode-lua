@@ -319,16 +319,6 @@
           <xsd:documentation>requestId: int -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
-      <xsd:element name="ResponseSending" type="pattern-2">
-        <xsd:annotation>
-          <xsd:documentation>contents: string -&gt; string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
-      <xsd:element name="NotificationSending" type="pattern-2">
-        <xsd:annotation>
-          <xsd:documentation>message: string -&gt; string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
       <xsd:element name="MessageParseError" type="pattern-2">
         <xsd:annotation>
           <xsd:documentation>error: ErrorKind -&gt; string</xsd:documentation>
@@ -364,11 +354,6 @@
           <xsd:documentation>error: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
-      <xsd:element name="RequestSending" type="pattern-2">
-        <xsd:annotation>
-          <xsd:documentation>json: string -&gt; string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
       <xsd:element name="ResponseHandlerNotFound" type="pattern-3">
         <xsd:annotation>
           <xsd:documentation>id: int -&gt; result: string -&gt; string</xsd:documentation>
@@ -377,6 +362,11 @@
       <xsd:element name="ResourceValidationError" type="pattern-2">
         <xsd:annotation>
           <xsd:documentation>message: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="MessageSending" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>json: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
     </xsd:all>
