@@ -36,6 +36,10 @@ type ServerMessages =
     | ResponseHandlerNotFound of id: int * result: JsonElement
     | ResourceValidationError of message: string
     | MessageSending of json: string
+    | BeginCheck of filePath: string
+    | EndCheck of milliSeconds: double * filePath: string
+    | UnopenedFileDiagnosticsIsNotPublished of filePath: string
+    | FileChanged of path: string * changeType: FileChangeType
 
 let makeFormatPattern parameterCount =
     let chars0 = @"([^{}]|\{\{|\}\})*"

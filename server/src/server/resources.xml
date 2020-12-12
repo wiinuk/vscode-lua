@@ -74,5 +74,9 @@
     <ResponseHandlerNotFound>ResponseHandlerNotFound({0}, {1})</ResponseHandlerNotFound>
     <ResourceValidationError>ResourceValidationError({0})</ResourceValidationError>
     <MessageSending>MessageSending({0})</MessageSending>
+    <BeginCheck>BeginCheck({0})</BeginCheck>
+    <EndCheck>EndCheck({0}, {1})</EndCheck>
+    <UnopenedFileDiagnosticsIsNotPublished>UnopenedFileDiagnosticsIsNotPublished({0})</UnopenedFileDiagnosticsIsNotPublished>
+    <FileChanged>FileChanged({0}, {1})</FileChanged>
   </log-messages>
 </resources>

@@ -369,6 +369,26 @@
           <xsd:documentation>json: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
+      <xsd:element name="BeginCheck" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>filePath: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="EndCheck" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>milliSeconds: Double -&gt; filePath: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="UnopenedFileDiagnosticsIsNotPublished" type="pattern-2">
+        <xsd:annotation>
+          <xsd:documentation>filePath: string -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="FileChanged" type="pattern-3">
+        <xsd:annotation>
+          <xsd:documentation>path: string -&gt; changeType: FileChangeType -&gt; string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
     </xsd:all>
   </xsd:complexType>
   <xsd:simpleType name="pattern-1">

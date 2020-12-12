@@ -4,7 +4,7 @@
     <RequireField>フィールド `{1}` ( 型 `{2}` ) が見つかりませんでした。見つかったフィールド `{0}`</RequireField>
     <UndefinedField>型 `{0}` にフィールド `{1}` が見つかりませんでした</UndefinedField>
     <TypeMismatch>型 `{0}` と `{1}` が一致しません</TypeMismatch>
-    <UnifyError>一般的な型エラー: {0}</UnifyError>
+    <UnifyError>一般的な型エラー：{0}</UnifyError>
     <NameNotFound>`{0}` が見つかりませんでした</NameNotFound>
     <ReturnValueIgnored>戻り値が無視されました</ReturnValueIgnored>
     <ModuleNotFound>モジュール `{0}` が見つかりませんでした。&#x0A;探した場所：&#x0A;{1}</ModuleNotFound>
@@ -22,9 +22,9 @@
     <RedeclarationOfSpecialGlobalVariable>前からあった `{0}` ( {1} ) は隠されました。`{0}` の扱いは `{2}` に変更されます</RedeclarationOfSpecialGlobalVariable>
     <RedeclarationOfBasicType>基本型 `{0}` は再宣言できません</RedeclarationOfBasicType>
     <RedeclarationOfTypeVariable>型変数 `{0}` は再宣言できません</RedeclarationOfTypeVariable>
-    <UndeterminedGlobalVariableEnvironment>この場所で `require` を使うとグローバル環境が不確定になります。可能なら `require` をソースの一番上に移すことを検討してください。&#x0A;モジュール:&#x0A;{0}&#x0A;モジュールによって追加されるグローバル変数:&#x0A;{1}</UndeterminedGlobalVariableEnvironment>
-    <GlobalNameCollision>`{0}` の複数のグローバル宣言が一致しませんでした:&#x0A;{1}&#x0A;{2}{3}</GlobalNameCollision>
-    <GlobalTypeCollision>`{0}` の複数の型定義が一致しませんでした:&#x0A;{1}&#x0A;{2}{3}</GlobalTypeCollision>
+    <UndeterminedGlobalVariableEnvironment>この場所で `require` を使うとグローバル環境が不確定になります。可能なら `require` をソースの一番上に移すことを検討してください。&#x0A;モジュール：&#x0A;{0}&#x0A;モジュールによって追加されるグローバル変数：&#x0A;{1}</UndeterminedGlobalVariableEnvironment>
+    <GlobalNameCollision>`{0}` の複数のグローバル宣言が一致しませんでした：&#x0A;{1}&#x0A;{2}{3}</GlobalNameCollision>
+    <GlobalTypeCollision>`{0}` の複数の型定義が一致しませんでした：&#x0A;{1}&#x0A;{2}{3}</GlobalTypeCollision>
     <UnrecognizedFeatureName>特徴 `{0}` は認識できません</UnrecognizedFeatureName>
     <UnexpectedMultiType>ここに複型を指定することはできません</UnexpectedMultiType>
     <RequireMultiType>複型が必要です。`()` や `(number,)` や `(number, string, ...)` や `...` などが有効です</RequireMultiType>
@@ -59,9 +59,9 @@
     <RequireToken>`{0}` が必要です</RequireToken>
     <RequireFieldSep>`,`、`;` などのフィールド区切りが必要です</RequireFieldSep>
     <RequireVar>名前や `x.f`、`x[n]` などの変数式が必要です</RequireVar>
-    <RequireAnyFieldKey>フィールドのキーが必要です。 例: `key`、`"key"`、`123`、`true`</RequireAnyFieldKey>
-    <RequireAnyTypeSign>型が必要です。例: `string`、`table&lt;number, a&gt;`、`{{ x: _, y: any }}`、`TElement[]`</RequireAnyTypeSign>
-    <ParseError>"一般的な構文エラー: {0}</ParseError>
+    <RequireAnyFieldKey>フィールドのキーが必要です。 例：`key`、`"key"`、`123`、`true`</RequireAnyFieldKey>
+    <RequireAnyTypeSign>型が必要です。例：`string`、`table&lt;number, a&gt;`、`{{ x: _, y: any }}`、`TElement[]`</RequireAnyTypeSign>
+    <ParseError>"一般的な構文エラー：{0}</ParseError>
   </diagnostic-messages>
 
   <log-messages>
@@ -79,6 +79,10 @@
     <ResponseHandlerNotFound>応答ハンドラーが見つかりません。ID：{0}、返答：{1}</ResponseHandlerNotFound>
     <ResourceValidationError>リソースの検証に失敗しました：{0}</ResourceValidationError>
     <MessageSending>返信：{0}</MessageSending>
+    <BeginCheck>解析中 {0}</BeginCheck>
+    <EndCheck>解析完了 {0}ミリ秒、{1}</EndCheck>
+    <UnopenedFileDiagnosticsIsNotPublished>開いていないファイルの診断結果は公開されません：{0}</UnopenedFileDiagnosticsIsNotPublished>
+    <FileChanged>ファイルの変更を検知しました：{0}、{1}</FileChanged>
   </log-messages>
 
 </resources>

@@ -46,15 +46,15 @@ module private Helpers =
             | ValueNone -> InFs(path, agent.project.projectRare.fileSystem.lastWriteTime path)
             | ValueSome document -> InMemory(document.contents, document.version)
 
-        ifDebug { trace "begin check %A" path }
+        ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toLocalPath path) }
         ifDebug { agent.watch.Restart() }
         let _, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path source
-        ifDebug { trace "check %dms %A" agent.watch.ElapsedMilliseconds path }
+        ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toLocalPath path) }
 
         let agent = { agent with project = project }
 
         match document with
-        | ValueNone -> ifDebug { trace $"diagnostics for unopened file '{path}' will not be published" }
+        | ValueNone -> ifDebug { Log.Format(agent.resources.LogMessages.UnopenedFileDiagnosticsIsNotPublished, path) }
         | ValueSome document ->
             postToBackgroundAgent agent <| PublishDiagnostics(agent, path, ValueSome document, diagnostics)
 
@@ -94,9 +94,15 @@ module private Helpers =
         agent <- addLowPriorityCheckFiles (path::descendants) agent
         agent
 
-    let checkProjectFileOrCachedResult path project =
+    let checkProjectFileOrCachedResult agent path project =
         match Project.tryFind path project with
-        | ValueSome sourceFile -> Checkers.checkSourceFileCached project path sourceFile
+        | ValueSome sourceFile ->
+            ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toLocalPath path) }
+            ifDebug { agent.watch.Restart() }
+            let r = Checkers.checkSourceFileCached project path sourceFile
+            ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toLocalPath path) }
+            r
+
         | ValueNone -> None, upcast [], project
 
 let initialize agent id { rootUri = rootUri } =
@@ -175,15 +181,15 @@ let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDoc
     addLowPriorityCheckFiles files agent
 
 let didChangeWatchedFiles agent { changes = changes } =
-    let mutable agent = agent
+    let mutable agent' = agent
     for change in changes do
-        let path = DocumentPath.ofUri agent.root change.uri
-        ifDebug { trace "changed %A %A" path change.``type`` }
+        let path = DocumentPath.ofUri agent'.root change.uri
+        ifDebug { Log.Format(agent.resources.LogMessages.FileChanged, DocumentPath.toLocalPath path, change.``type``) }
 
         let (DocumentPath p) = path
         if p.EndsWith ".lua" then
-            agent <- processFileEvent agent path change
-    agent
+            agent' <- processFileEvent agent' path change
+    agent'
 
 let hover agent id { HoverParams.textDocument = textDocument; position = position } =
     let path = DocumentPath.ofUri agent.root textDocument.uri
@@ -191,7 +197,7 @@ let hover agent id { HoverParams.textDocument = textDocument; position = positio
     | ValueNone -> sendResponse agent id <| Ok ValueNone; agent
     | ValueSome document ->
 
-    let tree, _, project = checkProjectFileOrCachedResult path agent.project
+    let tree, _, project = checkProjectFileOrCachedResult agent path agent.project
     let agent = { agent with project = project }
 
     match tree with
@@ -273,7 +279,7 @@ let processMessage inbox agent = function
         processResponse agent id <| Error(OptionalField.toVOption error)
 
     | message ->
-        ifInfo { Log.Format(agent.resources.LogMessages.InvalidMessageFormat, message) }
+        ifWarn { Log.Format(agent.resources.LogMessages.InvalidMessageFormat, message) }
         agent
 
 let processEnumerateFilesResponse agent files =
