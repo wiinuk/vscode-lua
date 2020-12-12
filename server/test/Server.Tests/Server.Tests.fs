@@ -2,6 +2,7 @@ namespace LuaChecker.Server
 open FsCheck
 open FsCheck.Xunit
 open LuaChecker
+open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Server.Test.Helpers
 open LuaChecker.Text.Json
@@ -12,13 +13,22 @@ open Xunit.Abstractions
 
 
 type TestsFixture() =
-    let mutable setup = false
+    let mutable outputLogger = None
+
     member _.SetupOutput(output: ITestOutputHelper) =
-        if not setup then
-            setup <- true
-            Server.Log.Logger.add Server.Log.logger { new Server.Log.Logger() with
+        match outputLogger with
+        | None ->
+            let logger = { new Logger() with
                 member _.Log e = output.WriteLine("[{0:O}] {1} : {2} : {3}", e.time, e.source, e.level, e.message)
             }
+            outputLogger <- Some logger
+            Logger.add Log.logger logger
+
+        | _ -> ()
+
+    interface IDisposable with
+        member _.Dispose() =
+            outputLogger |> Option.iter (Logger.remove Log.logger)
 
 type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     do fixture.SetupOutput output
@@ -98,10 +108,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.didOpen2() = async {
         let! r = serverActions id [
             "return require 'lib1'" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+
             "return 123" &> ("C:/lib1.lua", 1)
-            waitUntilExists 5.<_> <| function
-                | PublishDiagnostics { diagnostics = [||]; uri = uri } -> uri.Contains "main.lua"
-                | _ -> false
+            waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
             PublishDiagnostics {
@@ -119,9 +129,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         let! r = serverActions id [
             "return 1 + 1" &> ("C:/main.lua", 1)
             didChangeFull "return 1 .. 1" ("C:/main.lua", 2)
-            waitUntilExists 5.<_> <| function
-                | PublishDiagnostics { diagnostics = xs } -> Array.isEmpty xs |> not
-                | _ -> false
+            waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
         ]
         r =? [
             PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }
@@ -138,10 +146,15 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.hoverType() = async {
         let! r = serverActions id [
             "local x = 1 + 2" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+
             Send <| Hover {
                 textDocument = { uri = Uri "file:///C:/main.lua" }
                 position = { line = 0; character = 6 }
             }
+            waitUntilExists 5.<_> <| function
+                | HoverResponse _ -> true
+                | _ -> false
         ]
         r =? [
             PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }
@@ -165,7 +178,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.externalModuleErrorMessage() = async {
         let! r = serverActions id [
             "return 1 .. 2" &> ("C:/lib.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/lib.lua"
+
             "local x = require 'lib'" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
         r =? [
             PublishDiagnostics {
@@ -193,7 +209,6 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
         ]
     }
-
     [<Fact>]
     member _.didChangeWatchedFiles() = async {
         let! r = serverActions id [
@@ -207,6 +222,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                 |]
             }
             "local x = require 'lib'" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
         r =? [
             PublishDiagnostics {
@@ -215,26 +231,30 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
         ]
     }
-
     [<Fact>]
     member _.externalFileNoReply() = async {
-        let! r = serverActions id [
-            "return 1 + 2" ?> "C:/lib.lua"
-            "local x = require 'lib'" &> ("C:/main.lua", 1)
+        let files = [
+            {| source = "return 1 + 2"; path = "C:/lib.lua" |}
         ]
-        r =? [
+        let! r = serverActions (fun c -> { c with initialFiles = files }) [
+            "local x = require 'lib'" &> ("C:/main.lua", 1)
+            waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
+        ]
+        removeOldDiagnostics r =? [
             PublishDiagnostics {
                 uri = "file:///C:/main.lua"
                 diagnostics = [||]
             }
         ]
     }
-
     [<Fact>]
     member _.externalFileEdit() = async {
-        let! r = serverActions id [
-            "return 1" ?> "C:/lib.lua"
+        let files = [
+            {| source = "return 1 + 2"; path = "C:/lib.lua" |}
+        ]
+        let! r = serverActions (fun c -> { c with initialFiles = files }) [
             "local x = require 'lib' .. 'a'" &> ("C:/main.lua", 1)
+            waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
 
             "return 'x'" ?> "C:/lib.lua"
             Send <| DidChangeWatchedFiles {
@@ -245,7 +265,12 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     }
                 |]
             }
+            waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        r =? [
+        removeOldDiagnostics r =? [
+            PublishDiagnostics {
+                uri = "file:///C:/main.lua"
+                diagnostics = [||]
+            }
         ]
     }

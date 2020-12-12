@@ -13,7 +13,7 @@ open System.Text.Json
 open System.Threading
 
 
-let (=?) l r = if not (l = r) then failwithf "%A =? %A" l r
+let (=?) l r = if not (l = r) then failwithf "%0A =? %0A" l r
 
 type Async with
     static member ParallelAction(xs: unit Async seq) =
@@ -164,6 +164,7 @@ type ConnectionConfig = {
     timeoutMap: TimeSpan -> TimeSpan
     backgroundCheckDelay: TimeSpan
     serverPlatform: PlatformID option
+    initialFiles: {| source: string; path: string |} list
 }
 module ConnectionConfig =
     let defaultValue = {
@@ -172,6 +173,7 @@ module ConnectionConfig =
         timeoutMap = fun x -> if Debugger.IsAttached then Timeout.InfiniteTimeSpan else x
         backgroundCheckDelay = TimeSpan.Zero
         serverPlatform = Some PlatformID.Win32NT
+        initialFiles = []
     }
 type Client<'V,'R> = {
     clientToServer: Stream
@@ -353,6 +355,9 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     use serverToClient = new BlockingStream(ReadTimeout = readTimeout, WriteTimeout = writeTimeout)
 
     let fileSystem = FileSystem.memory()
+    for f in config.initialFiles do
+        fileSystem.writeAllText(DocumentPath.ofUri null (Uri f.path), f.source)
+
     let globalModulePaths = Server.ServerCreateOptions.defaultOptions.globalModulePaths
     copyTextFilesFromRealFileSystem fileSystem globalModulePaths
 
@@ -392,9 +397,21 @@ let serverActionsWithBoilerPlate withConfig actions = async {
 }
 let receiveRequest timeout f = ReceiveRequest(f >> Option.map Ok, Some timeout)
 let waitUntilExists timeout predicate = WaitUntil(List.exists predicate, Some timeout)
+let waitUntilHasDiagnosticsOf targetUri = waitUntilExists 5.<_> <| function
+    | PublishDiagnostics { uri = uri } -> uri = targetUri
+    | _ -> false
+
+let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
+    let predicate =
+        List.tryFindBack (function PublishDiagnostics d -> fileUri = d.uri | _ -> false)
+        >> Option.map (function PublishDiagnostics d -> predicate d.diagnostics | _ -> false)
+        >> Option.defaultValue false
+
+    WaitUntil(predicate, Some 5.<_>)
+
 let serverActions withConfig messages = async {
     let! rs = serverActionsWithBoilerPlate withConfig [
-        Send <| Initialize { rootUri = ValueSome(Uri "file:///") }
+        Send <| Initialize { rootUri = ValueSome(Uri "file:///C:/") }
         Send Initialized
         receiveRequest 5.<_> <| function
             | RegisterCapability _ -> Some RegisterCapabilityResponse
@@ -478,3 +495,16 @@ let normalizeMessage = function
     | x -> x
 
 let normalizeMessages = List.map normalizeMessage
+
+let removeOldDiagnostics messages =
+    List.mapFoldBack (fun message uris ->
+        match message with
+        | PublishDiagnostics d as message ->
+            if Set.contains d.uri uris
+            then None, uris
+            else Some message, Set.add d.uri uris
+
+        | _ -> Some message, uris
+    ) messages Set.empty
+    |> fst
+    |> List.choose id
