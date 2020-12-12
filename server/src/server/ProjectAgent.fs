@@ -5,6 +5,7 @@ open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
+open System.IO
 open System.Text
 open System.Text.Json
 open type LuaChecker.Server.Marshalling.MarshallingContext
@@ -21,7 +22,7 @@ module private Helpers =
             |> Json.serialize
             |> ReadOnlyMemory
 
-        agent.writer.Post <| WriteMessage jsonBytes
+        agent.writeAgent.Post <| WriteMessage jsonBytes
 
         let handler struct(agent, result) =
             let result = Result.map JsonElement.parse result
@@ -32,84 +33,79 @@ module private Helpers =
             responseHandlers = Map.add id handler agent.responseHandlers
         }
 
-    let sendResponse id (agent, result) =
-        let jsonBytes =
-            match result with
-            | Ok result -> JsonRpcMessage.successResponse id result
-            | Error e -> JsonRpcMessage.errorResponse id e
-            |> Json.serialize
-            |> ReadOnlyMemory
+    let sendResponse agent id result =
+        WriteAgent.sendResponse agent.writeAgent id result
 
-        agent.writer.Post <| WriteMessage jsonBytes
-        agent
-
-    let sendNotification agent methods parameters =
-        let jsonBytes =
-            JsonRpcMessage.notification methods parameters
-            |> Json.serialize
-            |> ReadOnlyMemory
-
-        agent.writer.Post <| WriteMessage jsonBytes
-
-    let publishDiagnostics agent filePath diagnostics =
-        {
-            uri = DocumentPath.toUri(filePath).ToString()
-            diagnostics = diagnostics
-        }
-        |> ValueSome
-        |> sendNotification agent
-            M.``textDocument/publishDiagnostics``
+    let postToBackgroundAgent { random = random; backgroundAgents = backgroundAgents } message =
+        backgroundAgents.[random.Next(0, backgroundAgents.Length)].Post message
 
     let checkAndResponseSingleFile agent path =
-        match Map.tryFind path agent.documents with
-        | ValueNone -> ifError { trace "unopened file: %A" path }; agent, []
-        | ValueSome document ->
+        let document = Map.tryFind path agent.documents
+        let source =
+            match document with
+            | ValueNone -> InFs(path, agent.project.projectRare.fileSystem.lastWriteTime path)
+            | ValueSome document -> InMemory(document.contents, document.version)
 
         ifDebug { trace "begin check %A" path }
         ifDebug { agent.watch.Restart() }
-        let _, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path (InMemory(document.contents, document.version))
+        let _, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path source
         ifDebug { trace "check %dms %A" agent.watch.ElapsedMilliseconds path }
 
         let agent = { agent with project = project }
 
-        let context = {
-            documents = agent.documents
-            resources = agent.resources
-            root = agent.root
-        }
-        let diagnostics = Marshalling.marshalDocumentDiagnostics context path document diagnostics
-        publishDiagnostics agent path <| Seq.toArray diagnostics
+        match document with
+        | ValueNone -> ifDebug { trace $"diagnostics for unopened file '{path}' will not be published" }
+        | ValueSome document ->
+            postToBackgroundAgent agent <| PublishDiagnostics(agent, path, ValueSome document, diagnostics)
 
         agent, descendants
 
-    let addBackgroundCheckFiles files agent =
+    let addLowPriorityCheckFiles files agent =
         match files with
         | [] -> agent
         | _ ->
 
-        let mutable temp = agent.pendingBackgroundCheckPaths
+        let mutable temp = agent.pendingCheckPaths
         for path in files do
-            temp <- Set.add path agent.pendingBackgroundCheckPaths
-        { agent with pendingBackgroundCheckPaths = temp }
+            temp <- Set.add path agent.pendingCheckPaths
+        { agent with pendingCheckPaths = temp }
 
     let checkAndResponse agent path =
         let agent, descendants = checkAndResponseSingleFile agent path
-        addBackgroundCheckFiles descendants agent
+        addLowPriorityCheckFiles descendants agent
 
     let popMinElement set =
         if Set.isEmpty set then None else
         let e = Set.minElement set
         Some(e, Set.remove e set)
 
-    let (?) (json: JsonElement) (name: string) = json.GetProperty name
+    let processFileEvent agent path change =
+        let mutable agent = agent
+        let struct(project, descendants) =
+            match change.``type`` with
+            | FileChangeType.Created
+            | FileChangeType.Changed -> Checker.addOrUpdateSourceFile path agent.project
+            | FileChangeType.Deleted -> Checker.removeSourceFile path agent.project
+            | t ->
+                ifWarn { trace "unknown FileChangeType: %A" t }
+                agent.project, []
 
-let initialize agent { rootUri = rootUri } =
+        agent <- { agent with project = project }
+        agent <- addLowPriorityCheckFiles (path::descendants) agent
+        agent
+
+    let checkProjectFileOrCachedResult path project =
+        match Project.tryFind path project with
+        | ValueSome sourceFile -> Checkers.checkSourceFileCached project path sourceFile
+        | ValueNone -> None, upcast [], project
+
+let initialize agent id { rootUri = rootUri } =
     let agent =
         match rootUri with
         | ValueSome root -> { agent with ProjectAgent.root = root }
         | _ -> agent
 
-    agent, Ok {
+    sendResponse agent id <| Ok {
         capabilities = {
             hoverProvider = true
             textDocumentSync = {
@@ -119,8 +115,9 @@ let initialize agent { rootUri = rootUri } =
             }
         }
     }
+    agent
 
-let initialized agent =
+let initialized inbox agent =
     let options = {|
         watchers = [|
             {| globPattern = "**/*.lua" |}
@@ -135,33 +132,37 @@ let initialized agent =
             |}
         |]
     |}
-    let responseHandler struct(agent, r) =
+    let responseHandler inbox struct(agent, r) =
         match r with
-        | Error e -> ifWarn { Log.Format(agent.resources.LogMessages.ErrorResponseReceived, e) }
-        | Ok() -> ()
-        agent
+        | Error e ->
+            ifWarn { Log.Format(agent.resources.LogMessages.ErrorResponseReceived, e) }
+            agent
 
-    sendRequest agent M.``client/registerCapability`` (ValueSome ps) responseHandler
+        | Ok() ->
+            postToBackgroundAgent agent <| EnumerateFiles(agent.project.projectRare.fileSystem, agent.root, inbox)
+            agent
 
-let shutdown agent () =
-    agent, Ok()
+    sendRequest agent M.``client/registerCapability`` (ValueSome ps) (responseHandler inbox)
+
+let shutdown agent id () =
+    sendResponse agent id <| Ok()
+    agent
 
 let didOpenTextDocument agent { DidOpenTextDocumentParams.textDocument = d } =
     let path = DocumentPath.ofUri agent.root d.uri
     let agent = { agent with documents = Documents.open' path d.text d.version agent.documents }
-
     checkAndResponse agent path
 
 let didChangeTextDocument agent { textDocument = d; contentChanges = contentChanges } =
     let path = DocumentPath.ofUri agent.root d.uri
     let documents = Documents.change path d.version contentChanges agent.documents
     { agent with documents = documents }
-    |> addBackgroundCheckFiles [path]
+    |> addLowPriorityCheckFiles [path]
 
 let didCloseTextDocument agent (p: DidCloseTextDocumentParams) =
     let path = DocumentPath.ofUri agent.root p.textDocument.uri
     let agent = { agent with documents = Documents.close path agent.documents }
-    publishDiagnostics agent path [||]
+    postToBackgroundAgent agent <| PublishDiagnostics(agent, path, ValueNone, [])
     agent
 
 let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDocument } =
@@ -171,7 +172,7 @@ let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDoc
             if Checker.isAncestor savedFile path agent.project then
                 path
     ]
-    addBackgroundCheckFiles files agent
+    addLowPriorityCheckFiles files agent
 
 let didChangeWatchedFiles agent { changes = changes } =
     let mutable agent = agent
@@ -181,47 +182,30 @@ let didChangeWatchedFiles agent { changes = changes } =
 
         let (DocumentPath p) = path
         if p.EndsWith ".lua" then
-            let struct(project, descendants) =
-                match change.``type`` with
-                | FileChangeType.Created -> Checker.addOrUpdateSourceFile path agent.project
-                | FileChangeType.Changed -> Checker.addOrUpdateSourceFile path agent.project
-                | FileChangeType.Deleted -> Checker.removeSourceFile path agent.project
-                | t ->
-                    ifWarn { trace "unknown FileChangeType: %A" t }
-                    agent.project, []
-
-            agent <- { agent with project = project }
-            agent <- addBackgroundCheckFiles (path::descendants) agent
+            agent <- processFileEvent agent path change
     agent
 
-let hover agent { HoverParams.textDocument = textDocument; position = position } =
+let hover agent id { HoverParams.textDocument = textDocument; position = position } =
     let path = DocumentPath.ofUri agent.root textDocument.uri
     match Documents.tryFind path agent.documents with
-    | ValueNone -> agent, Ok ValueNone
+    | ValueNone -> sendResponse agent id <| Ok ValueNone; agent
     | ValueSome document ->
 
-    let index = Document.positionToIndex position document
-    let context = {
-        root = agent.root
-        resources = agent.resources
-        documents = agent.documents
-    }
-    let result, project = Checker.hitTest agent.project Marshalling.prettyTokenInfo context path index
+    let tree, _, project = checkProjectFileOrCachedResult path agent.project
     let agent = { agent with project = project }
 
-    match result with
-    | ValueNone -> agent, Ok ValueNone
-    | ValueSome markdown ->
-
-    let markdown = { kind = MarkupKind.markdown; value = markdown }
-    agent, Ok (ValueSome { contents = markdown; range = Undefined })
+    match tree with
+    | None -> sendResponse agent id <| Ok ValueNone; agent
+    | Some tree ->
+        postToBackgroundAgent agent <| HoverHitTestAndResponse(id, agent, document, tree, position)
+        agent
 
 let processPendingRequest agent path =
     fst <| checkAndResponseSingleFile agent path
 
-let processNotification agent methods ps =
+let processNotification inbox agent methods ps =
     match methods with
-    | M.initialized -> initialized agent
+    | M.initialized -> initialized inbox agent
     | M.``textDocument/didOpen`` ->
         didOpenTextDocument agent (JsonElement.parse ps)
 
@@ -240,10 +224,10 @@ let processNotification agent methods ps =
         agent
 
 let processRequest agent id ps = function
-    | M.initialize -> JsonElement.parse ps |> initialize agent |> sendResponse id
-    | M.``textDocument/hover`` -> JsonElement.parse ps |> hover agent |> sendResponse id 
+    | M.initialize -> JsonElement.parse ps |> initialize agent id
+    | M.``textDocument/hover`` -> JsonElement.parse ps |> hover agent id
     //| M.``workspace/didChangeWorkspaceFolders`` ->
-    | M.shutdown -> JsonElement.parse ps |> shutdown agent |> sendResponse id
+    | M.shutdown -> JsonElement.parse ps |> shutdown agent id
 
     | method ->
         ifError { Log.Format(agent.resources.LogMessages.UnknownRequest, id, method, ps) }
@@ -252,7 +236,8 @@ let processRequest agent id ps = function
             message = "method not found"
             data = Undefined
         }
-        sendResponse id (agent, Error(ValueSome error))
+        sendResponse agent id <| Error(ValueSome error)
+        agent
 
 let processResponse agent id result =
     match Map.tryFind id agent.responseHandlers with
@@ -261,7 +246,7 @@ let processResponse agent id result =
         ifWarn { Log.Format(agent.resources.LogMessages.ResponseHandlerNotFound, id, result) }
         agent
 
-let processMessage agent = function
+let processMessage inbox agent = function
     | { method = Defined M.``$/cancelRequest``; ``params`` = Defined _ } ->
         // TODO:
         agent
@@ -275,14 +260,14 @@ let processMessage agent = function
 
     | { id = Undefined; method = Defined method; ``params`` = ps } ->
         let ps = OptionalField.defaultValue (JsonElement()) ps
-        processNotification agent method ps
+        processNotification inbox agent method ps
 
     | { id = Defined id; method = Defined method; ``params`` = json } ->
         let json = OptionalField.defaultValue (JsonElement()) json
         processRequest agent id json method
 
     | { id = Defined id; result = Defined result } ->
-        processResponse agent id (Ok result)
+        processResponse agent id <| Ok result
 
     | { id = Defined id; result = Undefined; error = error } ->
         processResponse agent id <| Error(OptionalField.toVOption error)
@@ -290,6 +275,18 @@ let processMessage agent = function
     | message ->
         ifInfo { Log.Format(agent.resources.LogMessages.InvalidMessageFormat, message) }
         agent
+
+let processEnumerateFilesResponse agent files =
+    let mutable agent = agent
+    for filePath in files do
+        match DocumentPath.toLocalPath filePath |> Path.GetExtension with
+        | ".lua" ->
+            agent <- processFileEvent agent filePath {
+                uri = DocumentPath.toUri filePath
+                ``type`` = FileChangeType.Created
+            }
+        | _ -> ()
+    agent
 
 let create state = new MailboxProcessor<_>(fun inbox ->
     let rec loop agent = async {
@@ -301,7 +298,7 @@ let create state = new MailboxProcessor<_>(fun inbox ->
         // 新しいリクエストが無かった
         | None ->
 
-        match popMinElement agent.pendingBackgroundCheckPaths with
+        match popMinElement agent.pendingCheckPaths with
 
         // 保留中の処理も無いので新しいメッセージが来るまで待機
         | None ->
@@ -310,16 +307,22 @@ let create state = new MailboxProcessor<_>(fun inbox ->
 
         // 保留中の処理を実行
         | Some(r, set) ->
-            let agent = { agent with pendingBackgroundCheckPaths = set }
+            let agent = { agent with pendingCheckPaths = set }
             let agent = processPendingRequest agent r
             return! loop agent
         }
     and dispatchMessage agent message = async {
         match message with
-        | QuitProjectAgent -> return ()
+        | QuitProjectAgent ->
+            agent.writeAgent.Post QuitWriteAgent
+            do for agent in agent.backgroundAgents do agent.Post QuitBackgroundAgent
+            return ()
+
         | ProcessReceivedMessage message ->
-            let agent = processMessage agent message
-            return! loop agent
+            return! loop <| processMessage inbox agent message
+
+        | EnumerateFilesResponse files ->
+            return! loop <| processEnumerateFilesResponse agent files
     }
     loop state
 )
