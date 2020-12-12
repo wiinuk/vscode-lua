@@ -1,4 +1,4 @@
-module LuaChecker.Server.Log
+﻿module LuaChecker.Server.Log
 open Cysharp.Text
 open System
 open System.Diagnostics
@@ -167,7 +167,9 @@ module Logger =
     let streamLogger stream = new StreamLogger(stream)
 
     let fileLogger filePath =
-        let stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+        let stream =
+            try new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite, 4096, FileOptions.SequentialScan) :> Stream
+            with _ -> Stream.Null
         streamLogger stream
 
     let consoleLogger() = Console.OpenStandardOutput() |> streamLogger
