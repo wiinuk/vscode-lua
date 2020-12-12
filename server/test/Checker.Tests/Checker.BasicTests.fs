@@ -1,4 +1,4 @@
-module LuaChecker.Checker.Basics.Tests
+module LuaChecker.Checker.BasicTests
 open LuaChecker
 open LuaChecker.TypeSystem
 open LuaChecker.Checker.Test.Utils
