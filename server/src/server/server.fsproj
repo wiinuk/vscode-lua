@@ -29,6 +29,7 @@
     <Compile Include="Agent.types.fs" />
     <Compile Include="WriteAgent.fs" />
     <Compile Include="ReadAgent.fs" />
+    <Compile Include="BackgroundAgent.fs" />
     <Compile Include="ProjectAgent.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Program.fs" />
