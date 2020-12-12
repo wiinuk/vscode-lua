@@ -44,6 +44,7 @@ module private Helpers =
     type LoggerMessage =
         | Log of Event
         | Add of Logger
+        | Remove of Logger
         | Shutdown
 
     type LoggerState = {
@@ -76,11 +77,17 @@ module private Helpers =
             children = Map.add state.nextLoggerId x state.children
         }
 
+    let removeLogger state x =
+        { state with
+            children = Map.filter (fun _ child -> not <| LanguagePrimitives.PhysicalEquality child x) state.children
+        }
+
     let backgroundLogger() = MailboxProcessor.Start <| fun inbox ->
         let rec loop state = async {
             match! inbox.Receive() with
             | Shutdown -> shutdown state
             | Add x -> do! loop (addLogger state x)
+            | Remove x -> do! loop (removeLogger state x)
             | Log event ->
                 for kv in state.children do
                     let c = kv.Value
@@ -154,6 +161,7 @@ type BackgroundLogger(sourceName, initialMaxDetail) =
         x.Log(level, MemoryExtensions.AsMemory message)
 
     member internal _.Add child = bg.Post <| Add child
+    member internal _.Remove child = bg.Post <| Remove child
 
 module Logger =
     let streamLogger stream = new StreamLogger(stream)
@@ -173,6 +181,7 @@ module Logger =
     let create sourceName maxDetail = new BackgroundLogger(sourceName, maxDetail)
     let isEnabled (logger: Logger) level = logger.IsEnabled level
     let add (logger: BackgroundLogger) child = logger.Add child
+    let remove (logger: BackgroundLogger) child = logger.Remove child
     let log (logger: BackgroundLogger) level message = logger.Log(level, message)
     let setMaxDetail (logger: BackgroundLogger) maxDetail = logger.MaxDetail <- maxDetail
 
