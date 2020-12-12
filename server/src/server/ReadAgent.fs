@@ -7,33 +7,29 @@ open LuaChecker.Text.Json
 open System.Text.Json
 
 
-let start state =
-    let rec loop state =
+let start agent =
+    let rec loop agent =
         let r =
-            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonElement>> state.reader
+            try MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonElement>> agent.reader
             with :? JsonException -> Error MessageReader.ErrorKind.DeserializeFailure
 
         match r with
         | Error MessageReader.ErrorKind.EndOfSource -> ()
         | Error MessageReader.ErrorKind.RequireContentLengthHeader ->
             ifWarn { trace "Message was ignored." }
-            loop state
+            loop agent
 
         | Error MessageReader.ErrorKind.DeserializeFailure ->
             ifWarn { trace "JSON RPC format is invalid." }
-            loop state
+            loop agent
 
-        | Error e ->
-            ifError { Log.Format(state.resources.LogMessages.MessageParseError, e) }
+        | Error e -> ifError { Log.Format(agent.resources.LogMessages.MessageParseError, e) }
 
-        | Ok { method = Defined Methods.exit } ->
-            ifInfo { Log.Format state.resources.LogMessages.ReceivedExitNotification }
-
+        | Ok { method = Defined Methods.exit } -> ifInfo { Log.Format agent.resources.LogMessages.ReceivedExitNotification }
         | Ok request ->
-            ifDebug { Log.Format(state.resources.LogMessages.MessageReceived, request) }
-            state.projectAgent.Post <| ProcessReceivedMessage request
-            loop state
+            ifDebug { Log.Format(agent.resources.LogMessages.MessageReceived, request) }
+            agent.projectAgent.Post <| ProcessReceivedMessage request
+            loop agent
 
-    loop state
-    state.writeAgent.Post QuitWriteAgent
-    state.projectAgent.Post QuitProjectAgent
+    loop agent
+    agent.projectAgent.Post QuitProjectAgent
