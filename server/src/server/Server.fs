@@ -44,7 +44,7 @@ let start withOptions (input, output) =
         |> Checker.addInitialGlobalModules project
 
     let resources = ServerResources.loadFile options.resourcePaths
-    let writeAgent = WriteAgent.create {
+    use writeAgent = WriteAgent.create {
         writer = output
         resources = resources
     }
@@ -58,7 +58,7 @@ let start withOptions (input, output) =
             for _ in 1..count -> BackgroundAgent.create agent
         ]
 
-    let projectAgent = ProjectAgent.create {
+    use projectAgent = ProjectAgent.create {
         writeAgent = writeAgent
         backgroundAgents = backgroundAgents
 
@@ -72,18 +72,21 @@ let start withOptions (input, output) =
         random = Random()
         watch = Stopwatch()
     }
-    let errorHandler e = ifError { trace $"%A{e}" }
+    let errorHandler e = raise e
     writeAgent.Error.Add errorHandler
     for agent in backgroundAgents do agent.Error.Add errorHandler
     projectAgent.Error.Add errorHandler
 
-    ifInfo { trace "%s" resources.LogMessages.ServerStarting }
-    writeAgent.Start()
-    for agent in backgroundAgents do agent.Start()
-    projectAgent.Start()
-    ReadAgent.start {
-        projectAgent = projectAgent
-        resources = resources
-        reader = input
-    }
-    ifInfo { trace "%s" resources.LogMessages.ServerTerminatedNormally }
+    try
+        ifInfo { trace "%s" resources.LogMessages.ServerStarting }
+        writeAgent.Start()
+        for agent in backgroundAgents do agent.Start()
+        projectAgent.Start()
+        ReadAgent.start {
+            projectAgent = projectAgent
+            resources = resources
+            reader = input
+        }
+        ifInfo { trace "%s" resources.LogMessages.ServerTerminatedNormally }
+    finally
+        for agent in backgroundAgents do (agent :> IDisposable).Dispose()
