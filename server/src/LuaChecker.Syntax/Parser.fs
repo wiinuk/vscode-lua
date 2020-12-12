@@ -1,4 +1,4 @@
-﻿module LuaChecker.Parser
+module LuaChecker.Parser
 open Cysharp.Text
 open LuaChecker.Syntaxes
 open LuaChecker.Syntax
@@ -438,7 +438,7 @@ module DocumentParser =
     let tokenSpan k s = token k s |> mapResult (fun x -> x.trivia.span)
     let withTrivia trivia k = { kind = k; trivia = trivia }
 
-    let comments0 (s: Scanner.Scanner) =
+    let comments0 (s: _ Scanner.Scanner) =
         if s.currentTokenStructure.hasValue then
             s.position <- s.currentTokenStructure._span.start
 

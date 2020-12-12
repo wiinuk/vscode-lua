@@ -1,4 +1,4 @@
-﻿module LuaChecker.Scanner
+module LuaChecker.Scanner
 open Cysharp.Text
 open LuaChecker.Primitives
 open LuaChecker.Syntax
@@ -18,7 +18,7 @@ type TokenStructure = {
     mutable _trailingTriviaLength: int
 }
 [<DebuggerDisplay("{_DebugDisplay,nq}")>]
-type Scanner = {
+type Scanner<'Error> = {
     mutable _source: string
     mutable first: int
     mutable last: int
@@ -27,6 +27,7 @@ type Scanner = {
     mutable position: int
     mutable currentTokenStructure: TokenStructure
     mutable remainingTriviaLength: int
+    mutable errors: 'Error list
 }
 with
     [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
@@ -40,10 +41,11 @@ with
         "┃" + source.[first..position-1] + "▶" + source.[position..last-1] + "┃"
 
 [<Struct>]
-type ScannerState = {
+type ScannerState<'Error> = {
     _position: int
     _currentTokenStructure: TokenStructure
     _remainingTriviaLength: int
+    _errors: 'Error list
 }
 
 let peek s: _ inref = &s.currentTokenStructure
@@ -57,11 +59,16 @@ let getState s = {
     _position = s.position
     _currentTokenStructure = s.currentTokenStructure
     _remainingTriviaLength = s.remainingTriviaLength
+    _errors = s.errors
 }
 let setState (state: _ inref) s =
     s.position <- state._position
     s.currentTokenStructure <- state._currentTokenStructure
     s.remainingTriviaLength <- state._remainingTriviaLength
+    s.errors <- state._errors
+
+let addError s e = s.errors <- e::s.errors
+let errors s = s.errors
 
 let isEos s = s.last <= s.position
 let ensure length s = s.position + length <= s.last
@@ -534,6 +541,7 @@ let private createUninitialized() = {
     position = 0
     remainingTriviaLength = 0
     currentTokenStructure = Unchecked.defaultof<_>
+    errors = Unchecked.defaultof<_>
 }
 let initCore (options: _ inref) source s =
     let { position = position; length = length } = options
@@ -614,4 +622,9 @@ let readTokenSpan kind s =
     then readSpan s
     else ValueNone
 
-let pool = Pool.create 128 (fun _ -> createUninitialized()) (init "")
+[<AbstractClass; Sealed>]
+type private PoolHolder<'Error> private () =
+    static let value: 'Error Scanner Pool = Pool.create 128 (fun _ -> createUninitialized()) (init "")
+    static member Value = value
+
+let pool<'Error> = PoolHolder<'Error>.Value
