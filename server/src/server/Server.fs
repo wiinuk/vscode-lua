@@ -2,6 +2,7 @@ module LuaChecker.Server.Server
 open LuaChecker
 open LuaChecker.Server.Log
 open System
+open System.Collections.Immutable
 open System.Diagnostics
 open System.IO
 
@@ -47,28 +48,42 @@ let start withOptions (input, output) =
         writer = output
         resources = resources
     }
+    let backgroundAgents =
+        let count = max 1 Environment.ProcessorCount
+        let agent = {
+            resources = resources
+            writeAgent = writeAgent
+        }
+        ImmutableArray.CreateRange [
+            for _ in 1..count -> BackgroundAgent.create agent
+        ]
+
     let projectAgent = ProjectAgent.create {
+        writeAgent = writeAgent
+        backgroundAgents = backgroundAgents
+
         resources = resources
-        pendingBackgroundCheckPaths = Set.empty
+        pendingCheckPaths = Set.empty
         project = project
         root = rootUri
         documents = Map.empty
-        writer = writeAgent
         responseHandlers = Map.empty
         nextRequestId = 1
+        random = Random()
         watch = Stopwatch()
     }
     let errorHandler e = ifError { trace $"%A{e}" }
     writeAgent.Error.Add errorHandler
+    for agent in backgroundAgents do agent.Error.Add errorHandler
     projectAgent.Error.Add errorHandler
 
     ifInfo { trace "%s" resources.LogMessages.ServerStarting }
     writeAgent.Start()
+    for agent in backgroundAgents do agent.Start()
     projectAgent.Start()
     ReadAgent.start {
-        resources = resources
-        writeAgent = writeAgent
         projectAgent = projectAgent
+        resources = resources
         reader = input
     }
     ifInfo { trace "%s" resources.LogMessages.ServerTerminatedNormally }
