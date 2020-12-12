@@ -182,15 +182,6 @@ let removeSourceFile file project =
     let project = Project.remove file project
     updateDescendants file project
 
-let hitTest project visitor visitorThis path position =
-    match Project.tryFind path project with
-    | ValueNone -> ValueNone, project
-    | ValueSome sourceFile ->
-
-    match Checkers.checkSourceFileCached project path sourceFile with
-    | None, _, project -> ValueNone, project
-    | Some tree, _, project -> Block.hitTest visitor visitorThis position tree.entity, project
-
 let isAncestor old young project =
     match Project.tryFind young project with
     | ValueSome { stage = AnalysisComplete(Some check, _) } -> Set.contains old check.typedTree.state.ancestorModulePaths

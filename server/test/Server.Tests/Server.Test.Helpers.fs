@@ -1,4 +1,5 @@
 module LuaChecker.Server.Test.Helpers
+open FSharp.Data.UnitSystems.SI.UnitSymbols
 open LuaChecker
 open LuaChecker.Server
 open LuaChecker.Server.Json
@@ -12,7 +13,7 @@ open System.Text.Json
 open System.Threading
 
 
-let (=?) l r = if not (l = r) then failwithf "%A =? %A" l r
+let (=?) l r = if not (l = r) then failwithf "%0A =? %0A" l r
 
 type Async with
     static member ParallelAction(xs: unit Async seq) =
@@ -87,6 +88,8 @@ type ProtocolMessage =
     // request & response
     | Initialize of InitializeParams
     | InitializeResponse of InitializeResult
+    | RegisterCapability of RegistrationParams
+    | RegisterCapabilityResponse
     | Hover of HoverParams
     | HoverResponse of Hover voption
     | Shutdown
@@ -103,10 +106,12 @@ type ProtocolMessage =
 
 type Actions =
     | Send of ProtocolMessage
-    | Sleep of TimeSpan
+    | Sleep of float<s>
     | WriteFile of path: DocumentPath * contents: string
-    | WhenMessages of predicate: (ProtocolMessage list -> bool) * timeout: TimeSpan option
+    | ReceiveRequest of tryResponse: (ProtocolMessage -> Result<ProtocolMessage, JsonRpcResponseError voption> option) * timeout: float<s> option
+    | WaitUntil of predicate: (ProtocolMessage list -> bool) * timeout: float<s> option
 
+/// `Send(DidOpen { … })`
 let (&>) source (path, version) = Send <| DidOpen {
     textDocument = {
         text = source
@@ -115,53 +120,42 @@ let (&>) source (path, version) = Send <| DidOpen {
     }
 }
 
-type ResponseError = {
-    code: double
-    message: string
-    data: JsonElement OptionalField
-}
-type JsonRpcMessage = {
-    jsonrpc: JsonRpcVersion
-    id: int OptionalField
-    result: JsonElement OptionalField
-    error: ResponseError OptionalField
-    method: Methods OptionalField
-    ``params``: JsonElement OptionalField
-}
-let parse popHandler handlers x =
-    match x.method with
-    | Defined m ->
-        match x.id with
+type Message =
+    | Request of id: int * ``params``: ProtocolMessage
+    | Response of id: int * result: JsonElement
+    | Notification of ``params``: ProtocolMessage
 
-        // request
-        | Defined _ ->
-            failwithf "TODO: request: %A" x
+let parseMessage x =
+    match x with
 
-        // notification
-        | _ ->
-            let x =
-                match m, x.``params`` with
-                | Methods.``textDocument/publishDiagnostics``, Defined ps ->
-                    PublishDiagnostics <| Program.parse<PublishDiagnosticsParams> ps
+    // request
+    | { method = Defined m; id = Defined id } ->
+        let request =
+            match m, x.``params`` with
+            | Methods.``client/registerCapability``, Defined ps ->
+                RegisterCapability <| JsonElement.parse<RegistrationParams> ps
 
-                | _ -> failwithf "TODO: notification: %A" x
+            | _ -> failwith $"TODO: request: %A{x}"
 
-            x, handlers
-    | _ ->
+        Request(id, request)
 
-        // response
-        match x.id with
-        | Undefined -> failwithf "require id: %A" x
+    // notification
+    | { method = Defined m; id = Undefined; ``params`` = ps } ->
+        let x =
+            match m, ps with
+            | Methods.``textDocument/publishDiagnostics``, Defined ps ->
+                PublishDiagnostics <| JsonElement.parse<PublishDiagnosticsParams> ps
 
-        | Defined id ->
+            | _ -> failwithf "TODO: notification: %A" x
 
-        match popHandler id handlers with
-        | None -> failwithf "id out of range: %d %A" id x
-        | Some((_, p), parsers) ->
+        Notification x
 
-        match x.result with
-        | Undefined -> failwithf "response with error: %A" x
-        | Defined ps -> p ps, parsers
+    | { id = Undefined } -> failwithf "required id: %A" x
+    | { result = Undefined } -> failwithf "response with error: %A" x
+
+    // response
+    | { id = Defined id; result = Defined result } ->
+        Response(id, result)
 
 type ConnectionConfig = {
     readTimeout: TimeSpan
@@ -170,6 +164,7 @@ type ConnectionConfig = {
     timeoutMap: TimeSpan -> TimeSpan
     backgroundCheckDelay: TimeSpan
     serverPlatform: PlatformID option
+    initialFiles: {| source: string; path: string |} list
 }
 module ConnectionConfig =
     let defaultValue = {
@@ -178,14 +173,16 @@ module ConnectionConfig =
         timeoutMap = fun x -> if Debugger.IsAttached then Timeout.InfiniteTimeSpan else x
         backgroundCheckDelay = TimeSpan.Zero
         serverPlatform = Some PlatformID.Win32NT
+        initialFiles = []
     }
-type Client<'K,'V,'L,'C,'F> = {
+type Client<'V,'R> = {
     clientToServer: Stream
     serverToClient: Stream
-    responseHandlers: ConcurrentDictionary<'K,'V>
-    logs: 'L ConcurrentQueue
-    fileSystem: 'F
-    config: 'C
+    responseHandlers: ConcurrentDictionary<int, ProtocolMessage * (JsonElement -> ProtocolMessage)>
+    receivedMessageLog: ProtocolMessage ConcurrentQueue
+    pendingRequests: ConcurrentDictionary<int, ProtocolMessage>
+    fileSystem: FileSystem
+    config: ConnectionConfig
 }
 
 let pollingUntil timeout predicate = async {
@@ -194,7 +191,7 @@ let pollingUntil timeout predicate = async {
 
     let mutable next = true
     let mutable result = true
-    let mutable remainingTimeout = timeout |> Option.defaultValue TimeSpan.MaxValue
+    let mutable remainingTimeout = if Timeout.InfiniteTimeSpan = timeout then TimeSpan.MaxValue else timeout
     let mutable sleepTime = initialSleep
 
     while next do
@@ -208,11 +205,13 @@ let pollingUntil timeout predicate = async {
 
     return result
 }
+let floatToTimeSpan (seconds: float<s>) = TimeSpan.FromSeconds <| float seconds
 let clientWrite client actions = async {
     let {
         clientToServer = clientToServer
         responseHandlers = responseHandlers
-        logs = logs
+        receivedMessageLog = logs
+        pendingRequests = pendingRequests
         config = config
         fileSystem = fs
         } = client
@@ -220,47 +219,75 @@ let clientWrite client actions = async {
 
     let mutable id = 1
     let writeNotification method ps =
-        MessageWriter.writeJson output { jsonrpc = JsonRpcVersion.``2.0``; id = Undefined; method = method; ``params`` = ps }
+        MessageWriter.writeJson output <| JsonRpcMessage.notification method ps
 
     let writeRequest message method ps parser =
-        MessageWriter.writeJson output { jsonrpc = JsonRpcVersion.``2.0``; id = Defined id; method = method; ``params`` = ps }
+        MessageWriter.writeJson output <| JsonRpcMessage.request id method ps
         responseHandlers.AddOrUpdate(id, (message, parser), fun _ v -> v) |> ignore
         Interlocked.Increment &id |> ignore
 
+    let writeResponse id response =
+        match response with
+        | Ok r -> JsonRpcMessage.successResponse id r
+        | Error e -> JsonRpcMessage.errorResponse id e
+        |> MessageWriter.writeJson output
+
     let writeMessage m =
         match m with
-        | Initialize x -> Program.parse<_> >> InitializeResponse |> writeRequest m Methods.initialize x
-        | Initialized -> writeNotification Methods.initialized Undefined
-        | Shutdown -> (fun _ -> ShutdownResponse) |> writeRequest m Methods.shutdown Undefined
-        | Exit -> writeNotification Methods.exit Undefined
+        | Initialize x -> JsonElement.parse<_> >> InitializeResponse |> writeRequest m Methods.initialize (ValueSome x)
+        | Initialized -> writeNotification Methods.initialized ValueNone
+        | Shutdown -> (fun _ -> ShutdownResponse) |> writeRequest m Methods.shutdown ValueNone
+        | Exit -> writeNotification Methods.exit ValueNone
 
-        | DidOpen x -> writeNotification Methods.``textDocument/didOpen`` x
-        | DidChange x -> writeNotification Methods.``textDocument/didChange`` x
+        | DidOpen x -> writeNotification Methods.``textDocument/didOpen`` <| ValueSome x
+        | DidChange x -> writeNotification Methods.``textDocument/didChange`` <| ValueSome x
 
-        | DidChangeWatchedFiles x -> writeNotification Methods.``workspace/didChangeWatchedFiles`` x
-        | DidSave x -> writeNotification Methods.``textDocument/didSave`` x
+        | DidChangeWatchedFiles x -> writeNotification Methods.``workspace/didChangeWatchedFiles`` <| ValueSome x
+        | DidSave x -> writeNotification Methods.``textDocument/didSave`` <| ValueSome x
 
         | Hover x ->
-            writeRequest m Methods.``textDocument/hover`` x (fun e ->
-                Program.parse<_> e |> HoverResponse
+            writeRequest m Methods.``textDocument/hover`` (ValueSome x) (fun e ->
+                JsonElement.parse<_> e |> HoverResponse
             )
 
         | HoverResponse _
-            -> failwith $"invalid client response: %A{m}"
-
-        | InitializeResponse _
-        | PublishDiagnostics _
         | ShutdownResponse _
+        | InitializeResponse _
+            -> failwith $"invalid client to server response: %A{m}"
+
+        | RegisterCapability _
+            -> failwith $"invalid client to server request: %A{m}"
+
+        | PublishDiagnostics _
+            -> failwith $"invalid client to server notification: %A{m}"
+
+        | RegisterCapabilityResponse
             -> failwithf "TODO: %A" m
 
+    let polling timeout action predicate = async {
+        let timeout = config.timeoutMap timeout
+        let! success = pollingUntil timeout predicate
+        if not success then failwith $"timeout; underlying action: %A{action}; messages: %A{logs}"
+    }
     let processAction action = async {
         match action with
-        | WhenMessages(predicate, timeout) ->
-            let timeout = Option.map config.timeoutMap timeout
-            let! success = pollingUntil timeout <| fun () -> predicate <| Seq.toList logs
-            if not success then failwithf "timeout; action: %A; messages: %A" action logs
+        | ReceiveRequest(handler, timeout) -> do! polling (Option.map floatToTimeSpan timeout |> Option.defaultValue Timeout.InfiniteTimeSpan) action <| fun () ->
+            let r =
+                pendingRequests
+                |> Seq.tryPick (fun kv -> handler kv.Value |> Option.map (fun r -> kv.Key, r))
 
-        | Sleep time -> do! Async.Sleep time
+            match r with
+            | Some(id, response) ->
+                pendingRequests.TryRemove id |> ignore
+                writeResponse id response
+                true
+
+            | _ -> false
+
+        | WaitUntil(predicate, timeout) -> do! polling (Option.map floatToTimeSpan timeout |> Option.defaultValue Timeout.InfiniteTimeSpan) action <| fun () ->
+            predicate <| Seq.toList logs
+
+        | Sleep time -> do! floatToTimeSpan time |> Async.Sleep
         | WriteFile(path, contents) -> fs.writeAllText(path, contents)
         | Send m -> writeMessage m
     }
@@ -276,23 +303,35 @@ let clientWrite client actions = async {
     }
     do! loop actions
 }
-let clientRead { responseHandlers = responseHandlers; logs = logs; serverToClient = serverToClient } = async {
-    let pop k (d: ConcurrentDictionary<_,_>) =
-        let mutable r = Unchecked.defaultof<_>
-        if d.TryRemove(k, &r) then Some(r, d) else None
-
+let clientRead { responseHandlers = responseHandlers; receivedMessageLog = logs; pendingRequests = pendingRequests; serverToClient = serverToClient } = async {
     let reader = MessageReader.borrowStream serverToClient
 
     let rec aux() =
-        match MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage> reader with
+        match MessageReader.read Utf8Serializable.protocolValue<JsonRpcMessage<JsonElement, Methods, JsonElement>> reader with
         | Ok x ->
-            let x, _ = parse pop responseHandlers x
-            logs.Enqueue x
+            let m = parseMessage x
+            let r =
+                match m with
+                | Notification r -> r
+
+                | Request(id, r) ->
+                    if not <| pendingRequests.TryAdd(id, r) then failwith $"duplicated request id: {id} %A{r}"
+                    r
+
+                | Response(id, r) ->
+                    match responseHandlers.TryRemove id with
+                    | false, _ -> failwith $"handler not found: %A{m}"
+                    | _, (_, handler) -> handler r
+
+            logs.Enqueue r
             aux()
 
         | Error MessageReader.ErrorKind.EndOfSource ->
             if not responseHandlers.IsEmpty then
-                failwithf "require responses: %A" responseHandlers
+                failwithf "require responses: %A, logs: %A" responseHandlers logs
+
+            if not pendingRequests.IsEmpty then
+                failwith $"unsent responses: %A{pendingRequests}"
 
         | Error x -> failwithf "message read error: %A %A" x reader
     aux()
@@ -301,8 +340,8 @@ let clientRead { responseHandlers = responseHandlers; logs = logs; serverToClien
 let copyTextFilesFromRealFileSystem fileSystem paths =
     let paths = [
         for path in paths do
-            let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
-            DocumentPath.ofUri (System.Uri "file:///") path
+            let path = Uri(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path)))
+            DocumentPath.ofUri (Uri "file:///") path
     ]
     for path in paths do
         fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toLocalPath path))
@@ -316,29 +355,31 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     use serverToClient = new BlockingStream(ReadTimeout = readTimeout, WriteTimeout = writeTimeout)
 
     let fileSystem = FileSystem.memory()
+    for f in config.initialFiles do
+        fileSystem.writeAllText(DocumentPath.ofUri null (Uri f.path), f.source)
+
     let globalModulePaths = Server.ServerCreateOptions.defaultOptions.globalModulePaths
     copyTextFilesFromRealFileSystem fileSystem globalModulePaths
 
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
         use writer = MessageWriter.borrowStream serverToClient
-        let server =
-            (reader, writer)
-            |> Server.create (fun c ->
-                { c with
-                    fileSystem = fileSystem
-                    platform = config.serverPlatform
-                    resourcePaths = ["./resources.xml"]
-                    backgroundCheckDelay = config.backgroundCheckDelay
-                    globalModulePaths = globalModulePaths
-                }
-            )
-        Program.connect server
+        (reader, writer)
+        |> Server.start (fun c ->
+            { c with
+                fileSystem = fileSystem
+                platform = config.serverPlatform
+                resourcePaths = ["./resources.xml"]
+                backgroundCheckDelay = config.backgroundCheckDelay
+                globalModulePaths = globalModulePaths
+            }
+        )
         serverToClient.CompleteWriting()
     }
     let client = {
         responseHandlers = ConcurrentDictionary()
-        logs = ConcurrentQueue()
+        receivedMessageLog = ConcurrentQueue()
+        pendingRequests = ConcurrentDictionary()
         clientToServer = clientToServer
         serverToClient = serverToClient
         fileSystem = fileSystem
@@ -352,18 +393,38 @@ let serverActionsWithBoilerPlate withConfig actions = async {
         }
         clientRead client
     ]
-    return Seq.toList client.logs
+    return Seq.toList client.receivedMessageLog
 }
+let receiveRequest timeout f = ReceiveRequest(f >> Option.map Ok, Some timeout)
+let waitUntilExists timeout predicate = WaitUntil(List.exists predicate, Some timeout)
+let waitUntilHasDiagnosticsOf targetUri = waitUntilExists 5.<_> <| function
+    | PublishDiagnostics { uri = uri } -> uri = targetUri
+    | _ -> false
+
+let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
+    let predicate =
+        List.tryFindBack (function PublishDiagnostics d -> fileUri = d.uri | _ -> false)
+        >> Option.map (function PublishDiagnostics d -> predicate d.diagnostics | _ -> false)
+        >> Option.defaultValue false
+
+    WaitUntil(predicate, Some 5.<_>)
+
 let serverActions withConfig messages = async {
     let! rs = serverActionsWithBoilerPlate withConfig [
-        Send <| Initialize { rootUri = ValueSome(Uri "file:///") }
+        Send <| Initialize { rootUri = ValueSome(Uri "file:///C:/") }
         Send Initialized
+        receiveRequest 5.<_> <| function
+            | RegisterCapability _ -> Some RegisterCapabilityResponse
+            | _ -> None
         yield! messages
         Send Shutdown
+        waitUntilExists 5.<_> <| function
+            | ShutdownResponse -> true
+            | _ -> false
         Send Exit
     ]
-    match List.head rs, List.last rs with
-    | InitializeResponse _, ShutdownResponse -> return rs.[1 .. List.length rs-2]
+    match rs with
+    | InitializeResponse _::RegisterCapability _::rs when List.last rs = ShutdownResponse -> return rs.[..List.length rs-2]
     | _ -> return failwithf "%A" rs
 }
 
@@ -412,7 +473,38 @@ let didSave path = Send <| DidSave {
         uri = Uri path
     }
 }
-let writeFile source path = WriteFile(DocumentPath.ofUri null (Uri path), source)
+/// `WriteFile(…)`
+let (?>) source path = WriteFile(DocumentPath.ofUri null (Uri path), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}
+
+let normalizeRegistrationParams x =
+    { x with
+        registrations =
+            x.registrations
+            |> Array.map (fun x ->
+                { x with
+                    id = ""
+                }
+            )
+    }
+
+let normalizeMessage = function
+    | RegisterCapability x -> RegisterCapability <| normalizeRegistrationParams x
+    | x -> x
+
+let normalizeMessages = List.map normalizeMessage
+
+let removeOldDiagnostics messages =
+    List.mapFoldBack (fun message uris ->
+        match message with
+        | PublishDiagnostics d as message ->
+            if Set.contains d.uri uris
+            then None, uris
+            else Some message, Set.add d.uri uris
+
+        | _ -> Some message, uris
+    ) messages Set.empty
+    |> fst
+    |> List.choose id

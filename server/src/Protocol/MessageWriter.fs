@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Protocol.MessageWriter
+module LuaChecker.Server.Protocol.MessageWriter
 open LuaChecker.Server
 open System
 open System.IO
@@ -56,18 +56,20 @@ let writeUtf8 { outputBuffer = buffer; output = output } (utf8Message: _ ReadOnl
     output.Write buffer.WrittenSpan
     output.Write utf8Message
 
-let writeJson { outputBuffer = outputBuffer; writer = writer; writerBuffer = writerBuffer; output = output } message =
+let writeRawMessage { outputBuffer = outputBuffer; output = output } (utf8Json: byte ReadOnlySpan) =
+    outputBuffer.Clear()
+    outputBuffer.Write(ReadOnlySpan utf8ContentLengthHeaderHead)
+    outputBuffer.Write utf8Json.Length
+    outputBuffer.Write(ReadOnlySpan utf8HeaderEnd)
+    output.Write outputBuffer.WrittenSpan
+    output.Write utf8Json
+
+let writeJson ({ writer = writer; writerBuffer = writerBuffer } as messageWriter) message =
     writerBuffer.Clear()
     writer.Reset()
     Json.serializeWriter writer message
     writer.Flush()
+    writeRawMessage messageWriter writerBuffer.WrittenSpan
 
-    outputBuffer.Clear()
-    outputBuffer.Write(ReadOnlySpan utf8ContentLengthHeaderHead)
-    outputBuffer.Write writerBuffer.WrittenCount
-    outputBuffer.Write(ReadOnlySpan utf8HeaderEnd)
-    output.Write outputBuffer.WrittenSpan
-    output.Write writerBuffer.WrittenSpan
-
-let writeJsonRpcResponse writer (response: _ JsonRpcResponse) = writeJson writer response
-let writeJsonRpcNotification writer (notification: JsonRpcMessage<_,_>) = writeJson writer notification
+let writeJsonRpcResponse writer (response: JsonRpcMessage<_,_,_>) = writeJson writer response
+let writeJsonRpcNotification writer (notification: JsonRpcMessage<_,_,_>) = writeJson writer notification

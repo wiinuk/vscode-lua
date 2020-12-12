@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources p1:noNamespaceSchemaLocation="resources.xsd" xmlns:p1="http://www.w3.org/2001/XMLSchema-instance">
   <diagnostic-messages>
     <RequireAnyToken>RequireAnyToken</RequireAnyToken>
@@ -64,12 +64,15 @@
     <ServerStarting>ServerStarting</ServerStarting>
     <ServerTerminatedNormally>ServerTerminatedNormally</ServerTerminatedNormally>
     <RequestCanceled>RequestCanceled({0})</RequestCanceled>
-    <ResponseSending>ResponseSending({0})</ResponseSending>
-    <NotificationSending>NotificationSending({0})</NotificationSending>
     <MessageParseError>MessageParseError({0})</MessageParseError>
     <ReceivedExitNotification>ReceivedExitNotification</ReceivedExitNotification>
     <MessageReceived>MessageReceived({0})</MessageReceived>
     <UnknownRequest>UnknownRequest({0}, {1}, {2})</UnknownRequest>
     <UnknownNotification>UnknownNotification({0}, {1})</UnknownNotification>
+    <InvalidMessageFormat>InvalidMessageFormat({0})</InvalidMessageFormat>
+    <ErrorResponseReceived>ErrorResponseReceived({0})</ErrorResponseReceived>
+    <ResponseHandlerNotFound>ResponseHandlerNotFound({0}, {1})</ResponseHandlerNotFound>
+    <ResourceValidationError>ResourceValidationError({0})</ResourceValidationError>
+    <MessageSending>MessageSending({0})</MessageSending>
   </log-messages>
 </resources>

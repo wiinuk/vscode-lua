@@ -4,10 +4,17 @@ open LuaChecker.Server.Log
 open System.Globalization
 open System
 open System.IO
+open System.Xml.Linq
+open System.Xml.Schema
 
 
 type ServerResources = XmlProvider<Schema = "resources.xsd">
 module ServerResources =
+    let validateXml (xml: XDocument) (schema: XmlSchemaSet) =
+        let validationException = ref None
+        xml.Validate(schema, fun _ e -> match e.Severity with XmlSeverityType.Warning -> () | _ -> validationException := Some e.Exception)
+        !validationException
+
     let loadFile resourcePaths =
         let cultures = seq {
             CultureInfo.CurrentUICulture
@@ -33,7 +40,7 @@ module ServerResources =
             yield! resourcePaths
             for suffix in suffixes -> sprintf "./resources%s.xml" suffix
         }
-        Seq.head <| seq {
+        let resource = Seq.head <| seq {
             for path in paths do
                 let r =
                     try
@@ -47,3 +54,9 @@ module ServerResources =
                 | Ok x -> x
                 | Error _ -> ()
         }
+        match validateXml resource.XElement.Document <| ServerResources.GetSchema() with
+        | Some validationException ->
+            ifWarn { Log.Format(resource.LogMessages.ResourceValidationError, validationException.Message) }
+        | _ -> ()
+
+        resource

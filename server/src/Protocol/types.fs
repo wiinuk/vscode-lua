@@ -1,5 +1,6 @@
 namespace LuaChecker.Server.Protocol
 open System
+open System.Text.Json
 open LuaChecker.Text.Json
 
 
@@ -63,17 +64,69 @@ type Methods =
 type JsonRpcVersion =
     | ``2.0`` = 2uy
 
-type JsonRpcResponse<'T> = {
-    jsonrpc: JsonRpcVersion
-    id: int
-    result: 'T
+module JsonRpcErrorCodes =
+
+    // JSON RPC
+    let ParseError = -32700
+    let InvalidRequest = -32600
+    let MethodNotFound = -32601
+    let InvalidParams = -32602
+    let InternalError = -32603
+    let serverErrorStart = -32099
+    let serverErrorEnd = -32000
+    let ServerNotInitialized = -32002
+    let UnknownErrorCode = -32001
+
+    // LSP
+    let RequestCancelled = -32800
+    let ContentModified = -32801
+
+type JsonRpcResponseError = {
+    code: int
+    message: string
+    data: JsonElement OptionalField
 }
-type JsonRpcMessage<'T,'M> = {
+type JsonRpcMessage<'T,'M,'R> = {
     jsonrpc: JsonRpcVersion
     id: int OptionalField
-    method: 'M
-    ``params``: 'T
+    method: 'M OptionalField
+    ``params``: 'T OptionalField
+    result: 'R OptionalField
+    error: JsonRpcResponseError OptionalField
 }
+module JsonRpcMessage =
+    let notification method ``params`` = {
+        jsonrpc = JsonRpcVersion.``2.0``
+        id = Undefined
+        method = Defined method
+        ``params`` = OptionalField.ofVOption ``params``
+        result = Undefined
+        error = Undefined
+    }
+    let request id method  ``params`` = {
+        jsonrpc = JsonRpcVersion.``2.0``
+        id = Defined id
+        method = Defined method
+        ``params`` = OptionalField.ofVOption ``params``
+        result = Undefined
+        error = Undefined
+    }
+    let successResponse id result = {
+        jsonrpc = JsonRpcVersion.``2.0``
+        id = Defined id
+        result = Defined result
+        method = Undefined
+        ``params`` = Undefined
+        error = Undefined
+    }
+    let errorResponse id error = {
+        jsonrpc = JsonRpcVersion.``2.0``
+        id = Defined id
+        error = OptionalField.ofVOption error
+        method = Undefined
+        ``params`` = Undefined
+        result = Undefined
+    }
 
 type boolean = bool
 
@@ -211,6 +264,10 @@ type DidChangeTextDocumentParams = {
     contentChanges: TextDocumentContentChangeEvent array
 }
 [<Struct>]
+type DidCloseTextDocumentParams = {
+    textDocument: TextDocumentIdentifier
+}
+[<Struct>]
 type DidChangeWatchedFilesParams = {
     changes: FileEvent array
 }
@@ -219,3 +276,61 @@ type HoverParams = {
     textDocument: TextDocumentIdentifier
     position: Position
 }
+
+type WatchKind =
+    | Create = 1uy
+    | Change = 2uy
+    | Delete = 4uy
+
+[<Struct>]
+type FileSystemWatcher = {
+    globPattern: string
+    kind: WatchKind OptionalField
+}
+
+[<Struct>]
+type DidChangeWatchedFilesRegistrationOptions = {
+    watchers: FileSystemWatcher array
+}
+
+[<RequireQualifiedAccess>]
+type RegisterOptions =
+    | DidChangeWatchedFiles of DidChangeWatchedFilesRegistrationOptions
+
+[<Struct>]
+type Registration = {
+    id: string
+    methodAndRegisterOptions: RegisterOptions
+}
+[<Struct>]
+type RegistrationParams = {
+    registrations: Registration array
+}
+
+[<Sealed>]
+type JsonRegistrationParser(options) =
+    inherit JsonElementParser<Registration>()
+
+    let methodsParser = EnumToStringParser<Methods>()
+    let didChangeWatchedFilesParamsParser = ParserOptions.getTypedParserOrRaise<DidChangeWatchedFilesRegistrationOptions> options
+
+    override _.Parse(e, options) = {
+        id = e.GetProperty("id").GetString()
+        methodAndRegisterOptions =
+            let method = methodsParser.Parse(e.GetProperty "method", options)
+            let registerOptions =
+                match e.TryGetProperty "registerOptions" with
+                | true, r -> r
+                | _ -> JsonElement()
+
+            match method with
+            | Methods.``workspace/didChangeWatchedFiles`` -> RegisterOptions.DidChangeWatchedFiles <| didChangeWatchedFilesParamsParser.Parse(registerOptions, options)
+            | _ -> failwith $"TODO: {method}"
+    }
+
+[<Sealed>]
+type JsonRegistrationParserFactory() =
+    inherit JsonElementParserFactory()
+
+    override _.CanParse t = t = typeof<Registration>
+    override _.CreateParser(_, options) = upcast JsonRegistrationParser options

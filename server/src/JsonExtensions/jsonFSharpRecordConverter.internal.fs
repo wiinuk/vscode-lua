@@ -1,9 +1,16 @@
-﻿namespace LuaChecker.Text.Json
+namespace LuaChecker.Text.Json
 
 [<Struct>]
 type OptionalField<'T> =
     | Undefined
     | Defined of 'T
+
+module OptionalField =
+    let defaultValue v = function Defined x -> x | _ -> v
+    let ofOption = function Some x -> Defined x | _ -> Undefined
+    let ofVOption = function ValueSome x -> Defined x | _ -> Undefined
+    let toOption = function Defined x -> Some x | _ -> None
+    let toVOption = function Defined x -> ValueSome x | _ -> ValueNone
 
 namespace LuaChecker.Text.Json.Serialization.Internal
 open LuaChecker.Text.Json

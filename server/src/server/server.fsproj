@@ -8,9 +8,9 @@
     <OtherFlags>--warnon:1182,3218,3180</OtherFlags>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="resources.xsd">
+    <Content Include="resources.xsd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    </Content>
     <Content Include="resources.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -23,6 +23,14 @@
     <None Include="ResourcesSchemaGen.fsx" />
     <Compile Include="Log.fs" />
     <Compile Include="SR.fs" />
+    <Compile Include="JsonElement.fs" />
+    <Compile Include="Documents.fs" />
+    <Compile Include="Marshalling.fs" />
+    <Compile Include="Agent.types.fs" />
+    <Compile Include="WriteAgent.fs" />
+    <Compile Include="ReadAgent.fs" />
+    <Compile Include="BackgroundAgent.fs" />
+    <Compile Include="ProjectAgent.fs" />
     <Compile Include="Server.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

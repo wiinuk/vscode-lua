@@ -79,6 +79,9 @@ module private JsonElementParserHelpers =
     let getParserOrRaise typeToParse options =
         options.typeToParser.GetOrAdd(typeToParse, getParserOrRaiseNonCache, options)
 
+    [<RequiresExplicitTypeArguments>]
+    let getTypedParserOrRaise<'T> options = getParserOrRaise typeof<'T> options :?> JsonElementParser<'T>
+
 [<Sealed>]
 type EnumToIntegerParser<'T when 'T :> Enum and 'T : struct>() =
     inherit JsonElementParser<'T>()
@@ -132,7 +135,7 @@ type EnumParserFactory() =
 type SZArrayParser<'T>(options) =
     inherit JsonElementParser<'T array>()
 
-    let elementParser = getParserOrRaise typeof<'T> options :?> JsonElementParser<'T>
+    let elementParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) =
         match e.ValueKind with
         | JsonValueKind.Null -> null
@@ -178,6 +181,9 @@ module ParserOptions =
     ]
 
     let getParserOrRaise typeToParse options = getParserOrRaise typeToParse options
+    [<RequiresExplicitTypeArguments>]
+    let getTypedParserOrRaise<'T> options = getTypedParserOrRaise<'T> options
+
     let create() = {
         parsers = defaultFactories
         typeToParser = ConcurrentDictionary defaultParsers
@@ -190,7 +196,7 @@ module ParserOptions =
 [<Sealed>]
 type FSharpOptionParser<'T>(options) =
     inherit JsonElementParser<'T option>()
-    let valueParser = getParserOrRaise typeof<'T> options :?> JsonElementParser<'T>
+    let valueParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) =
         if e.ValueKind = JsonValueKind.Null then None
         else Some(valueParser.Parse(e, options))
@@ -206,7 +212,7 @@ type FSharpOptionParserFactory() =
 [<Sealed>]
 type FSharpValueOptionParser<'T>(options) =
     inherit JsonElementParser<'T voption>()
-    let valueParser = getParserOrRaise typeof<'T> options :?> JsonElementParser<'T>
+    let valueParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) =
         if e.ValueKind = JsonValueKind.Null then ValueNone
         else ValueSome(valueParser.Parse(e, options))
@@ -226,7 +232,7 @@ type FSharpUnitParser() = inherit UncheckedDefaultParser<unit>()
 
 type FSharpRecordOptionalFieldParser<'T>(options) =
     inherit JsonElementParser<'T OptionalField>()
-    let valueParser = getParserOrRaise typeof<'T> options :?> JsonElementParser<'T>
+    let valueParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) = Defined(valueParser.Parse(e, options))
 
 type FSharpRecordOptionalFieldParserFactory() =
