@@ -35,50 +35,50 @@ module private Helpers =
         let struct(x, xs) = sepBy isTerminator sep p s
         SepBy(x, xs)
 
-    let emptyTrivia = Trivia.createEmpty()
-
     let token kind s =
         let t =
             match Scanner.readToken kind s with
             | ValueSome t -> t
             | _ ->
                 Scanner.addErrorAtCurrentToken s <| Errors.findRequireToken kind
-                emptyTrivia
+                Scanner.currentTokenToTrivia s
+
         { kind = HEmpty; trivia = t }
 
     let isToken predicate s = predicate (Scanner.tokenKind s)
     let eqToken token s = Scanner.tokenKind s = token
     let notEqualsToken token s = Scanner.tokenKind s <> token
 
-    let missingArgs =
-        let t = { kind = HEmpty; trivia = emptyTrivia }
+    let missingArgs trivia =
+        let t = { kind = HEmpty; trivia = trivia }
         Args(t, None, t) |> withTrivia Args.measure
 
-    let missingVarOf name =
-        { kind = name; trivia = emptyTrivia }
+    let missingVarOf trivia name =
+        { kind = name; trivia = trivia }
         |> Name
         |> Variable
         |> withTrivia Var.measure
 
-    let missingVar = missingVarOf ""
+    let missingVar trivia = missingVarOf trivia ""
 
     let readAnyTokenToMissingPrefixExp s =
         let missingVar =
             match Scanner.read s with
-            | ValueNone -> missingVar
+            | ValueNone -> missingVar <| Scanner.positionToTrivia s
             | ValueSome t ->
 
             Printer.showKind Printer.PrintConfig.defaultConfig t.kind
             |> String.concat ""
-            |> missingVarOf
+            |> missingVarOf t.trivia
 
         Var missingVar
         |> withTrivia PrefixExp.measure
 
     let readAnyTokenToMissingCall s =
+        let t = Scanner.currentTokenToTrivia s
         let missingExp = readAnyTokenToMissingPrefixExp s
 
-        Call(missingExp, missingArgs)
+        Call(missingExp, missingArgs t)
         |> withTrivia FunctionCall.measure
         |> FunctionCall
 
@@ -104,10 +104,10 @@ module private Helpers =
     let hasLeadingNewLine s =
         let s' = Scanner.peek s
         if s'._kind = K.Unknown then false else
-    
+
         let leadingTriviaLength = s'._leadingTriviaLength
         1 <= leadingTriviaLength && 0 <= s._source.IndexOf('\n', s'._span.start - leadingTriviaLength, leadingTriviaLength)
-    
+
     let isCallOpInitiator s =
         match Scanner.tokenKind s with
         | K.LSBracket
@@ -123,14 +123,14 @@ let name s =
     | ValueSome(x, t) -> Name { kind = x; trivia = t }
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireName
-        Name { kind = ""; trivia = emptyTrivia }
+        Name { kind = ""; trivia = Scanner.currentTokenToTrivia s }
 
 let stringArg s =
     match Scanner.readPick (function K.String x -> ValueSome x | _ -> ValueNone) s with
     | ValueSome(x, t) -> StringLiteral { kind = x; trivia = t } |> StringArg |> withTrivia Args.measure
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireString
-        missingArgs
+        missingArgs <| Scanner.currentTokenToTrivia s
 
 let dot s = token K.Dot s
 let dot3 s = token K.Dot3 s
@@ -191,7 +191,8 @@ let literal s =
     | ValueSome(k, t) -> Literal { kind = k; trivia = t }
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireLiteral
-        missingVar
+        Scanner.currentTokenToTrivia s
+        |> missingVar
         |> Var
         |> withTrivia PrefixExp.measure
         |> PrefixExp
@@ -201,14 +202,14 @@ let fieldSep s =
     | ValueSome(k, t) -> { kind = k; trivia = t }
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireFieldSep
-        { kind = Comma; trivia = emptyTrivia }
+        { kind = Comma; trivia = Scanner.currentTokenToTrivia s }
 
 let unaryOp s =
     match Scanner.readPick (function UnaryOpKind(ValueSome k) -> ValueSome k | _ -> ValueNone) s with
     | ValueSome(k, t) -> { kind = k; trivia = t }
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireUnaryOp
-        { kind = Len; trivia = emptyTrivia }
+        { kind = Len; trivia = Scanner.currentTokenToTrivia s }
 
 /// name (, name)*
 let nameList s = sepBy (notEqualsToken K.Comma) comma name s |> withTrivia (Span.sepBy Name.measure)
@@ -254,7 +255,7 @@ let inline binaryOp missingOpKind (|OpKind|) s =
     | ValueSome(k, t) -> { kind = k; trivia = t }
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireBinaryOp
-        { kind = missingOpKind; trivia = Trivia.createEmpty() }
+        { kind = missingOpKind; trivia = Scanner.currentTokenToTrivia s }
 
 let mulOp s = binaryOp Mul (|MulOpKind|) s
 let addOp s = binaryOp Add (|AddOpKind|) s
@@ -297,7 +298,8 @@ and field s =
     | K.Unknown ->
         Scanner.addErrorAtCurrentToken s E.RequireAnyField
 
-        missingVar
+        Scanner.currentTokenToTrivia s
+        |> missingVar
         |> Var
         |> withTrivia PrefixExp.measure
         |> PrefixExp
@@ -352,7 +354,7 @@ and tableConstructor s =
 and wrappedArgs s =
     if hasLeadingNewLine s then
         Scanner.addErrorAtCurrentToken s E.DisallowedLeadingNewLine
-        missingArgs
+        missingArgs <| Scanner.currentTokenToTrivia s
     else
         Args(lBracket s, option (isToken (function K.RBracket | K.Unknown -> false | _ -> true)) expList s, rBracket s)
         |> withTrivia Args.measure
@@ -394,7 +396,7 @@ and primPrefixExp s =
     match Scanner.tokenKind s with
     | K.LBracket -> Wrap(lBracket s, exp s, rBracket s) |> withTrivia PrefixExp.measure
     | K.Name _ -> Variable(name s) |> varToPrefixExp
-    | _ -> 
+    | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireNameOrLBracket
         readAnyTokenToMissingPrefixExp s
 
@@ -483,7 +485,7 @@ and var s =
     | { kind = Var x1 } -> x1
     | _ ->
         Scanner.addErrorAtCurrentToken s E.RequireVar
-        missingVar
+        missingVar <| Scanner.currentTokenToTrivia s
 
 and assignStatTail (state: _ inref) var1 s =
     match Scanner.tokenKind s with
@@ -515,7 +517,9 @@ and stat s =
     match Scanner.tokenKind s with
     | K.Unknown ->
         Scanner.addErrorAtCurrentToken s E.RequireAnyStat
-        Call(varToPrefixExp missingVar.kind, missingArgs)
+        let trivia = Scanner.positionToTrivia s
+        let var = missingVar trivia
+        Call(varToPrefixExp var.kind, missingArgs trivia)
         |> withTrivia FunctionCall.measure
         |> FunctionCall
 

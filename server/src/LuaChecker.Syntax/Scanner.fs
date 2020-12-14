@@ -591,6 +591,21 @@ let peekTrivia s =
     else
         ValueNone
 
+let positionToTrivia s =
+    let p = position s
+    {
+        leadingTriviaLength = 0
+        leadingDocument = None
+        span = { start = p; end' = p }
+        trailingTriviaLength = 0
+        trailingDocument = None
+    }
+
+let currentTokenToTrivia s =
+    match peekTrivia s with
+    | ValueSome t -> t
+    | _ -> positionToTrivia s
+
 let unsafeReadTrivia s =
     let t = &s.currentTokenStructure
     let t = {
