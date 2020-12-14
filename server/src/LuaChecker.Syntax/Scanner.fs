@@ -578,6 +578,19 @@ let inline initWith withOptions source s =
 let init source s = initWith (fun x -> x) source s
 let create source = createWith (fun x -> x) source
 
+let peekTrivia s =
+    let t = &s.currentTokenStructure
+    if t.hasValue then
+        ValueSome {
+            leadingTriviaLength = t._leadingTriviaLength
+            leadingDocument = None
+            span = t._span
+            trailingTriviaLength = t._trailingTriviaLength
+            trailingDocument = None
+        }
+    else
+        ValueNone
+
 let unsafeReadTrivia s =
     let t = &s.currentTokenStructure
     let t = {
