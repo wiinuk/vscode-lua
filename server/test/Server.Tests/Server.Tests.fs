@@ -128,6 +128,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.didChangeError() = async {
         let! r = serverActions id [
             "return 1 + 1" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
             didChangeFull "return 1 .. 1" ("C:/main.lua", 2)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
         ]
