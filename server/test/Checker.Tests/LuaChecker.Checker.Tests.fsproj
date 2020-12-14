@@ -20,7 +20,6 @@
     <Compile Include="Checker.AnnotationTests.fs" />
     <Compile Include="Checker.BasicTests.fs" />
     <Compile Include="Checker.ModuleTests.fs" />
-    <Compile Include="Checker.SyntaxTests.fs" />
     <Compile Include="Protocol.Tests.fs" />
   </ItemGroup>
   <ItemGroup>

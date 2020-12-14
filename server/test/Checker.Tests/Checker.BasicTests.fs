@@ -552,7 +552,7 @@ let acceptRecursiveType2() =
 [<Fact>]
 let acceptRecursiveType3() =
     chunkDiagnostics id "
-    local function x() return { 1 = 1, 2 = x() } end
+    local function x() return { [1] = 1, [2] = x() } end
     return x()
     " =? []
 
