@@ -1,4 +1,4 @@
-﻿module rec LuaChecker.Checkers
+module rec LuaChecker.Checkers
 open LuaChecker
 open LuaChecker.CheckerEnv
 open LuaChecker.Syntax
@@ -199,14 +199,10 @@ module private Helpers =
         ) ValueNone
 
     let parseAndCheckSource' visitedSources filePath source project =
-        match parse project.projectRare.fileSystem source with
-        | Error e ->
-            let sourceFile = { stage = AnalysisComplete(None, e); source = source }
-            let project = Project.addSourceFileNoCheck filePath sourceFile project
-            None, e, project
-
-        | Ok syntax ->
-            checkSyntaxAndCache' visitedSources project filePath source syntax
+        let struct(syntax, syntaxDiagnostics) = parse project.projectRare.fileSystem source
+        let semantics, semanticDiagnostics, project = checkSyntaxAndCache' visitedSources project filePath source syntax
+        let diagnostics = Seq.append syntaxDiagnostics semanticDiagnostics
+        semantics, diagnostics, project
 
     let checkSourceFileCached' visitedSources project filePath { source = source; stage = stage } =
         match stage with
@@ -214,8 +210,7 @@ module private Helpers =
             parseAndCheckSource' visitedSources filePath source project
 
         | AnalysisComplete(s, es) ->
-            let tree = s |> Option.map (fun s -> s.typedTree)
-            tree, es, project
+            s.typedTree, es, project
 
     let checkSyntaxAndCache' visitedSources project filePath source syntaxTree =
         let chunk, e, project = chunk' project.projectRare.initialGlobal visitedSources project filePath source syntaxTree
@@ -224,9 +219,9 @@ module private Helpers =
             syntaxTree = syntaxTree
             typedTree = chunk
         }
-        let sourceFile = { stage = AnalysisComplete(Some s, e); source = source }
+        let sourceFile = { stage = AnalysisComplete(s, e); source = source }
         let project = Project.addSourceFileNoCheck filePath sourceFile project
-        Some chunk, e, project
+        chunk, e, project
 
     let unify env t1 t2 = Type.unify (types env) t1 t2
 
@@ -385,13 +380,33 @@ module private Helpers =
             report env <| Diagnostic(span, s, DiagnosticKind.ExternalModuleError(modulePath, e))
         | _ -> ()
 
+    let missingChunk (Types types as env) syntaxSpan functionTypeLocations = {
+        T.entity = {
+            T.entity = { T.stats = []; T.lastStat = None }
+            T.state = HEmpty
+            T.span = syntaxSpan
+        }
+        T.state = {
+            T.functionType =
+                types.fn(
+                    newMultiVarType env TypeNames.lostByError |@ functionTypeLocations,
+                    newMultiVarType env TypeNames.lostByError |@ functionTypeLocations
+                ) |@ functionTypeLocations
+                |> Scheme.generalize env.rare.typeLevel
+
+            T.ancestorModulePaths = Set.empty
+            T.additionalGlobalEnv = Env.empty
+        }
+        T.span = syntaxSpan
+    }
+
     let analyzeModuleFile env span modulePath moduleFile =
         match moduleFile.stage with
 
         // モジュールが解析完了していたのでそれを使う
         | AnalysisComplete(s, e) ->
             reportMostSeriousErrorOnModuleRequire env span modulePath e
-            s |> Option.map (fun s -> s.typedTree)
+            s.typedTree
 
         // モジュールは未解析だった
         | _ ->
@@ -402,7 +417,7 @@ module private Helpers =
             // 解析中のモジュールを再び解析しようとしている ( = モジュール参照が再帰していた ) のでエラー
             // TODO: モジュールがテーブル型なら再帰できる
             reportWarn env span <| DiagnosticKind.RecursiveModuleReference modulePath
-            None
+            missingChunk env span []
         else
 
         // 再帰モジュール参照ではなかった
@@ -989,25 +1004,18 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
     let chunk = analyzeModuleFile env nameSpan modulePath moduleFile
 
     // モジュールのパスとモジュールの先祖のパスを自分の先祖に追加
-    match chunk with
-    | Some chunk -> appendAncestorModulePaths env <| Set.add modulePath chunk.state.ancestorModulePaths
-    | _ -> ()
+    appendAncestorModulePaths env <| Set.add modulePath chunk.state.ancestorModulePaths
 
     // 戻り値型を求める
     let resultType =
-        match chunk with
-        | None -> newMultiVarType env TypeNames.functionResult |@ callLocation
-        | Some chunk ->
-            let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.state.functionType
-            let types = types env
-            match t.kind with
-            | Type.Function types (ValueSome(_, r)) -> r
-            | _ -> t
+        let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.state.functionType
+        let types = types env
+        match t.kind with
+        | Type.Function types (ValueSome(_, r)) -> r
+        | _ -> t
 
     // モジュールの追加的グローバル環境を導入する
-    match chunk with
-    | Some chunk -> extendGlobalEnvironmentFromParentModule env nameSpan modulePath chunk.state
-    | _ -> ()
+    extendGlobalEnvironmentFromParentModule env nameSpan modulePath chunk.state
 
     Some modulePath, resultType
 
@@ -1454,10 +1462,14 @@ let chunk' env visitedSources project filePath source x = Local.runNotStruct { n
 
 let internal parse fs source =
     let source = fetchSourceContents fs source
-    let s = Scanner.create source
-    match Parser.block s with
-    | Error e -> [Diagnostic.error Span.empty <| DiagnosticKind.ParseError e] :> _ seq |> Error
-    | Ok x -> Ok x
+    let scanner = Scanner.create source
+    let block = Parser.sourceFile scanner
+    let errors =
+        match Scanner.currentErrors scanner with
+        | [] -> [] :> _ seq
+        | errors -> seq { for span, e in List.rev errors do Diagnostic.error span <| DiagnosticKind.ParseError e }
+
+    struct(block, errors)
 
 let checkSourceFileCached project filePath sourceFile = Local.runNotStruct { new ILocalScope<_> with
     member _.Invoke scope =

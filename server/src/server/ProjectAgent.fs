@@ -99,9 +99,9 @@ module private Helpers =
         | ValueSome sourceFile ->
             ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toLocalPath path) }
             ifDebug { agent.watch.Restart() }
-            let r = Checkers.checkSourceFileCached project path sourceFile
+            let typedTree, diagnostics, project = Checkers.checkSourceFileCached project path sourceFile
             ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toLocalPath path) }
-            r
+            Some typedTree, diagnostics, project
 
         | ValueNone -> None, upcast [], project
 

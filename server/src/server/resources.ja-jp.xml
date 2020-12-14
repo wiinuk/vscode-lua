@@ -46,6 +46,7 @@
     <OtherFieldLocation>他のフィールドの場所</OtherFieldLocation>
     <OtherTagLocation>他のタグの場所</OtherTagLocation>
 
+    <ParseError>一般的な構文エラー：{0}</ParseError>
     <DisallowedLeadingNewLine>トークンの前の改行は無効です</DisallowedLeadingNewLine>
     <RequireAnyField>フィールドが必要です</RequireAnyField>
     <RequireAnyStat>式が必要です</RequireAnyStat>
@@ -61,7 +62,10 @@
     <RequireVar>名前や `x.f`、`x[n]` などの変数式が必要です</RequireVar>
     <RequireAnyFieldKey>フィールドのキーが必要です。 例：`key`、`"key"`、`123`、`true`</RequireAnyFieldKey>
     <RequireAnyTypeSign>型が必要です。例：`string`、`table&lt;number, a&gt;`、`{{ x: _, y: any }}`、`TElement[]`</RequireAnyTypeSign>
-    <ParseError>"一般的な構文エラー：{0}</ParseError>
+    <RequireAssignStatOrFunctionCall>`x = 10` などの代入文または `f(10)` などの関数呼び出し文が必要です</RequireAssignStatOrFunctionCall>
+    <RequireEndOfSource>ソースの終わりが必要です</RequireEndOfSource>
+    <RequireNameOrDot3>名前か `...` が必要です</RequireNameOrDot3>
+    <RequireNameOrLBracket>名前か `(` が必要です</RequireNameOrLBracket>
   </diagnostic-messages>
 
   <log-messages>

@@ -55,6 +55,11 @@ let tokenKind s =
     then s.currentTokenStructure._kind
     else TokenKind.Unknown
 
+let tokenSpan s =
+    if s.currentTokenStructure.hasValue
+    then s.currentTokenStructure._span
+    else Span.empty
+
 let getState s = {
     _position = s.position
     _currentTokenStructure = s.currentTokenStructure
@@ -67,8 +72,20 @@ let setState (state: _ inref) s =
     s.remainingTriviaLength <- state._remainingTriviaLength
     s.errors <- state._errors
 
+let currentErrors s = s.errors
 let addError s e = s.errors <- e::s.errors
-let errors s = s.errors
+let addErrorAtCurrentToken s error =
+    let span = tokenSpan s
+    let span =
+        if Span.isEmpty span then
+            let p = s.position
+            { start = p; end' = p }
+        else
+            span
+
+    match s.errors with
+    | struct(lastSpan, _)::_ when lastSpan.start = span.start -> ()
+    | _ -> addError s struct(span, error)
 
 let isEos s = s.last <= s.position
 let ensure length s = s.position + length <= s.last
@@ -458,25 +475,6 @@ let leadingTriviaAndToken s =
         trivia = trivia
     }
 
-let tokens s = [|
-    match leadingTriviaAndToken s with
-    | ValueNone -> ()
-    | ValueSome t ->
-
-    let mutable t = t
-    let mutable next = true
-    while next do
-        match leadingTriviaAndToken s with
-        | ValueSome t' ->
-            t
-            t <- t'
-
-        | ValueNone ->
-            let fullEnd = position s
-            { t with trivia = { t.trivia with trailingTriviaLength = fullEnd - t.trivia.span.end' } }
-            next <- false
-|]
-
 let takeTrivia s =
     if s.currentTokenStructure.hasValue then
         let s = &s.currentTokenStructure
@@ -541,6 +539,7 @@ let private createUninitialized() = {
     position = 0
     remainingTriviaLength = 0
     currentTokenStructure = Unchecked.defaultof<_>
+
     errors = Unchecked.defaultof<_>
 }
 let initCore (options: _ inref) source s =
@@ -556,6 +555,8 @@ let initCore (options: _ inref) source s =
     s.remainingTriviaLength <- 0
     s.currentTokenStructure <- Unchecked.defaultof<_>
     s.currentTokenStructure._kind <- TokenKind.Unknown
+
+    s.errors <- []
 
     if options.initialRead then
         s.remainingTriviaLength <- skipTrivias s

@@ -116,18 +116,16 @@ let standardEnv packagePath = {
 let checkCached project path =
     match Project.tryFind path project with
     | ValueNone -> None, Seq.empty, project
-    | ValueSome sourceFile -> Checkers.checkSourceFileCached project path sourceFile
+    | ValueSome sourceFile ->
+        let chunk, diagnostics, project = Checkers.checkSourceFileCached project path sourceFile
+        Some chunk, diagnostics, project
 
 let updateDescendants file project =
     project.pathToSourceFile
     |> HashMap.fold (fun struct(project, descendants) sourcePath sourceFile ->
         match sourceFile.stage with
         | BeforeParse _ -> project, descendants
-
-        // parse error
-        | AnalysisComplete(None, _) -> project, descendants
-
-        | AnalysisComplete(Some s, _) ->
+        | AnalysisComplete(s, _) ->
             if not <| Set.contains file s.typedTree.state.ancestorModulePaths then project, descendants else
 
             // sourceFile が file を参照していた
@@ -140,17 +138,8 @@ let updateDescendants file project =
     ) (project, [])
 
 let checkSourceCore project filePath source =
-    match Checkers.parse project.projectRare.fileSystem source with
-    | Error e ->
-        let sourceFile = {
-            stage = AnalysisComplete(None, e)
-            source = source
-        }
-        let project = Project.addSourceFileNoCheck filePath sourceFile project
-        None, e, project
-
-    | Ok syntaxTree ->
-        Checkers.checkSyntaxAndCache project filePath source syntaxTree
+    let struct(syntaxTree, _) = Checkers.parse project.projectRare.fileSystem source
+    Checkers.checkSyntaxAndCache project filePath source syntaxTree
 
 ///<summary>(&lt;=)</summary>
 let isOlder source1 source2 =
@@ -184,7 +173,7 @@ let removeSourceFile file project =
 
 let isAncestor old young project =
     match Project.tryFind young project with
-    | ValueSome { stage = AnalysisComplete(Some check, _) } -> Set.contains old check.typedTree.state.ancestorModulePaths
+    | ValueSome { stage = AnalysisComplete(check, _) } -> Set.contains old check.typedTree.state.ancestorModulePaths
     | _ -> false
 
 let addInitialGlobalModules project globalModulePaths =
@@ -196,9 +185,7 @@ let addInitialGlobalModules project globalModulePaths =
                 with _ -> System.DateTime.MinValue
 
             let chunk, _, project, _ = parseAndCheckCached project globalModulePath (InFs(globalModulePath, lastWriteTime))
-            match chunk with
-            | Some chunk -> project, Env.merge NonEmptyList.append NonEmptyList.append globalEnv chunk.state.additionalGlobalEnv
-            | _ -> project, globalEnv
+            project, Env.merge NonEmptyList.append NonEmptyList.append globalEnv chunk.state.additionalGlobalEnv
 
         ) (project, project.projectRare.initialGlobal.initialGlobalEnv)
 

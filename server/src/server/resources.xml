@@ -16,6 +16,10 @@
     <RequireAnyField>RequireAnyField</RequireAnyField>
     <RequireAnyFieldKey>RequireAnyFieldKey</RequireAnyFieldKey>
     <RequireAnyTypeSign>RequireAnyTypeSign</RequireAnyTypeSign>
+    <RequireNameOrDot3>RequireNameOrDot3</RequireNameOrDot3>
+    <RequireAssignStatOrFunctionCall>RequireAssignStatOrFunctionCall</RequireAssignStatOrFunctionCall>
+    <RequireEndOfSource>RequireEndOfSource</RequireEndOfSource>
+    <RequireNameOrLBracket>RequireNameOrLBracket</RequireNameOrLBracket>
     <TypeMismatch>TypeMismatch({0}, {1})</TypeMismatch>
     <RequireField>RequireField({0}, {1}, {2})</RequireField>
     <UndefinedField>UndefinedField({0}, {1})</UndefinedField>

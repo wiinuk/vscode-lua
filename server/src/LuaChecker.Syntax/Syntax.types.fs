@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Syntax
+namespace LuaChecker.Syntax
 open LuaChecker
 
 
@@ -118,3 +118,7 @@ type ParseError =
     | RequireAnyField
     | RequireAnyFieldKey
     | RequireAnyTypeSign
+    | RequireNameOrDot3
+    | RequireAssignStatOrFunctionCall
+    | RequireEndOfSource
+    | RequireNameOrLBracket

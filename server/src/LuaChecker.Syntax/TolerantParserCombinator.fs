@@ -1,29 +1,20 @@
 module LuaChecker.TolerantParserCombinator
 open System.ComponentModel
+open LuaChecker.Syntax
 
 
 let inline list isTerminator p s =
     let mutable acc = []
-    while not (isTerminator s) do acc <- p s::acc
+    while not (isTerminator s || Scanner.tokenKind s = TokenKind.Unknown) do acc <- p s::acc
     List.rev acc
 
-let inline pipe2 (p1, p2) f s = f(p1 s, p2 s)
-let inline tuple2 (p1, p2) s = pipe2 (p1, p2) id s
-let inline pipe3 (p1, p2, p3) f s = f(p1 s, p2 s, p3 s)
-let inline pipe4 (p1, p2, p3, p4) f s = f(p1 s, p2 s, p3 s, p4 s)
-let inline pipe5 (p1, p2, p3, p4, p5) f s = f(p1 s, p2 s, p3 s, p4 s, p5 s)
-let inline option p s =
-    let s' = Scanner.getState s
-    let r = p s
-    match r with
-    | None -> Scanner.setState &s' s
-    | _ -> ()
-    r
+let inline tuple2 (p1, p2) s = p1 s, p2 s
+let inline option canParse p s = if canParse s then Some(p s) else None
 
 let inline sepByCore makeState foldState finishState isTerminator sepP p s =
     let x = p s
     let mutable state = makeState x
-    while not <| isTerminator s do
+    while not (isTerminator s || Scanner.tokenKind s = TokenKind.Unknown) do
         state <- foldState state (sepP s) (p s)
     finishState x state
 
@@ -39,7 +30,7 @@ let inline chainL isTerminator p op f s =
         isTerminator op p s
 
 /// `p (op p)*`
-let inline chainR p isTerminator op f s =
+let inline chainR isTerminator p op f s =
     sepByCore
         (fun _ -> []) (fun ops op r -> (r, op)::ops) (fun l ops ->
             match ops with
@@ -69,7 +60,7 @@ let inline chainR p isTerminator op f s =
 /// p op*
 let inline postfixOps isTerminator p op s =
     let mutable x = p s
-    while not <| isTerminator s do
+    while not (isTerminator s || Scanner.tokenKind s = TokenKind.Unknown) do
         x <- op x s
     x
 
@@ -84,7 +75,7 @@ let _ensureAndAdd (ops: _ byref) op =
 let inline prefixOps isTerminator reduce op p s =
     // TODO: pool
     let mutable ops = null
-    while isTerminator s do
+    while not (isTerminator s || Scanner.tokenKind s = TokenKind.Unknown) do
         _ensureAndAdd &ops (op s)
 
     let mutable r = p s

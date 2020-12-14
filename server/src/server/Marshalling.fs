@@ -81,6 +81,10 @@ let showParseError (Messages m) = function
     | P.RequireVar -> m.RequireVar
     | P.RequireAnyFieldKey -> m.RequireAnyFieldKey
     | P.RequireAnyTypeSign -> m.RequireAnyTypeSign
+    | P.RequireAssignStatOrFunctionCall -> m.RequireAssignStatOrFunctionCall
+    | P.RequireEndOfSource -> m.RequireEndOfSource
+    | P.RequireNameOrDot3 -> m.RequireNameOrDot3
+    | P.RequireNameOrLBracket -> m.RequireNameOrLBracket 
 
 let showUnifyError (Messages m) = function
     | RequireField(x1, x2, x3) ->

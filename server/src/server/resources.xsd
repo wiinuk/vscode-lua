@@ -85,6 +85,26 @@
           <xsd:documentation>string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
+      <xsd:element name="RequireNameOrDot3" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireAssignStatOrFunctionCall" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireEndOfSource" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequireNameOrLBracket" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
       <xsd:element name="TypeMismatch" type="pattern-3">
         <xsd:annotation>
           <xsd:documentation>string -&gt; string -&gt; string</xsd:documentation>
