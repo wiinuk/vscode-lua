@@ -275,3 +275,18 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
         ]
     }
+    [<Fact>]
+    member _.syntaxError() = async {
+        let! r = serverActions id [
+            "local = 1" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+        ]
+        r =? [
+            PublishDiagnostics {
+                uri = "file:///C:/main.lua"
+                diagnostics = [|
+                    error (0, 6) (0, 7) 0007 "RequireName"
+                |]
+            }
+        ]
+    }
