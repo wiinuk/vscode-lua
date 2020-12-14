@@ -562,7 +562,7 @@ and block s =
 
 and sourceFile s =
     let b = block s
-    if not <| Scanner.isEos s then
+    if Scanner.tokenKind s <> K.Unknown then
         Scanner.addErrorAtCurrentToken s E.RequireEndOfSource
     b
 

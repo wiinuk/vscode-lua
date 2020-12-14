@@ -422,3 +422,10 @@ let randomToken5() =
         error (4, 5) <| E.RequireName
         error (5, 5) <| E.RequireToken K.Do
     ]
+
+[<Fact>]
+let end'() =
+    "end"
+    |> parse sourceFile Block.map =? Error [
+        error (0, 3) E.RequireEndOfSource
+    ]
