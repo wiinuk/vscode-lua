@@ -200,8 +200,7 @@ module private Helpers =
 
     let parseAndCheckSource' visitedSources filePath source project =
         let struct(syntax, syntaxDiagnostics) = parse project.projectRare.fileSystem source
-        let semantics, semanticDiagnostics, project = checkSyntaxAndCache' visitedSources project filePath source syntax
-        let diagnostics = Seq.append syntaxDiagnostics semanticDiagnostics
+        let semantics, diagnostics, project = checkSyntaxAndCache' visitedSources project filePath source syntaxDiagnostics syntax
         semantics, diagnostics, project
 
     let checkSourceFileCached' visitedSources project filePath { source = source; stage = stage } =
@@ -212,8 +211,9 @@ module private Helpers =
         | AnalysisComplete(s, es) ->
             s.typedTree, es, project
 
-    let checkSyntaxAndCache' visitedSources project filePath source syntaxTree =
-        let chunk, e, project = chunk' project.projectRare.initialGlobal visitedSources project filePath source syntaxTree
+    let checkSyntaxAndCache' visitedSources project filePath source syntaxDiagnostics syntaxTree =
+        let chunk, semanticsDiagnostics, project = chunk' project.projectRare.initialGlobal visitedSources project filePath source syntaxTree
+        let e = Seq.cache <| Seq.append syntaxDiagnostics semanticsDiagnostics
 
         let s = {
             syntaxTree = syntaxTree

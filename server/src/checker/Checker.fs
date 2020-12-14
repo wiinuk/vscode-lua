@@ -138,8 +138,8 @@ let updateDescendants file project =
     ) (project, [])
 
 let checkSourceCore project filePath source =
-    let struct(syntaxTree, _) = Checkers.parse project.projectRare.fileSystem source
-    Checkers.checkSyntaxAndCache project filePath source syntaxTree
+    let struct(syntaxTree, diagnostics) = Checkers.parse project.projectRare.fileSystem source
+    Checkers.checkSyntaxAndCache project filePath source diagnostics syntaxTree
 
 ///<summary>(&lt;=)</summary>
 let isOlder source1 source2 =
