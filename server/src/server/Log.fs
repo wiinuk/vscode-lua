@@ -166,49 +166,50 @@ type BackgroundLogger(sourceName, initialMaxDetail) =
     member internal _.Add child = bg.Post <| Add child
     member internal _.Remove child = bg.Post <| Remove child
 
+type private FileLogger(filePath) =
+    inherit Logger()
+    
+    static let bufferSize = 4096
+    static let tryCreateStream filePath append =
+        try
+            let mode = if append then FileMode.Append else FileMode.Create
+            ValueSome <| new FileStream(
+                filePath,
+                mode,
+                FileAccess.Write,
+                FileShare.Read,
+                bufferSize,
+                FileOptions.SequentialScan
+            )
+        with _ -> ValueNone
+
+    let mutable stream = tryCreateStream filePath false
+    override _.Log event =
+        stream <-
+            match stream with
+            | ValueNone -> tryCreateStream filePath true
+            | x -> x
+
+        match stream with
+        | ValueSome s ->
+            use mutable b = ZString.CreateUtf8StringBuilder()
+            appendEvent &b event
+            try
+                s.Write(b.AsSpan())
+                s.Flush(flushToDisk = true)
+            with _ ->
+                s.Dispose()
+                stream <- ValueNone
+        | _ -> ()
+
+    override _.Dispose disposing =
+        if disposing then
+            stream
+            |> ValueOption.iter (fun s -> s.Dispose())
+
 module Logger =
     let streamLogger stream = new StreamLogger(stream)
-    let fileLogger filePath =
-        let bufferSize = 4096
-        let tryCreateStream filePath append =
-            try
-                let mode = if append then FileMode.Append else FileMode.Create
-                ValueSome <| new FileStream(
-                    filePath,
-                    mode,
-                    FileAccess.Write,
-                    FileShare.Read,
-                    bufferSize,
-                    FileOptions.SequentialScan
-                )
-            with _ -> ValueNone
-
-        let mutable stream = tryCreateStream filePath false
-        { new Logger() with
-            override _.Log event =
-                stream <-
-                    match stream with
-                    | ValueNone -> tryCreateStream filePath true
-                    | x -> x
-
-                match stream with
-                | ValueSome s ->
-                    use mutable b = ZString.CreateUtf8StringBuilder()
-                    appendEvent &b event
-                    try
-                        s.Write(b.AsSpan())
-                        s.Flush(flushToDisk = true)
-                    with _ ->
-                        s.Dispose()
-                        stream <- ValueNone
-                | _ -> ()
-
-            override _.Dispose disposing =
-                if disposing then
-                    stream
-                    |> ValueOption.iter (fun s -> s.Dispose())
-        }
-
+    let fileLogger filePath = new FileLogger(filePath) :> Logger
     let consoleLogger() = Console.OpenStandardOutput() |> streamLogger
     let standardErrorLogger() = Console.OpenStandardError() |> streamLogger
     let debugLogger() = { new Logger() with
