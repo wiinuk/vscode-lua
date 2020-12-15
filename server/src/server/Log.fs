@@ -165,12 +165,14 @@ type BackgroundLogger(sourceName, initialMaxDetail) =
 
 module Logger =
     let streamLogger stream = new StreamLogger(stream)
-
     let fileLogger filePath =
-        let stream =
-            try new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite, 4096, FileOptions.SequentialScan) :> Stream
-            with _ -> Stream.Null
-        streamLogger stream
+        try File.Delete filePath with _ -> ()
+        { new Logger() with
+            override _.Log event =
+                let contents = String.Format("[{0:O}] {1} : {2} : {3}{4}", event.time, event.source, showLevel event.level, event.message, Environment.NewLine)
+                try File.AppendAllText(filePath, contents)
+                with _ -> ()
+        }
 
     let consoleLogger() = Console.OpenStandardOutput() |> streamLogger
     let standardErrorLogger() = Console.OpenStandardError() |> streamLogger
