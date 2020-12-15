@@ -46,7 +46,8 @@ jobs:
       - run: npm test
         if: runner.os != 'Linux'
 
-  pack:
+  release:
+    if: github.event_name == 'push'
     needs: [test]
     runs-on: ubuntu-latest
     steps:
@@ -60,7 +61,4 @@ jobs:
           node-version: 14.x
 
       - run: npm install
-      - run: npm run pack
-      - uses: actions/upload-artifact@v2
-        with:
-          path: ./*.vsix
+      - run: npm run release

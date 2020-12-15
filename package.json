@@ -18,6 +18,7 @@
   "scripts": {
     "vscode:prepublish": "dotnet fsi --quiet --exec ./server/pack.fsx && npm run compile",
     "pack": "vsce package",
+    "release": "npm run pack && dotnet fsi --quiet ./server/release.fsx --",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
