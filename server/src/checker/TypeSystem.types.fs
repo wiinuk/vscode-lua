@@ -1,4 +1,4 @@
-﻿namespace rec LuaChecker
+namespace rec LuaChecker
 open Cysharp.Text
 open LuaChecker.Primitives
 open LuaChecker.TypeWriteHelpers
@@ -306,7 +306,7 @@ type TagElement =
 
 module TagElement =
     let show e =
-        let mutable b = ZString.CreateStringBuilder()
+        use mutable b = ZString.CreateStringBuilder()
         ConstraintsExtensions.AppendTagElement(&b, e)
         b.ToString()
 
@@ -534,7 +534,7 @@ module TagSpace =
         | _ -> ofTagSet (s1.tagSet &&& ~~~s2.tagSet) |> toElements |> Seq.tryHead |> Option.unbox
 
     let show s =
-        let mutable b = ZString.CreateStringBuilder()
+        use mutable b = ZString.CreateStringBuilder()
         TagSpaceExtensions.Append(&b, s)
         b.ToString()
 
