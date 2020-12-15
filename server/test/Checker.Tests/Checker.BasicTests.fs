@@ -926,3 +926,21 @@ let standardLibraryIsAutomaticallyLoaded() =
     ] =? [
         Ok types.number
     ]
+
+[<Fact>]
+let stringMethod() =
+    chunkResult id "
+    return ('abc'):byte(1)
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let stringField() =
+    chunkResult id "
+    return ('abc').char(1, 2, 3)
+    "
+    =? multi [
+        types.string
+    ]
