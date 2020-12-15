@@ -56,7 +56,7 @@ type SourceLink =
 
 type AnalyticsStage =
     | BeforeParse
-    | AnalysisComplete of SemanticModel option * diagnostics: Diagnostic seq
+    | AnalysisComplete of SemanticModel * diagnostics: Diagnostic seq
 
 [<Struct>]
 type SourceFileAnalytics = {

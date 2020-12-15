@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
     <IsPackable>false</IsPackable>
@@ -17,9 +17,9 @@
     <Compile Include="DocParser.Tests.fs" />
     <Compile Include="Checker.Test.Helpers.fs" />
     <Compile Include="TypeSystem.Tests.fs" />
-    <Compile Include="Checker.Annotations.Tests.fs" />
-    <Compile Include="Checker.Basics.Tests.fs" />
-    <Compile Include="Checker.Modules.Tests.fs" />
+    <Compile Include="Checker.AnnotationTests.fs" />
+    <Compile Include="Checker.BasicTests.fs" />
+    <Compile Include="Checker.ModuleTests.fs" />
     <Compile Include="Protocol.Tests.fs" />
   </ItemGroup>
   <ItemGroup>

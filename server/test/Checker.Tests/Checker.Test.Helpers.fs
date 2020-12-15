@@ -515,7 +515,7 @@ module Helpers =
 
                 | ParseAndCheck((path, version), source) ->
                     let tree, e, p, ds = parseAndCheckCached p (toDocumentPath path) (InMemory(source, version))
-                    [CheckResult(tree, Seq.toList e, ds)], p
+                    [CheckResult(Some tree, Seq.toList e, ds)], p
 
                 | IsAncestor(old, young) ->
                     let r = isAncestor (toDocumentPath old) (toDocumentPath young) p

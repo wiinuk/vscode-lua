@@ -128,6 +128,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.didChangeError() = async {
         let! r = serverActions id [
             "return 1 + 1" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
             didChangeFull "return 1 .. 1" ("C:/main.lua", 2)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
         ]
@@ -271,6 +272,21 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             PublishDiagnostics {
                 uri = "file:///C:/main.lua"
                 diagnostics = [||]
+            }
+        ]
+    }
+    [<Fact>]
+    member _.syntaxError() = async {
+        let! r = serverActions id [
+            "local = 1" &> ("C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+        ]
+        r =? [
+            PublishDiagnostics {
+                uri = "file:///C:/main.lua"
+                diagnostics = [|
+                    error (0, 6) (0, 7) 0007 "RequireName"
+                |]
             }
         ]
     }

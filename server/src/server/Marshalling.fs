@@ -76,11 +76,15 @@ let showParseError (Messages m) = function
     | P.RequireLiteral -> m.RequireLiteral
     | P.RequireName -> m.RequireName
     | P.RequireString -> m.RequireString
-    | P.RequireToken t -> String.Format(m.RequireToken, t)
+    | P.RequireToken t -> String.Format(m.RequireToken, Printer.showKind Printer.PrintConfig.defaultConfig t |> String.concat "")
     | P.RequireUnaryOp -> m.RequireUnaryOp
     | P.RequireVar -> m.RequireVar
     | P.RequireAnyFieldKey -> m.RequireAnyFieldKey
     | P.RequireAnyTypeSign -> m.RequireAnyTypeSign
+    | P.RequireAssignStatOrFunctionCall -> m.RequireAssignStatOrFunctionCall
+    | P.RequireEndOfSource -> m.RequireEndOfSource
+    | P.RequireNameOrDot3 -> m.RequireNameOrDot3
+    | P.RequireNameOrLBracket -> m.RequireNameOrLBracket
 
 let showUnifyError (Messages m) = function
     | RequireField(x1, x2, x3) ->

@@ -1,4 +1,4 @@
-﻿module LuaChecker.Checker.Test.Utils
+module LuaChecker.Checker.Test.Utils
 open FsCheck
 open LuaChecker
 open LuaChecker.Primitives
@@ -122,7 +122,7 @@ type Arbs =
     static member Trivia(): 'D Trivia Arbitrary =
         Arb.convertRec
             (fun x -> x / 2)
-            (fun () -> Trivia.createEmpty())
+            Trivia.createEmpty
             Arb.from
 
             (fun (x1, x2, x3) -> { leadingTriviaLength = x1; leadingDocument = None; span = x2; trailingTriviaLength = x3; trailingDocument = None })

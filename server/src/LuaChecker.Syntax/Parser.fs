@@ -1,8 +1,8 @@
-﻿module LuaChecker.Parser
+module LuaChecker.Parser
 open Cysharp.Text
 open LuaChecker.Syntaxes
 open LuaChecker.Syntax
-open LuaChecker.ParserCombinator
+open LuaChecker.TolerantParserCombinator
 open LuaChecker.Primitives
 type private K = TokenKind
 type private E = Syntax.ParseError
@@ -20,7 +20,6 @@ module Errors =
 
     let findRequireToken kind = requireTokenCache.[kind]
 
-    let requireFieldSep = E.RequireFieldSep
 module E = Errors
 
 [<AutoOpen>]
@@ -28,32 +27,110 @@ module private Helpers =
     let inline withTrivia measure x = { kind = x; trivia = measure x }
     let withSpan2 start end' kind = { kind = kind; trivia = Span.merge start end' }
     let inline toTrivial make measure x = make x |> withTrivia measure
-    let inline trivial measure x = mapResult (withTrivia measure) x
     let makeBinary (x1, x2, x3) = Binary(x1, x2, x3) |> withTrivia Exp.measure
     let varToPrefixExp x = withTrivia Var.measure x |> Var |> withTrivia PrefixExp.measure
     let functionCallToPrefixExp x = withTrivia FunctionCall.measure x |> Apply |> withTrivia PrefixExp.measure
 
-    let inline sepBy sep p s = sepBy sep p s |> mapResult (fun struct(x, xs) -> SepBy(x, xs))
-    let inline pipe7 (p1, p2, p3, p4, p5, p6, p7) f s =
-        pipe5 (p1, p2, p3, p4, pipe3 (p5, p6, p7) id) (fun (x1, x2, x3, x4, (x5, x6, x7)) -> f(x1, x2, x3, x4, x5, x6, x7)) s
-
-    let inline pipe10 (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10) f s =
-        pipe5 (p1, p2, p3, p4, pipe5 (p5, p6, p7, p8, pipe2 (p9, p10) id) id) (fun (x1, x2, x3, x4, (x5, x6, x7, x8, (x9, x10))) -> f(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10)) s
+    let inline sepBy isTerminator sep p s =
+        let struct(x, xs) = sepBy isTerminator sep p s
+        SepBy(x, xs)
 
     let token kind s =
-        match Scanner.readToken kind s with
-        | ValueSome t -> Ok { kind = HEmpty; trivia = t }
-        | _ -> Error <| Errors.findRequireToken kind
+        let t =
+            match Scanner.readToken kind s with
+            | ValueSome t -> t
+            | _ ->
+                Scanner.addErrorAtCurrentToken s <| Errors.findRequireToken kind
+                Scanner.currentTokenToTrivia s
+
+        { kind = HEmpty; trivia = t }
+
+    let isToken predicate s = predicate (Scanner.tokenKind s)
+    let eqToken token s = Scanner.tokenKind s = token
+    let notEqualsToken token s = Scanner.tokenKind s <> token
+
+    let missingArgs trivia =
+        let t = { kind = HEmpty; trivia = trivia }
+        Args(t, None, t) |> withTrivia Args.measure
+
+    let missingVarOf trivia name =
+        { kind = name; trivia = trivia }
+        |> Name
+        |> Variable
+        |> withTrivia Var.measure
+
+    let missingVar trivia = missingVarOf trivia ""
+
+    let readAnyTokenToMissingPrefixExp s =
+        let missingVar =
+            match Scanner.read s with
+            | ValueNone -> missingVar <| Scanner.positionToTrivia s
+            | ValueSome t ->
+
+            Printer.showKind Printer.PrintConfig.defaultConfig t.kind
+            |> String.concat ""
+            |> missingVarOf t.trivia
+
+        Var missingVar
+        |> withTrivia PrefixExp.measure
+
+    let readAnyTokenToMissingCall s =
+        let t = Scanner.currentTokenToTrivia s
+        let missingExp = readAnyTokenToMissingPrefixExp s
+
+        Call(missingExp, missingArgs t)
+        |> withTrivia FunctionCall.measure
+        |> FunctionCall
+
+    let isBlockTerminator = function
+        | K.Semicolon
+        | K.Unknown
+        | K.End
+        | K.Until
+        | K.ElseIf
+        | K.Else -> true
+        | _ -> false
+
+    let isLastStatInitiator = function
+        | K.Return
+        | K.Break -> true
+        | _ -> false
+
+    let optionalToken k s =
+        match Scanner.readPick (fun x -> if x = k then ValueSome x else ValueNone) s with
+        | ValueSome(_, k) -> Some { kind = HEmpty; trivia = k }
+        | _ -> None
+
+    let hasLeadingNewLine s =
+        let s' = Scanner.peek s
+        if s'._kind = K.Unknown then false else
+
+        let leadingTriviaLength = s'._leadingTriviaLength
+        1 <= leadingTriviaLength && 0 <= s._source.IndexOf('\n', s'._span.start - leadingTriviaLength, leadingTriviaLength)
+
+    let isCallOpInitiator s =
+        match Scanner.tokenKind s with
+        | K.LSBracket
+        | K.Dot
+        | K.Colon
+        | K.String _
+        | K.LCBracket -> true
+        | K.LBracket -> not <| hasLeadingNewLine s
+        | _ -> false
 
 let name s =
     match Scanner.readPick (function K.Name x -> ValueSome x | _ -> ValueNone) s with
-    | ValueSome(x, t) -> Ok <| Name { kind = x; trivia = t }
-    | _ -> Error E.RequireName
+    | ValueSome(x, t) -> Name { kind = x; trivia = t }
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireName
+        Name { kind = ""; trivia = Scanner.currentTokenToTrivia s }
 
 let stringArg s =
     match Scanner.readPick (function K.String x -> ValueSome x | _ -> ValueNone) s with
-    | ValueSome(x, t) -> Ok(StringArg(StringLiteral { kind = x; trivia = t }) |> withTrivia Args.measure)
-    | _ -> Error E.RequireString
+    | ValueSome(x, t) -> StringLiteral { kind = x; trivia = t } |> StringArg |> withTrivia Args.measure
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireString
+        missingArgs <| Scanner.currentTokenToTrivia s
 
 let dot s = token K.Dot s
 let dot3 s = token K.Dot3 s
@@ -69,7 +146,6 @@ let do' s = token K.Do s
 let end' s = token K.End s
 let then' s = token K.Then s
 let function' s = token K.Function s
-let local s = token K.Local s
 
 let (|LiteralKind|) = function
     | K.Nil -> Nil |> ValueSome
@@ -112,84 +188,124 @@ let (|UnaryOpKind|) = function
 
 let literal s =
     match Scanner.readPick (function LiteralKind k -> k) s with
-    | ValueSome(k, t) -> Ok(Literal { kind = k; trivia = t })
-    | _ -> Error E.RequireLiteral
+    | ValueSome(k, t) -> Literal { kind = k; trivia = t }
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireLiteral
+        Scanner.currentTokenToTrivia s
+        |> missingVar
+        |> Var
+        |> withTrivia PrefixExp.measure
+        |> PrefixExp
 
 let fieldSep s =
     match Scanner.readPick (function FieldSepKind(ValueSome k) -> ValueSome k | _ -> ValueNone) s with
-    | ValueSome(k, t) -> Ok { kind = k; trivia = t }
-    | _ -> Error E.requireFieldSep
+    | ValueSome(k, t) -> { kind = k; trivia = t }
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireFieldSep
+        { kind = Comma; trivia = Scanner.currentTokenToTrivia s }
 
 let unaryOp s =
     match Scanner.readPick (function UnaryOpKind(ValueSome k) -> ValueSome k | _ -> ValueNone) s with
-    | ValueSome(k, t) -> Ok { kind = k; trivia = t }
-    | _ -> Error E.RequireUnaryOp
+    | ValueSome(k, t) -> { kind = k; trivia = t }
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireUnaryOp
+        { kind = Len; trivia = Scanner.currentTokenToTrivia s }
 
-let nameList s = sepBy comma name s |> mapResult (withTrivia (Span.sepBy Name.measure))
+/// name (, name)*
+let nameList s = sepBy (notEqualsToken K.Comma) comma name s |> withTrivia (Span.sepBy Name.measure)
+
+/// name (. name)* (: name)?
 let funcName s =
-    pipe3 (
-        name,
-        list (tuple2 (dot, name)),
-        option (tuple2 (colon, name))
-        )
-        (FuncName >> withTrivia FuncName.measure)
-        s
+    FuncName(
+        name s,
+        list (notEqualsToken K.Dot) (tuple2 (dot, name)) s,
+        option (eqToken K.Colon) (tuple2 (colon, name)) s
+    )
+    |> withTrivia FuncName.measure
 
-let namesParameterList s = pipe2 (nameList, option (tuple2 (comma, dot3))) ParameterList s
-let varParameterList s = dot3 s |> mapResult VarParameter
-let parameterList s =
+/// name (, name)* (, ...)?
+let inline namesParameterList s =
+    let name1 = name s
+    let mutable commaAndNamesRev = []
+    let mutable commaAndDot3 = None
+    while
+        match Scanner.tokenKind s with
+        | K.Comma ->
+            let comma = comma s
+            match Scanner.tokenKind s with
+            | K.Name _ -> commaAndNamesRev <- (comma, name s)::commaAndNamesRev; true
+            | K.Dot3 -> commaAndDot3 <- Some(comma, dot3 s); false
+            | _ -> Scanner.addErrorAtCurrentToken s E.RequireNameOrDot3; true
+        | _ -> false
+        do ()
+
+    let names = SepBy(name1, List.rev commaAndNamesRev)
+    let names = { kind = names; trivia = Span.sepBy Name.measure names }
+    ParameterList(names, commaAndDot3)
+
+let varParameterList s = dot3 s |> VarParameter
+let inline parameterList s =
     match Scanner.tokenKind s with
     | K.Dot3 -> varParameterList s
     | _ -> namesParameterList s
-    |> trivial ParameterList.measure
+    |> withTrivia ParameterList.measure
 
-let inline binaryOp (|OpKind|) s =
+let inline binaryOp missingOpKind (|OpKind|) s =
     match Scanner.readPick (function OpKind x -> x) s with
-    | ValueSome(k, t) -> Ok { kind = k; trivia = t }
-    | _ -> Error E.RequireBinaryOp
+    | ValueSome(k, t) -> { kind = k; trivia = t }
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireBinaryOp
+        { kind = missingOpKind; trivia = Scanner.currentTokenToTrivia s }
 
-let mulOp s = binaryOp (|MulOpKind|) s
-let addOp s = binaryOp (|AddOpKind|) s
-let concatOp s = binaryOp (function K.Con -> ValueSome Con | _ -> ValueNone) s
-let relationalOp s = binaryOp (|RelationalOpKind|) s
-let andOp s = binaryOp (function K.And -> ValueSome And | _ -> ValueNone) s
-let orOp s = binaryOp (function K.Or -> ValueSome Or | _ -> ValueNone) s
-let powOp s = binaryOp (function K.Pow -> ValueSome Pow | _ -> ValueNone) s
-let conOp s = binaryOp (function K.Con -> ValueSome Con | _ -> ValueNone) s
+let mulOp s = binaryOp Mul (|MulOpKind|) s
+let addOp s = binaryOp Add (|AddOpKind|) s
+let relationalOp s = binaryOp Eq (|RelationalOpKind|) s
+let andOp s = binaryOp And (function K.And -> ValueSome And | _ -> ValueNone) s
+let orOp s = binaryOp Or (function K.Or -> ValueSome Or | _ -> ValueNone) s
+let powOp s = binaryOp Pow (function K.Pow -> ValueSome Pow | _ -> ValueNone) s
+let conOp s = binaryOp Con (function K.Con -> ValueSome Con | _ -> ValueNone) s
 
-let rec _ = ()
-
-and functionExp s = pipe2 (function', funcBody) Function s
+let rec functionExp s = Function(function' s, funcBody s)
 and primExp s =
     match Scanner.tokenKind s with
-    | K.Dot3 -> mapResult VarArg (dot3 s)
+    | K.Dot3 -> VarArg(dot3 s)
     | K.Function -> functionExp s
-    | K.LCBracket -> mapResult NewTable (tableConstructor s)
+    | K.LCBracket -> NewTable(tableConstructor s)
     | K.Nil
     | K.True
     | K.False
     | K.Number _
     | K.String _ -> literal s
-    | _ -> mapResult PrefixExp (prefixExp s)
-    |> trivial Exp.measure
+    | _ -> PrefixExp(prefixExp s)
+    |> withTrivia Exp.measure
 
-and powExp s = chainR primExp powOp makeBinary s
-and unaryExp s = prefixOps (fun (op, x) -> Unary(op, x) |> withTrivia Exp.measure) unaryOp powExp s
-and mulExp s = chainL unaryExp mulOp (toTrivial Binary Exp.measure) s
-and addExp s = chainL mulExp addOp makeBinary s
-and concatExp s = chainR addExp concatOp makeBinary s
-and relationalExp s = chainL concatExp relationalOp makeBinary s
-and andExp s = chainL relationalExp andOp makeBinary s
-and orExp s = chainL andExp orOp makeBinary s
+and powExp s = chainR (notEqualsToken K.Pow) primExp powOp makeBinary s
+and unaryExp s = prefixOps (isToken ((|UnaryOpKind|) >> ValueOption.isNone)) (fun (op, x) -> Unary(op, x) |> withTrivia Exp.measure) unaryOp powExp s
+and mulExp s = chainL (isToken ((|MulOpKind|) >> ValueOption.isNone)) unaryExp mulOp (toTrivial Binary Exp.measure) s
+and addExp s = chainL (isToken ((|AddOpKind|) >> ValueOption.isNone)) mulExp addOp makeBinary s
+and concatExp s = chainR (notEqualsToken K.Con) addExp conOp makeBinary s
+and relationalExp s = chainL (isToken ((|RelationalOpKind|) >> ValueOption.isNone)) concatExp relationalOp makeBinary s
+and andExp s = chainL (notEqualsToken K.And) relationalExp andOp makeBinary s
+and orExp s = chainL (notEqualsToken K.Or) andExp orOp makeBinary s
 and exp s = orExp s
 
-and expList s = sepBy comma exp s |> mapResult (withTrivia (Span.sepBy Source.measure))
+and expList s = sepBy (notEqualsToken K.Comma) comma exp s |> withTrivia (Span.sepBy Source.measure)
 
-and indexInit s = pipe5 (lsBracket, exp, rsBracket, assign, exp) IndexInit s
-and memberInitTail x1 s = pipe2 (assign, exp) (fun (x2, x3) -> MemberInit(x1, x2, x3)) s
+and indexInit s = IndexInit(lsBracket s, exp s, rsBracket s, assign s, exp s)
+and memberInitTail x1 s = MemberInit(x1, assign s, exp s)
 and field s =
     match Scanner.tokenKind s with
-    | K.Unknown -> Error E.RequireAnyField
+    | K.Unknown ->
+        Scanner.addErrorAtCurrentToken s E.RequireAnyField
+
+        Scanner.currentTokenToTrivia s
+        |> missingVar
+        |> Var
+        |> withTrivia PrefixExp.measure
+        |> PrefixExp
+        |> withTrivia Exp.measure
+        |> Init
+
     | K.LSBracket -> indexInit s
     | K.Name x ->
 
@@ -201,56 +317,88 @@ and field s =
         | K.Assign -> memberInitTail (Name { kind = x; trivia = t }) s
         | _ ->
             Scanner.setState &s' s
-            mapResult Init (exp s)
+            Init(exp s)
 
-    | _ -> mapResult Init (exp s)
-    |> trivial Field.measure
+    | _ -> Init(exp s)
+    |> withTrivia Field.measure
 
-and fieldList s = pipe2 (sepBy fieldSep field, option fieldSep) FieldList s
+and inline fieldList isTerminator s =
+    let f1 = field s
+    let mutable sepAndFieldsRev = []
+    let mutable lastSep = None
+    while
+        begin
+            if isTerminator s || Scanner.tokenKind s = K.Unknown then false else
+            let sep = fieldSep s
+
+            if isTerminator s || Scanner.tokenKind s = K.Unknown then
+                lastSep <- Some sep
+                false
+
+            else
+                sepAndFieldsRev <- (sep, field s)::sepAndFieldsRev
+                true
+        end
+        do ()
+
+    FieldList(SepBy(f1, List.rev sepAndFieldsRev), lastSep)
 
 and tableConstructor s =
-    pipe3
-        (token K.LCBracket, option fieldList, token K.RCBracket)
-        (toTrivial TableConstructor TableConstructor.measure)
-        s
-
-and hasLeadingNewLine s =
-    let s' = Scanner.peek s
-    if s'._kind = K.Unknown then false else
-
-    let leadingTriviaLength = s'._leadingTriviaLength
-    1 <= leadingTriviaLength && 0 <= s._source.IndexOf('\n', s'._span.start - leadingTriviaLength, leadingTriviaLength)
+    TableConstructor(
+        token K.LCBracket s,
+        option (isToken (function K.RCBracket | K.Unknown -> false | _ -> true)) (fieldList (eqToken K.RCBracket)) s,
+        token K.RCBracket s
+    )
+    |> withTrivia TableConstructor.measure
 
 and wrappedArgs s =
-    if hasLeadingNewLine s then Error E.DisallowedLeadingNewLine else
-    pipe3 (lBracket, option expList, rBracket) (toTrivial Args Args.measure) s
+    if hasLeadingNewLine s then
+        Scanner.addErrorAtCurrentToken s E.DisallowedLeadingNewLine
+        missingArgs <| Scanner.currentTokenToTrivia s
+    else
+        Args(lBracket s, option (isToken (function K.RBracket | K.Unknown -> false | _ -> true)) expList s, rBracket s)
+        |> withTrivia Args.measure
 
 and args s =
     match Scanner.tokenKind s with
     | K.String _ -> stringArg s
-    | K.LCBracket -> mapResult (toTrivial TableArg Args.measure) (tableConstructor s)
+    | K.LCBracket -> TableArg(tableConstructor s) |> withTrivia Args.measure
     | _ -> wrappedArgs s
 
 and varTail x1 s =
     match Scanner.tokenKind s with
-    | K.LSBracket -> pipe3 (lsBracket, exp, rsBracket) (fun (x2, x3, x4) -> Index(x1, x2, x3, x4) |> varToPrefixExp) s
-    | _ -> pipe2 (dot, name) (fun (x2, x3) -> Member(x1, x2, x3) |> varToPrefixExp) s
+    | K.LSBracket -> Index(x1, lsBracket s, exp s, rsBracket s)
+    | _ -> Member(x1, dot s, name s)
+    |> varToPrefixExp
 
 and functionCallTail x1 s =
     match Scanner.tokenKind s with
-    | K.Colon -> pipe3 (colon, name, args) (fun (x2, x3, x4) -> CallWithSelf(x1, x2, x3, x4) |> functionCallToPrefixExp) s
-    | _ -> mapResult (fun x2 -> Call(x1, x2) |> functionCallToPrefixExp) (args s)
+    | K.Colon ->
+        let colon = colon s
+        let name = name s
+        match Scanner.tokenKind s with
+
+        // `exp : name \n (`
+        | K.LBracket when hasLeadingNewLine s ->
+            Scanner.addErrorAtCurrentToken s E.DisallowedLeadingNewLine
+
+        | _ -> ()
+        let args = args s
+
+        CallWithSelf(x1, colon, name, args) |> functionCallToPrefixExp
+
+    // `exp \n (`
+    | K.LBracket when hasLeadingNewLine s -> x1
+
+    | _ -> Call(x1, args s) |> functionCallToPrefixExp
 
 and primPrefixExp s =
     match Scanner.tokenKind s with
-    | K.LBracket -> pipe3 (lBracket, exp, rBracket) (Wrap >> withTrivia PrefixExp.measure) s
-    | _ -> mapResult (Variable >> varToPrefixExp) (name s)
-
-and functionCall s =
-    match prefixExp s with
-    | Ok { kind = Apply x } -> Ok(FunctionCall x)
-    | Ok _ -> Error E.RequireFunctionCall
-    | Error e -> Error e
+    | K.LBracket -> Wrap(lBracket s, exp s, rBracket s) |> withTrivia PrefixExp.measure
+    | K.Name _ -> Variable(name s) |> varToPrefixExp
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireNameOrLBracket
+        readAnyTokenToMissingPrefixExp s
 
 /// `primPrefixExp = name | '(' exp ')'`
 /// `callOp = '[' exp ']' | '.' name | args | ':' name args`
@@ -261,82 +409,141 @@ and callOp x s =
     | K.Dot -> varTail x s
     | _ -> functionCallTail x s
 
-and prefixExp s = postfixOps primPrefixExp callOp s
+and prefixExp s = postfixOps (isCallOpInitiator >> not) primPrefixExp callOp s
 
-and var s =
-    match prefixExp s with
-    | Ok { kind = Var x1 } -> Ok x1
-    | Ok _ -> Error E.RequireVar
-    | Error e -> Error e
+and funcBody s =
+    FuncBody(
+        lBracket s,
+        option (isToken (function K.Name _ | K.Dot3 -> true | _ -> false)) parameterList s,
+        rBracket s,
+        block s,
+        token K.End s
+    )
+    |> withTrivia FuncBody.measure
 
-and varList s = sepBy comma var s |> mapResult (withTrivia (Span.sepBy Source.measure))
-
-and funcBody s = pipe5 (lBracket, option parameterList, rBracket, block, token K.End) (FuncBody >> withTrivia FuncBody.measure) s
-
-and returnStat s = pipe2 (token K.Return, option expList) Return s
+and returnStat s =
+    Return(
+        token K.Return s,
+        option (isToken (isBlockTerminator >> not)) expList s
+    )
 and lastStat s =
     match Scanner.tokenKind s with
     | K.Return -> returnStat s
-    | _ -> mapResult Break (token K.Break s)
-    |> trivial LastStat.measure
+    | _ -> Break(token K.Break s)
+    |> withTrivia LastStat.measure
 
-and elseIfClause s = pipe4 (token K.ElseIf, exp, then', block) (ElseIf >> withTrivia ElseIf.measure) s
-and elseClause s = pipe2 (token K.Else, block) (Else >> withTrivia Else.measure) s
+and elseIfClause s = ElseIf(token K.ElseIf s, exp s, then' s, block s) |> withTrivia ElseIf.measure
+and elseClause s = Else(token K.Else s, block s) |> withTrivia Else.measure
 
-and assignStat s = pipe3 (varList, assign, expList) Assign s
-and doStat s = pipe3 (do', block, end') Do s
-and whileStat s = pipe5 (token K.While, exp, do', block, end') While s
-and repeatUntilStat s = pipe4 (token K.Repeat, block, token K.Until, exp) RepeatUntil s
-and ifStat s = pipe7 (token K.If, exp, then', block, list elseIfClause, option elseClause, end') If s
-and forStat s = pipe10 (for', name, assign, exp, comma, exp, option (tuple2 (comma, exp)), do', block, end') For s
-and forInStat s = pipe7 (for', nameList, token K.In, expList, do', block, end') ForIn s
-and functionStat s = pipe3 (function', funcName, funcBody) FunctionDecl s
-and localFunctionStatTail x1 s = pipe3 (function', name, funcBody) (fun (x2, x3, x4) -> LocalFunction(x1, x2, x3, x4)) s
-and localStatTail x1 s = pipe2 (nameList, option (tuple2(assign, expList))) (fun (x2, x3) -> Local(x1, x2, x3)) s
-and stat s = stat' s |> trivial Stat.measure
-and stat' s =
+and doStat s = Do(do' s, block s, end' s)
+and whileStat s = While(token K.While s, exp s, do' s, block s, end' s)
+and repeatUntilStat s = RepeatUntil(token K.Repeat s, block s, token K.Until s, exp s)
+and ifStat s =
+    If(
+        token K.If s, exp s,
+        then' s, block s,
+        list (notEqualsToken K.ElseIf) elseIfClause s,
+        option (eqToken K.Else) elseClause s,
+        end' s
+    )
+and forAssignStateTail for' name s =
+    For(
+        for', name, assign s, exp s, comma s, exp s,
+        option (eqToken K.Comma) (tuple2 (comma, exp)) s,
+        do' s, block s, end' s
+    )
+
+/// (, \k<name>)* in \k<expList> do \k<block> end
+and forInStatTail for' name1 s =
+    let names = list (notEqualsToken K.Comma) (tuple2 (comma, name)) s
+    let nameList = SepBy(name1, names) |> withTrivia (Span.sepBy Name.measure)
+    ForIn(for', nameList, token K.In s, expList s, do' s, block s, end' s)
+
+and forAssignOrForInStat s =
+    let for' = for' s
+    let name1 = name s
     match Scanner.tokenKind s with
-    | K.Unknown -> Error E.RequireAnyStat
+    | K.Assign -> forAssignStateTail for' name1 s
+    | _ -> forInStatTail for' name1 s
+
+and functionStat s = FunctionDecl(function' s, funcName s, funcBody s)
+and localFunctionStatTail x1 s = LocalFunction(x1, function' s, name s, funcBody s)
+and localStatTail x1 s =
+    Local(
+        x1,
+        nameList s,
+        option (eqToken K.Assign) (tuple2(assign, expList)) s
+    )
+and localStat s =
+    let t = token K.Local s
+    match Scanner.tokenKind s with
+    | K.Function -> localFunctionStatTail t s
+    | _ -> localStatTail t s
+
+and var s =
+    match prefixExp s with
+    | { kind = Var x1 } -> x1
+    | _ ->
+        Scanner.addErrorAtCurrentToken s E.RequireVar
+        missingVar <| Scanner.currentTokenToTrivia s
+
+and assignStatTail (state: _ inref) var1 s =
+    match Scanner.tokenKind s with
+    | K.Assign
+    | K.Comma ->
+        let vars = list (notEqualsToken K.Comma) (tuple2 (comma, var)) s
+        let vars = SepBy(var1, vars) |> withTrivia (Span.sepBy Source.measure)
+        Assign(vars, assign s, expList s)
+    | _ ->
+        Scanner.setState &state s
+        Scanner.addErrorAtCurrentToken s E.RequireAssignStatOrFunctionCall
+        readAnyTokenToMissingCall s
+
+/// ```regexp
+/// \k<var> (, \k<var>)* = \k<exp> (, \k<exp>)* | \k<functionCall>
+/// ```
+and assignStatOrFunctionCallStat s =
+    let state = Scanner.getState s
+    let exp1 = prefixExp s
+    match exp1.kind with
+    | Var var1 -> assignStatTail &state var1 s
+    | Apply functionCall -> FunctionCall functionCall
+    | _ ->
+        Scanner.setState &state s
+        Scanner.addErrorAtCurrentToken s E.RequireAssignStatOrFunctionCall
+        readAnyTokenToMissingCall s
+
+and stat s =
+    match Scanner.tokenKind s with
+    | K.Unknown ->
+        Scanner.addErrorAtCurrentToken s E.RequireAnyStat
+        let trivia = Scanner.positionToTrivia s
+        let var = missingVar trivia
+        Call(varToPrefixExp var.kind, missingArgs trivia)
+        |> withTrivia FunctionCall.measure
+        |> FunctionCall
+
     | K.Do -> doStat s
     | K.While -> whileStat s
     | K.Repeat -> repeatUntilStat s
     | K.If -> ifStat s
-    | K.For ->
-        let s' = Scanner.getState s
-        match forStat s with
-        | Ok _ as r -> r
-        | _ ->
-            Scanner.setState &s' s
-            forInStat s
-
+    | K.For -> forAssignOrForInStat s
     | K.Function -> functionStat s
-    | K.Local ->
-        let t = Scanner.unsafeReadTrivia s
-        let t = { trivia = t; kind = HEmpty }
-        match Scanner.tokenKind s with
-        | K.Function -> localFunctionStatTail t s
-        | _ -> localStatTail t s
-    | _ ->
+    | K.Local -> localStat s
+    | _ -> assignStatOrFunctionCallStat s
 
-    let s' = Scanner.getState s
-    match assignStat s with
-    | Ok _ as r -> r
-    | _ ->
+    |> withTrivia Stat.measure
 
-    Scanner.setState &s' s
-    functionCall s
+and blockStats s =
+    list
+        (isToken (fun k -> isLastStatInitiator k || isBlockTerminator k))
+        (tuple2 (stat, optionalToken K.Semicolon))
+        s
 
-and blockStats s = list (tuple2 (stat, option (token K.Semicolon))) s
-and blockLastStat s = option (tuple2 (lastStat, option (token K.Semicolon))) s
+and blockLastStat s = option (isToken isLastStatInitiator) (tuple2 (lastStat, optionalToken K.Semicolon)) s
 and block s =
-    match blockStats s with
-    | Error e -> Error e
-    | Ok x1 ->
-
-    match blockLastStat s with
-    | Error e -> Error e
-    | Ok x2 ->
-
+    let x1 = blockStats s
+    let x2 = blockLastStat s
     let b = { stats = x1; lastStat = x2 }
     let trivia =
         match x1, x2 with
@@ -351,10 +558,36 @@ and block s =
         // Block 自身の Trivia は空
         | _ -> { leadingTriviaLength = 0; leadingDocument = None; span = Block.measure b; trailingTriviaLength = 0; trailingDocument = None }
 
-    Ok { kind = b; trivia = trivia }
+    { kind = b; trivia = trivia }
+
+and sourceFile s =
+    let b = block s
+    if Scanner.tokenKind s <> K.Unknown then
+        Scanner.addErrorAtCurrentToken s E.RequireEndOfSource
+    b
 
 module private DocumentParserHelpers =
     open System
+    open LuaChecker.ParserCombinator
+
+    let token kind s =
+        match Scanner.readToken kind s with
+        | ValueSome t -> Ok { kind = HEmpty; trivia = t }
+        | _ -> Error <| Errors.findRequireToken kind
+
+    let colon s = token K.Colon s
+
+    let fieldSep s =
+        match Scanner.readPick (function FieldSepKind(ValueSome k) -> ValueSome k | _ -> ValueNone) s with
+        | ValueSome(k, t) -> Ok { kind = k; trivia = t }
+        | _ -> Error E.RequireFieldSep
+
+    let name s =
+        match Scanner.readPick (function K.Name x -> ValueSome x | _ -> ValueNone) s with
+        | ValueSome(x, t) -> Ok <| Name { kind = x; trivia = t }
+        | _ -> Error E.RequireName
+
+    let inline sepBy sep p s = sepBy sep p s |> mapResult (fun struct(x, xs) -> SepBy(x, xs))
 
     let initRange position length ({ Scanner._source = source } as s) =
         Scanner.initWith (fun c -> { c with initialRead = false; skipTrivia = false; position = position; length = length }) source s
@@ -428,17 +661,20 @@ module private DocumentParserHelpers =
         | _ -> ()
 
 module DocumentParser =
+    type private K = TokenKind
+    type private E = Syntax.ParseError
     open LuaChecker
+    open LuaChecker.ParserCombinator
     open LuaChecker.Syntax.Documents
-    open LuaChecker.Syntax
     open System
     open DocumentParserHelpers
+    open type LuaChecker.Syntax.Name<HEmpty voption>
 
     // TODO: Trivia オブジェクトを生成しないようにする
     let tokenSpan k s = token k s |> mapResult (fun x -> x.trivia.span)
     let withTrivia trivia k = { kind = k; trivia = trivia }
 
-    let comments0 (s: Scanner.Scanner) =
+    let comments0 (s: _ Scanner.Scanner) =
         if s.currentTokenStructure.hasValue then
             s.position <- s.currentTokenStructure._span.start
 

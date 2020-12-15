@@ -1,4 +1,4 @@
-module LuaChecker.Checker.Basics.Tests
+module LuaChecker.Checker.BasicTests
 open LuaChecker
 open LuaChecker.TypeSystem
 open LuaChecker.Checker.Test.Utils
@@ -552,7 +552,7 @@ let acceptRecursiveType2() =
 [<Fact>]
 let acceptRecursiveType3() =
     chunkDiagnostics id "
-    local function x() return { 1 = 1, 2 = x() } end
+    local function x() return { [1] = 1, [2] = x() } end
     return x()
     " =? []
 

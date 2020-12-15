@@ -1,4 +1,4 @@
-﻿module LuaChecker.Checker.Modules.Tests
+module LuaChecker.Checker.ModuleTests
 open Xunit
 open LuaChecker
 open LuaChecker.TypeSystem

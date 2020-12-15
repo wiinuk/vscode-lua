@@ -1,4 +1,4 @@
-﻿module LuaChecker.Syntax.Printer
+module LuaChecker.Syntax.Printer
 open LuaChecker
 open LuaChecker.Syntax
 open LuaChecker.Syntaxes

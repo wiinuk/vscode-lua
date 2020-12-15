@@ -1,4 +1,4 @@
-﻿module rec LuaChecker.Syntaxes
+module rec LuaChecker.Syntaxes
 open LuaChecker.Primitives
 open LuaChecker.Syntax
 
@@ -140,6 +140,7 @@ type Stat' =
 
 type Stat = Source<Stat'>
 
+[<Struct>]
 type Block' = {
     stats: (Stat * Token (* `;` *) option) list
     lastStat: (LastStat * Token (* `;` *) option) option

@@ -1,4 +1,4 @@
-﻿module LuaChecker.Checker.Annotations.Tests
+module LuaChecker.Checker.AnnotationTests
 open Xunit
 open LuaChecker
 open LuaChecker.Checker.Test.Utils

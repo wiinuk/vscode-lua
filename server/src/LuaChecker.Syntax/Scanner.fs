@@ -1,4 +1,4 @@
-﻿module LuaChecker.Scanner
+module LuaChecker.Scanner
 open Cysharp.Text
 open LuaChecker.Primitives
 open LuaChecker.Syntax
@@ -18,7 +18,7 @@ type TokenStructure = {
     mutable _trailingTriviaLength: int
 }
 [<DebuggerDisplay("{_DebugDisplay,nq}")>]
-type Scanner = {
+type Scanner<'Error> = {
     mutable _source: string
     mutable first: int
     mutable last: int
@@ -27,6 +27,7 @@ type Scanner = {
     mutable position: int
     mutable currentTokenStructure: TokenStructure
     mutable remainingTriviaLength: int
+    mutable errors: 'Error list
 }
 with
     [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
@@ -40,10 +41,11 @@ with
         "┃" + source.[first..position-1] + "▶" + source.[position..last-1] + "┃"
 
 [<Struct>]
-type ScannerState = {
+type ScannerState<'Error> = {
     _position: int
     _currentTokenStructure: TokenStructure
     _remainingTriviaLength: int
+    _errors: 'Error list
 }
 
 let peek s: _ inref = &s.currentTokenStructure
@@ -53,15 +55,37 @@ let tokenKind s =
     then s.currentTokenStructure._kind
     else TokenKind.Unknown
 
+let tokenSpan s =
+    if s.currentTokenStructure.hasValue
+    then s.currentTokenStructure._span
+    else Span.empty
+
 let getState s = {
     _position = s.position
     _currentTokenStructure = s.currentTokenStructure
     _remainingTriviaLength = s.remainingTriviaLength
+    _errors = s.errors
 }
 let setState (state: _ inref) s =
     s.position <- state._position
     s.currentTokenStructure <- state._currentTokenStructure
     s.remainingTriviaLength <- state._remainingTriviaLength
+    s.errors <- state._errors
+
+let currentErrors s = s.errors
+let addError s e = s.errors <- e::s.errors
+let addErrorAtCurrentToken s error =
+    let span = tokenSpan s
+    let span =
+        if Span.isEmpty span then
+            let p = s.position
+            { start = p; end' = p }
+        else
+            span
+
+    match s.errors with
+    | struct(lastSpan, _)::_ when lastSpan.start = span.start -> ()
+    | _ -> addError s struct(span, error)
 
 let isEos s = s.last <= s.position
 let ensure length s = s.position + length <= s.last
@@ -451,25 +475,6 @@ let leadingTriviaAndToken s =
         trivia = trivia
     }
 
-let tokens s = [|
-    match leadingTriviaAndToken s with
-    | ValueNone -> ()
-    | ValueSome t ->
-
-    let mutable t = t
-    let mutable next = true
-    while next do
-        match leadingTriviaAndToken s with
-        | ValueSome t' ->
-            t
-            t <- t'
-
-        | ValueNone ->
-            let fullEnd = position s
-            { t with trivia = { t.trivia with trailingTriviaLength = fullEnd - t.trivia.span.end' } }
-            next <- false
-|]
-
 let takeTrivia s =
     if s.currentTokenStructure.hasValue then
         let s = &s.currentTokenStructure
@@ -534,6 +539,8 @@ let private createUninitialized() = {
     position = 0
     remainingTriviaLength = 0
     currentTokenStructure = Unchecked.defaultof<_>
+
+    errors = Unchecked.defaultof<_>
 }
 let initCore (options: _ inref) source s =
     let { position = position; length = length } = options
@@ -548,6 +555,8 @@ let initCore (options: _ inref) source s =
     s.remainingTriviaLength <- 0
     s.currentTokenStructure <- Unchecked.defaultof<_>
     s.currentTokenStructure._kind <- TokenKind.Unknown
+
+    s.errors <- []
 
     if options.initialRead then
         s.remainingTriviaLength <- skipTrivias s
@@ -568,6 +577,34 @@ let inline initWith withOptions source s =
 
 let init source s = initWith (fun x -> x) source s
 let create source = createWith (fun x -> x) source
+
+let peekTrivia s =
+    let t = &s.currentTokenStructure
+    if t.hasValue then
+        ValueSome {
+            leadingTriviaLength = t._leadingTriviaLength
+            leadingDocument = None
+            span = t._span
+            trailingTriviaLength = t._trailingTriviaLength
+            trailingDocument = None
+        }
+    else
+        ValueNone
+
+let positionToTrivia s =
+    let p = position s
+    {
+        leadingTriviaLength = 0
+        leadingDocument = None
+        span = { start = p; end' = p }
+        trailingTriviaLength = 0
+        trailingDocument = None
+    }
+
+let currentTokenToTrivia s =
+    match peekTrivia s with
+    | ValueSome t -> t
+    | _ -> positionToTrivia s
 
 let unsafeReadTrivia s =
     let t = &s.currentTokenStructure
@@ -614,4 +651,9 @@ let readTokenSpan kind s =
     then readSpan s
     else ValueNone
 
-let pool = Pool.create 128 (fun _ -> createUninitialized()) (init "")
+[<AbstractClass; Sealed>]
+type private PoolHolder<'Error> private () =
+    static let value: 'Error Scanner Pool = Pool.create 128 (fun _ -> createUninitialized()) (init "")
+    static member Value = value
+
+let pool<'Error> = PoolHolder<'Error>.Value

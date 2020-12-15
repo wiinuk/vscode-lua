@@ -1,4 +1,4 @@
-﻿module LuaChecker.TypeSystem.Tests
+module LuaChecker.TypeSystem.Tests
 open Xunit
 open LuaChecker
 open LuaChecker.Checker.Test.Utils
@@ -81,9 +81,10 @@ let syntaxHitTest() =
     }
     let test i source =
         let s = Scanner.create source
-        match Parser.block s with
-        | Error e -> failwithf "%A" e
-        | Ok x -> Block.hitTest visitor () i x
+        let x = Parser.block s
+        match Scanner.currentErrors s with
+        | [] -> Block.hitTest visitor () i x
+        | es -> failwith $"%A{List.rev es}"
 
     let token (s, e) k = ValueSome({ start = s; end' = e }, k)
 
