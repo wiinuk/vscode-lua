@@ -1,5 +1,6 @@
-﻿module LuaChecker.Server.Log
+module LuaChecker.Server.Log
 open Cysharp.Text
+open LuaChecker
 open System
 open System.Diagnostics
 open System.Runtime.CompilerServices
@@ -109,17 +110,19 @@ module private Helpers =
         | DetailLevel.Trace -> "Trace"
         | _ -> ""
 
-type StreamLogger(stream: Stream) =
-    inherit Logger()
-    let writer = new StreamWriter(stream = stream)
-
-    override _.Log event =
-        let b = ZString.CreateUtf8StringBuilder()
+    let appendEvent (b: Utf8ValueStringBuilder byref) event =
         b.AppendFormat("[{0:O}] {1} : {2} : {3}", event.time, event.source, showLevel event.level, event.message)
         b.AppendLine()
         if DetailLevel.Output < event.level && event.level <= DetailLevel.Error then
             b.AppendLine event.stackTrace
 
+type StreamLogger(stream: Stream) =
+    inherit Logger()
+    let writer = new StreamWriter(stream = stream)
+
+    override _.Log event =
+        use mutable b = ZString.CreateUtf8StringBuilder()
+        appendEvent &b event
         if stream.CanSeek then stream.Seek(0L, SeekOrigin.End) |> ignore
         stream.Write(b.AsSpan())
         stream.Flush()
@@ -166,19 +169,53 @@ type BackgroundLogger(sourceName, initialMaxDetail) =
 module Logger =
     let streamLogger stream = new StreamLogger(stream)
     let fileLogger filePath =
-        try File.Delete filePath with _ -> ()
+        let bufferSize = 4096
+        let tryCreateStream filePath append =
+            try
+                let mode = if append then FileMode.Append else FileMode.Create
+                ValueSome <| new FileStream(
+                    filePath,
+                    mode,
+                    FileAccess.Write,
+                    FileShare.Read,
+                    bufferSize,
+                    FileOptions.SequentialScan
+                )
+            with _ -> ValueNone
+
+        let mutable stream = tryCreateStream filePath false
         { new Logger() with
             override _.Log event =
-                let contents = String.Format("[{0:O}] {1} : {2} : {3}{4}", event.time, event.source, showLevel event.level, event.message, Environment.NewLine)
-                try File.AppendAllText(filePath, contents)
-                with _ -> ()
+                stream <-
+                    match stream with
+                    | ValueNone -> tryCreateStream filePath true
+                    | x -> x
+
+                match stream with
+                | ValueSome s ->
+                    use mutable b = ZString.CreateUtf8StringBuilder()
+                    appendEvent &b event
+                    try
+                        s.Write(b.AsSpan())
+                        s.Flush(flushToDisk = true)
+                    with _ ->
+                        s.Dispose()
+                        stream <- ValueNone
+                | _ -> ()
+
+            override _.Dispose disposing =
+                if disposing then
+                    stream
+                    |> ValueOption.iter (fun s -> s.Dispose())
         }
 
     let consoleLogger() = Console.OpenStandardOutput() |> streamLogger
     let standardErrorLogger() = Console.OpenStandardError() |> streamLogger
     let debugLogger() = { new Logger() with
         member _.Log event =
-            Debug.WriteLine("[{0:O}] {1} : {2} : {3}", event.time, event.source, showLevel event.level, event.message)
+            use mutable b = ZString.CreateUtf8StringBuilder()
+            appendEvent &b event
+            Debug.Write(b.ToString())
             Debug.Flush()
     }
 
