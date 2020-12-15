@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Primitives
+namespace LuaChecker.Primitives
 
 
 [<Struct>]
@@ -14,7 +14,14 @@ module NonEmptyList =
 
     let toList (NonEmptyList(x, xs)) = x::xs
     let singleton x = NonEmptyList(x, [])
+    let tryOfList = function [] -> ValueNone | x::xs -> ValueSome(NonEmptyList(x, xs))
     let cons head (NonEmptyList(x, xs)) = NonEmptyList(head, x::xs)
+    let rec appendList xs nel =
+        match xs with
+        | [] -> nel
+        | [x] -> cons x nel
+        | x::xs -> cons x (appendList xs nel)
+
     let append (NonEmptyList(x1, xs1)) (NonEmptyList(x2, xs2)) =
         match xs1, xs2 with
         | [], [] -> NonEmptyList(x1, [x2])
