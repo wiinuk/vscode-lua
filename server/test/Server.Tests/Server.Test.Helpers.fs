@@ -412,6 +412,9 @@ let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
 let serverActions withConfig messages = async {
     let! rs = serverActionsWithBoilerPlate withConfig [
         Send <| Initialize { rootUri = ValueSome(Uri "file:///C:/") }
+        waitUntilExists 5.<_> <| function
+            | InitializeResponse _ -> true
+            | _ -> false
         Send Initialized
         receiveRequest 5.<_> <| function
             | RegisterCapability _ -> Some RegisterCapabilityResponse
