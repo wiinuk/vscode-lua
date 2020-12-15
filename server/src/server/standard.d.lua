@@ -149,6 +149,7 @@
 
 -- String Manipulation -------------------------------
 
+--@_Feature stringMetaTableIndex
 ---@class StandardStringNamespace
 -- TODO:
 --@field byte fun(s: string [, i: number [, j: number]]): number
