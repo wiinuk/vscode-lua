@@ -3,6 +3,7 @@
   "displayName": "vscode-lua",
   "description": "VSCode plugin for Lua.",
   "publisher": "wiinuk",
+  "license": "SEE LICENSE IN LICENCE",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.51.0"
