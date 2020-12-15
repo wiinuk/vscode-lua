@@ -926,3 +926,17 @@ let standardLibraryIsAutomaticallyLoaded() =
     ] =? [
         Ok types.number
     ]
+
+[<Fact>]
+let implicitSelfTyping() =
+    chunkResult id "
+    local p = {
+        x = 1 + 2,
+        getX = function() return 1 + 2 end
+    }
+    function p:getX() return self.x end
+    return p:getX()
+    "
+    =? multi [
+        types.number
+    ]
