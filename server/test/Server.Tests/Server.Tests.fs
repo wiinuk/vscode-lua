@@ -223,7 +223,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                 |]
             }
             "local x = require 'lib'" &> ("C:/main.lua", 1)
-            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+            waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
             PublishDiagnostics {
