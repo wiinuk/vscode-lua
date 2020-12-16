@@ -48,7 +48,7 @@ type UnaryOp = Token<UnaryOpKind>
 
 type NameList = SeparateBy<Token (* `,` *), Name>
 type FuncName = Source<FuncName'>
-type FuncName' = | FuncName of Name * path: (Token (* `.` *) * Name) list * self: (Token (* `:` *) * Name) option
+type FuncName' = | FuncName of Name * path: (Token (* `.` *) * Name) list * methodName: (Token (* `:` *) * Name) option
 
 type ParameterList = Source<ParameterList'>
 type ParameterList' =
