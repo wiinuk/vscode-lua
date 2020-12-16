@@ -344,6 +344,42 @@ let clientRead { responseHandlers = responseHandlers; receivedMessageLog = logs;
         | Error x -> failwithf "message read error: %A %A" x reader
     aux()
 }
+let normalizeRegistrationParams x =
+    { x with
+        registrations =
+            x.registrations
+            |> Array.map (fun x ->
+                { x with
+                    id = ""
+                }
+            )
+    }
+
+let normalizeMessage = function
+    | RegisterCapability x -> RegisterCapability <| normalizeRegistrationParams x
+    | x -> x
+
+let normalizeMessages = List.map normalizeMessage
+
+let removeOldDiagnostics messages =
+    let uriToLatestDiagnosticVersion =
+        messages
+        |> Seq.choose (function PublishDiagnostics d -> Some d | _ -> None)
+        |> Seq.groupBy (fun d -> d.uri)
+        |> Seq.map (fun (uri, ds) ->
+            uri, ds |> Seq.map (fun d -> d.version) |> Seq.max
+        )
+        |> Map.ofSeq
+
+    messages
+    |> List.filter (function
+        | PublishDiagnostics d -> uriToLatestDiagnosticVersion.[d.uri] = d.version
+        | _ -> true
+    )
+    |> List.map (function
+        | PublishDiagnostics d -> PublishDiagnostics { d with version = Undefined }
+        | x -> x
+    )
 
 let serverActionsWithBoilerPlate withConfig actions = async {
     let config = withConfig ConnectionConfig.defaultValue
@@ -392,7 +428,9 @@ let serverActionsWithBoilerPlate withConfig actions = async {
         }
         clientRead client
     ]
-    return Seq.toList client.receivedMessageLog
+    let messages = Seq.toList client.receivedMessageLog
+    let messages = normalizeMessages messages
+    return messages
 }
 let receiveRequest timeout f = ReceiveRequest(f >> Option.map Ok, Some timeout)
 let waitUntilExists timeout predicate = WaitUntil(List.exists predicate, Some timeout)
@@ -401,10 +439,13 @@ let waitUntilHasDiagnosticsOf targetUri = waitUntilExists 5.<_> <| function
     | _ -> false
 
 let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
-    let predicate =
-        List.tryFindBack (function PublishDiagnostics d -> fileUri = d.uri | _ -> false)
-        >> Option.map (function PublishDiagnostics d -> predicate d.diagnostics | _ -> false)
-        >> Option.defaultValue false
+    let predicate ms =
+        ms
+        |> Seq.choose (function PublishDiagnostics d when fileUri = d.uri -> Some d | _ -> None)
+        |> Seq.sortByDescending (fun d -> d.version)
+        |> Seq.tryHead
+        |> Option.map (fun d -> predicate d.diagnostics)
+        |> Option.defaultValue false
 
     WaitUntil(predicate, Some 5.<_>)
 
@@ -481,33 +522,15 @@ let (?>) source uri = WriteFile(DocumentPath.ofUri (Uri uri), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}
-
-let normalizeRegistrationParams x =
-    { x with
-        registrations =
-            x.registrations
-            |> Array.map (fun x ->
-                { x with
-                    id = ""
-                }
-            )
-    }
-
-let normalizeMessage = function
-    | RegisterCapability x -> RegisterCapability <| normalizeRegistrationParams x
-    | x -> x
-
-let normalizeMessages = List.map normalizeMessage
-
-let removeOldDiagnostics messages =
-    List.mapFoldBack (fun message uris ->
-        match message with
-        | PublishDiagnostics d as message ->
-            if Set.contains d.uri uris
-            then None, uris
-            else Some message, Set.add d.uri uris
-
-        | _ -> Some message, uris
-    ) messages Set.empty
-    |> fst
-    |> List.choose id
+let publishDiagnosticsParams uri diagnostics = {
+    uri = uri
+    version = Undefined
+    diagnostics = Seq.toArray diagnostics
+}
+let publishDiagnostics uri version diagnostics = PublishDiagnostics {
+    publishDiagnosticsParams uri diagnostics with
+        version = Defined version
+}
+let sortDiagnosticsOrFail = List.sortBy <| function
+    | PublishDiagnostics d -> d.version
+    | m -> failwith $"%A{m}"

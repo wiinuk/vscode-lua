@@ -15,6 +15,9 @@ type private M = Protocol.Methods
 
 [<AutoOpen>]
 module private Helpers =
+    let nextDiagnosticsVersion agent =
+        struct(agent.nextDiagnosticsVersion, { agent with nextDiagnosticsVersion = agent.nextDiagnosticsVersion + 1 })
+
     let sendRequest agent methods parameters handler =
         let id = agent.nextRequestId
         let jsonBytes =
@@ -53,10 +56,16 @@ module private Helpers =
 
         let agent = { agent with project = project }
 
-        match document with
-        | ValueNone -> ifDebug { Log.Format(agent.resources.LogMessages.UnopenedFileDiagnosticsIsNotPublished, path) }
-        | ValueSome document ->
-            postToBackgroundAgent agent <| PublishDiagnostics(agent, path, ValueSome document, diagnostics)
+        let agent =
+            match document with
+            | ValueNone ->
+                ifDebug { Log.Format(agent.resources.LogMessages.UnopenedFileDiagnosticsIsNotPublished, path) }
+                agent
+
+            | ValueSome document ->
+                let struct(version, agent) = nextDiagnosticsVersion agent
+                postToBackgroundAgent agent <| PublishDiagnostics(agent, path, version, ValueSome document, diagnostics)
+                agent
 
         agent, descendants
 
@@ -168,7 +177,8 @@ let didChangeTextDocument agent { textDocument = d; contentChanges = contentChan
 let didCloseTextDocument agent (p: DidCloseTextDocumentParams) =
     let path = DocumentPath.ofRelativeUri agent.root p.textDocument.uri
     let agent = { agent with documents = Documents.close path agent.documents }
-    postToBackgroundAgent agent <| PublishDiagnostics(agent, path, ValueNone, [])
+    let struct(varsion, agent) = nextDiagnosticsVersion agent
+    postToBackgroundAgent agent <| PublishDiagnostics(agent, path, varsion, ValueNone, [])
     agent
 
 let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDocument } =

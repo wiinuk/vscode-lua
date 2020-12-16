@@ -183,9 +183,9 @@ type Diagnostic = {
     relatedInformation: DiagnosticRelatedInformation array OptionalField
 }
 
-[<Struct>]
 type PublishDiagnosticsParams = {
     uri: string
+    version: int OptionalField
     diagnostics: Diagnostic array
 }
 [<Struct>]
