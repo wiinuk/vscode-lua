@@ -526,7 +526,7 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 =
             | ValueSome _ as f1 -> f1, env2
             | f1 -> f1, { env2 with visitedVarToType = Assoc.add r2 t1 env2.visitedVarToType }
 
-        match unifyConstraints types env1 env2 c1 c2 with
+        match unifyConstraints types env1 env2 (c1, r1, t1) (c2, r2, t2) with
         | Error e -> ValueSome e
         | Ok c ->
 
@@ -582,7 +582,7 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 =
 // unify ('a: { f: ?af }) ('b: { f: ?bf; g: ?bg }) = unify ?af ?bf @ ['a = 'b; 'a: { f: ?af, g: ?bg }]
 // unify ('a: { f: ?af }) { f: ?f } = unify ?af ?f @ ['a = { f: ?af }]
 // unify 'a t = ['a = t]
-let unifyConstraints types env1 env2 c1 c2 =
+let unifyConstraints types env1 env2 (c1, r1, t1) (c2, r2, t2) =
     if Constraints.isAny c1 then Ok c2 else
     if Constraints.isAny c2 then Ok c1 else
 
@@ -612,9 +612,12 @@ let unifyConstraints types env1 env2 c1 c2 =
         else
             ConstraintMismatch(c1, c2) |> Error
 
-    | InterfaceConstraint _, (MultiElementTypeConstraint _ | TagSpaceConstraint _)
+    | TagSpaceConstraint(l1, u1), InterfaceConstraint _ -> unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, u1) (c2, r2, t2)
+    | InterfaceConstraint _, TagSpaceConstraint(l2, u2) -> unifyTagSpaceAndInterfaceConstraint types env2 env1 c2 (l2, u2) (c1, r1, t1)
+
+    | InterfaceConstraint _, MultiElementTypeConstraint _
+    | TagSpaceConstraint _, MultiElementTypeConstraint _
     | MultiElementTypeConstraint _, (InterfaceConstraint _ | TagSpaceConstraint _)
-    | TagSpaceConstraint _, (InterfaceConstraint _ | MultiElementTypeConstraint _)
         -> Error(ConstraintMismatch(c1, c2))
 
 let unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2) =
@@ -641,6 +644,35 @@ let unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2) =
     InterfaceConstraint fs
     |> Constraints.makeWithLocation (c1.trivia @ c2.trivia)
     |> Ok
+
+let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) =
+    match types.stringTableTypes with
+    | _::_ when TagSpace.isSubset l1 TagSpace.allString ->
+
+        // `("a").upper`
+        // "a": ?x: "a"..
+        // unify (?x: "a"..) (?y: { upper: ?z })
+        // = unifyConstraints ("a"..) { upper: ?z }
+        //     = matchConstraints { upper: fun(string) -> string, … } { upper: ?z }
+        //     // ?z := fun(string) -> string
+        // = "a"..string
+        // // ?x := "a"..string
+        // // ?y := "a"..string
+        let rec aux = function
+            | [] ->
+                let location = c1.trivia @ c2.trivia
+                TagSpaceConstraint(l1, TagSpace.allString)
+                |> Constraints.makeWithLocation location
+                |> Ok
+
+            | stringTableType::ts ->
+                match matchConstraints types env2 env1 (c2, r2, t2) stringTableType with
+                | ValueSome e -> Error e
+                | ValueNone -> aux ts
+
+        aux types.stringTableTypes
+
+    | _ -> Error(ConstraintMismatch(c1, c2))
 
 let typeToSpace { system = types } = function
     | { kind = NamedType(t, _) } ->

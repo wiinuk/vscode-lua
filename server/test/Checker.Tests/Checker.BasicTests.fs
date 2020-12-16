@@ -971,9 +971,12 @@ let stringLiteralMetaTable() =
 [<Fact>]
 let stringLiteralAsInterface() =
     chunkResult id "
-    local function byte1(x) return x:byte(1) end
-    return byte1 'a'
+    local function getUpperField(x) return x.upper end
+    return getUpperField('a')('')
     "
+    =? multi [
+        types.string
+    ]
 
 [<Fact>]
 let implicitSelfTyping() =
