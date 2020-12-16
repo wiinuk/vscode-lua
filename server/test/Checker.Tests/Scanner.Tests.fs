@@ -61,7 +61,7 @@ let showTokens tokenKinds = seq {
         yield! showTrivias config.leadingTrivias
         yield! Printer.showKind config.config k
         match k, config.trailingTrivias with
-        | K.Sub, (LineComment _, _)::_ -> " "
+        | K.Sub, ((LineComment _ | LongComment _), _)::_ -> " "
         | _ -> ()
         yield! showTrivias config.trailingTrivias
 }
@@ -280,10 +280,18 @@ let subAndLineCommentRoundTrip() =
         [
             TokenKind.Sub,
             { TokenPrintConfig.Default with
-                trailingTrivias =
-                [
-                    LineComment (NonNull ""), PositiveInt 1
-                ]
+                trailingTrivias = [LineComment (NonNull ""), PositiveInt 1]
+            }
+        ]
+        (NonNull "") (NonNull "")
+
+[<Fact>]
+let subAndLongCommentRoundTrip() =
+    roundTripWithNoiseTest
+        [
+            TokenKind.Sub,
+            { TokenPrintConfig.Default with
+                trailingTrivias = [LongComment (NonNull ""), PositiveInt 1]
             }
         ]
         (NonNull "") (NonNull "")
