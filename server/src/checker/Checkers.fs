@@ -223,7 +223,7 @@ module private Helpers =
         let project = Project.addSourceFileNoCheck filePath sourceFile project
         chunk, e, project
 
-    let unify env t1 t2 = Type.unify (types env) t1 t2
+    let unify env t1 t2 = Type.unify (typeEnv env) t1 t2
 
     let (|@) x l = { kind = x; trivia = l }
 
@@ -1010,9 +1010,9 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
     // 戻り値型を求める
     let resultType =
         let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.state.functionType
-        let types = types env
+        let typeEnv = typeEnv env
         match t.kind with
-        | Type.Function types (ValueSome(_, r)) -> r
+        | Type.Function typeEnv (ValueSome(_, r)) -> r
         | _ -> t
 
     // モジュールの追加的グローバル環境を導入する

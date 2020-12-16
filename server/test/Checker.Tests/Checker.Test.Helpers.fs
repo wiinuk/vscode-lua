@@ -11,6 +11,7 @@ module rec TypeExtensions =
     type K = LuaChecker.DiagnosticKind
 
     let types' = standardTypeSystem
+    let typeEnv' = { system = types'; stringTableTypes = [] }
     let stringKeyInterfaceType fs = fs |> Seq.map (fun (k, t) -> FieldKey.String k, t) |> Map
     let withEmptyLocation x = { kind = x; trivia = [] }
 
@@ -27,7 +28,7 @@ module rec TypeExtensions =
         let newMultiVarWith level c = Type.newVarWith "" level types'.multiKind c |> Type.makeWithEmptyLocation
         let newVar level = TypeSystem.Type.newVar "" level types'.valueKind |> Type.makeWithEmptyLocation
         let newAssigned t =
-            VarType { target = Assigned t; varKind = Type.kind types' t; varDisplayName = "" }
+            VarType { target = Assigned t; varKind = Type.kind typeEnv' t; varDisplayName = "" }
             |> Type.makeWithEmptyLocation
 
     type NormalizeState = {
@@ -434,15 +435,6 @@ module Helpers =
     open TypeExtensions
     open LuaChecker.TypedSyntaxes
 
-    type SourceConfig = {
-        path: string
-        source: string
-    }
-    type CheckConfig<'TypeEnv> = {
-        path: string
-        sources: SourceConfig list
-        withTypeEnv: 'TypeEnv -> 'TypeEnv
-    }
     let toDocumentPath path =
         let path = Path.ChangeExtension(path, ".lua")
         DocumentPath.ofRelativeUri (System.Uri "file:///C:/") (System.Uri(path, System.UriKind.RelativeOrAbsolute))
@@ -464,6 +456,25 @@ module Helpers =
         platform: System.PlatformID
         luaExeDir: string option
         withTypeEnv: 'TypeEnv -> 'TypeEnv
+        initialGlobalModulePaths: string list
+    }
+    module ProjectConfig =
+        let defaultValue = {
+            luaPath = None
+            caseSensitiveModuleResolve = false
+            platform = System.PlatformID.Win32NT
+            luaExeDir = None
+            withTypeEnv = id
+            initialGlobalModulePaths = ["./standard.d.lua"]
+        }
+    type SourceConfig = {
+        path: string
+        source: string
+    }
+    type CheckConfig<'TypeEnv> = {
+        path: string
+        sources: SourceConfig list
+        projectConfig: ProjectConfig<'TypeEnv>
     }
     let addInitialGlobalModulesFromRealFileSystem p paths =
         let paths = [ for path in paths do Path.GetFullPath path |> DocumentPath.ofPath ]
@@ -474,18 +485,12 @@ module Helpers =
 
     let projectActions withConfig actions =
         let fs = FileSystem.memory()
-        let config = withConfig {
-            luaPath = None
-            caseSensitiveModuleResolve = false
-            platform = System.PlatformID.Win32NT
-            luaExeDir = None
-            withTypeEnv = id
-        }
+        let config = withConfig ProjectConfig.defaultValue
         let packagePath = TopEnv.packagePath config.luaPath config.platform config.luaExeDir
         let env = standardEnv packagePath
         let env = { env with initialGlobalEnv = { env.initialGlobalEnv with types = config.withTypeEnv env.initialGlobalEnv.types } }
         let p = Project.empty fs env config.caseSensitiveModuleResolve
-        let p = addInitialGlobalModulesFromRealFileSystem p ["./standard.d.lua"]
+        let p = addInitialGlobalModulesFromRealFileSystem p config.initialGlobalModulePaths
 
         let checks, _ =
             actions
@@ -519,12 +524,12 @@ module Helpers =
 
     /// `fun(…) -> $x` => $x
     let (|FunctionReturnType|_|) = function
-        | Type.Function types' (ValueSome(_, r)) -> r |> Some
+        | Type.Function typeEnv' (ValueSome(_, r)) -> r |> Some
         | _ -> None
 
     /// `()` => nil | `($x, …)` => $x
     let (|MultiToValueType|) = function
-        | Type.Cons types' (ValueSome(t, _)) -> t
+        | Type.Cons typeEnv' (ValueSome(t, _)) -> t
         | _ -> types'.nil |> Type.makeWithEmptyLocation
 
     let (|FunctionReturnType1|_|) = function
@@ -573,10 +578,10 @@ module Helpers =
         )
 
     let checkChunk withConfig source =
-        let { path = path; sources = sources; withTypeEnv = withTypeEnv } = withConfig {
+        let { path = path; sources = sources; projectConfig = projectConfig } = withConfig {
             path = "C:/dir/file.lua"
             sources = []
-            withTypeEnv = id
+            projectConfig = ProjectConfig.defaultValue
         }
 
         let actions = [
@@ -585,7 +590,7 @@ module Helpers =
             Check path
         ]
 
-        match projectActions (fun c -> { c with withTypeEnv = withTypeEnv }) actions with
+        match projectActions (fun _ -> projectConfig) actions with
         | [CheckResult(scheme, e, _)] -> scheme, e
         | xs -> failwithf "%A" xs
 
@@ -809,7 +814,7 @@ module Helpers =
     /// ParseAndCheck
     let (&><) source path = ParseAndCheck(path, source)
 
-    let unify t1 t2 = Type.unify types' t1 t2
+    let unify t1 t2 = Type.unify typeEnv' t1 t2
 
     type EmptyLocationTypes = {
         multiKind: Kind

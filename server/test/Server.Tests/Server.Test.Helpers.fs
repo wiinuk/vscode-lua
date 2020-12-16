@@ -531,6 +531,15 @@ let publishDiagnostics uri version diagnostics = PublishDiagnostics {
     publishDiagnosticsParams uri diagnostics with
         version = Defined version
 }
-let sortDiagnosticsOrFail = List.sortBy <| function
-    | PublishDiagnostics d -> d.version
-    | m -> failwith $"%A{m}"
+let sortDiagnosticsAndOthers messages =
+    let isDiagnostics = function
+        | PublishDiagnostics _ -> true
+        | _ -> false
+
+    let others = List.filter (isDiagnostics >> not) messages
+    let diagnostics =
+        messages
+        |> List.filter isDiagnostics
+        |> List.sortBy (function PublishDiagnostics d -> d.version | _ -> failwith "")
+
+    diagnostics, others
