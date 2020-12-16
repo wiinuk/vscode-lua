@@ -1047,3 +1047,69 @@ let implicitSelfAndExplicitSelf() =
     =? multi [
         types.string
     ]
+
+[<Fact>]
+let loopAndReturn() =
+    chunkResult id "
+    local function f()
+        while true do
+            return 123 + 456
+        end
+    end
+    return f()
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let loopAndIfReturn() =
+    chunkResult id "
+    local function f(b)
+        while true do
+            if b then return 123 + 456 end
+        end
+    end
+    return f(false)
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let loopAndBreak() =
+    chunkResult id "
+    local function f()
+        while true do break end
+    end
+    return f()
+    "
+    =? multi []
+
+[<Fact>]
+let loopAndBreakAfterReturn() =
+    chunkResult id "
+    local function f()
+        while true do break end
+        return 123
+    end
+    return f()
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let loopAndInnerBreakAndReturn() =
+    chunkResult id "
+    local function f()
+        while true do
+            while true do break end
+            return 123
+        end
+    end
+    return f()
+    "
+    =? multi [
+        types.number
+    ]

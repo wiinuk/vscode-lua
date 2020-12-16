@@ -1186,7 +1186,7 @@ let whileStat env state span (cond, body) =
     unifyDiagnosticsAt env' cond condType v
     let struct(body', _, state') = block env' state body
     let state =
-        if isInfinityLoop cond body then state'
+        if isInfinityLoop cond body then { state with isImplicitReturn = false }
         else StatState.merge state state'
 
     withSpan span <| T.While(cond', body'), env, state
