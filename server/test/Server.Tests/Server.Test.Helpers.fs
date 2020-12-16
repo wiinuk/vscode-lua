@@ -167,6 +167,7 @@ type ConnectionConfig = {
     initialFiles: {| source: string; uri: string |} list
     rootUri: Uri
     globalModuleFiles: {| source: string; path: string |} list
+    removeOldDiagnostics: bool
 }
 module ConnectionConfig =
     let defaultValue = {
@@ -182,6 +183,7 @@ module ConnectionConfig =
                 {| path = path; source = File.ReadAllText path |}
         ]
         rootUri = Uri "file:///C:/"
+        removeOldDiagnostics = true
     }
 type Client<'V,'R> = {
     clientToServer: Stream
@@ -344,6 +346,35 @@ let clientRead { responseHandlers = responseHandlers; receivedMessageLog = logs;
         | Error x -> failwithf "message read error: %A %A" x reader
     aux()
 }
+let normalizeRegistrationParams x =
+    { x with
+        registrations =
+            x.registrations
+            |> Array.map (fun x ->
+                { x with
+                    id = ""
+                }
+            )
+    }
+
+let normalizeMessage = function
+    | RegisterCapability x -> RegisterCapability <| normalizeRegistrationParams x
+    | x -> x
+
+let normalizeMessages = List.map normalizeMessage
+
+let removeOldDiagnostics messages =
+    List.mapFoldBack (fun message uris ->
+        match message with
+        | PublishDiagnostics d as message ->
+            if Set.contains d.uri uris
+            then None, uris
+            else Some message, Set.add d.uri uris
+
+        | _ -> Some message, uris
+    ) messages Set.empty
+    |> fst
+    |> List.choose id
 
 let serverActionsWithBoilerPlate withConfig actions = async {
     let config = withConfig ConnectionConfig.defaultValue
@@ -392,7 +423,10 @@ let serverActionsWithBoilerPlate withConfig actions = async {
         }
         clientRead client
     ]
-    return Seq.toList client.receivedMessageLog
+    let messages = Seq.toList client.receivedMessageLog
+    let messages = if config.removeOldDiagnostics then removeOldDiagnostics messages else messages
+    let messages = normalizeMessages messages
+    return messages
 }
 let receiveRequest timeout f = ReceiveRequest(f >> Option.map Ok, Some timeout)
 let waitUntilExists timeout predicate = WaitUntil(List.exists predicate, Some timeout)
@@ -481,33 +515,3 @@ let (?>) source uri = WriteFile(DocumentPath.ofUri (Uri uri), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}
-
-let normalizeRegistrationParams x =
-    { x with
-        registrations =
-            x.registrations
-            |> Array.map (fun x ->
-                { x with
-                    id = ""
-                }
-            )
-    }
-
-let normalizeMessage = function
-    | RegisterCapability x -> RegisterCapability <| normalizeRegistrationParams x
-    | x -> x
-
-let normalizeMessages = List.map normalizeMessage
-
-let removeOldDiagnostics messages =
-    List.mapFoldBack (fun message uris ->
-        match message with
-        | PublishDiagnostics d as message ->
-            if Set.contains d.uri uris
-            then None, uris
-            else Some message, Set.add d.uri uris
-
-        | _ -> Some message, uris
-    ) messages Set.empty
-    |> fst
-    |> List.choose id
