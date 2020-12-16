@@ -167,7 +167,6 @@ type ConnectionConfig = {
     initialFiles: {| source: string; uri: string |} list
     rootUri: Uri
     globalModuleFiles: {| source: string; path: string |} list
-    removeOldDiagnostics: bool
 }
 module ConnectionConfig =
     let defaultValue = {
@@ -183,7 +182,6 @@ module ConnectionConfig =
                 {| path = path; source = File.ReadAllText path |}
         ]
         rootUri = Uri "file:///C:/"
-        removeOldDiagnostics = true
     }
 type Client<'V,'R> = {
     clientToServer: Stream
@@ -364,17 +362,20 @@ let normalizeMessage = function
 let normalizeMessages = List.map normalizeMessage
 
 let removeOldDiagnostics messages =
-    List.mapFoldBack (fun message uris ->
-        match message with
-        | PublishDiagnostics d as message ->
-            if Set.contains d.uri uris
-            then None, uris
-            else Some message, Set.add d.uri uris
+    let uriToLatestDiagnosticVersion =
+        messages
+        |> Seq.choose (function PublishDiagnostics d -> Some d | _ -> None)
+        |> Seq.groupBy (fun d -> d.uri)
+        |> Seq.map (fun (uri, ds) ->
+            uri, ds |> Seq.map (fun d -> d.version) |> Seq.max
+        )
+        |> Map.ofSeq
 
-        | _ -> Some message, uris
-    ) messages Set.empty
-    |> fst
-    |> List.choose id
+    messages
+    |> List.filter (function
+        | PublishDiagnostics d -> uriToLatestDiagnosticVersion.[d.uri] = d.version
+        | _ -> true
+    )
 
 let serverActionsWithBoilerPlate withConfig actions = async {
     let config = withConfig ConnectionConfig.defaultValue
@@ -424,7 +425,6 @@ let serverActionsWithBoilerPlate withConfig actions = async {
         clientRead client
     ]
     let messages = Seq.toList client.receivedMessageLog
-    let messages = if config.removeOldDiagnostics then removeOldDiagnostics messages else messages
     let messages = normalizeMessages messages
     return messages
 }
@@ -435,10 +435,13 @@ let waitUntilHasDiagnosticsOf targetUri = waitUntilExists 5.<_> <| function
     | _ -> false
 
 let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
-    let predicate =
-        List.tryFindBack (function PublishDiagnostics d -> fileUri = d.uri | _ -> false)
-        >> Option.map (function PublishDiagnostics d -> predicate d.diagnostics | _ -> false)
-        >> Option.defaultValue false
+    let predicate ms =
+        ms
+        |> Seq.choose (function PublishDiagnostics d when fileUri = d.uri -> Some d | _ -> None)
+        |> Seq.sortByDescending (fun d -> d.version)
+        |> Seq.tryHead
+        |> Option.map (fun d -> predicate d.diagnostics)
+        |> Option.defaultValue false
 
     WaitUntil(predicate, Some 5.<_>)
 
@@ -515,3 +518,11 @@ let (?>) source uri = WriteFile(DocumentPath.ofUri (Uri uri), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}
+let publishDiagnostics uri version diagnostics = PublishDiagnostics {
+    uri = uri
+    version = Defined version
+    diagnostics = Seq.toArray diagnostics
+}
+let sortDiagnosticsOrFail = List.sortBy <| function
+    | PublishDiagnostics d -> d.version
+    | m -> failwith $"%A{m}"

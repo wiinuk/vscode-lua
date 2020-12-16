@@ -108,6 +108,7 @@ let writeSimpleMessage() =
         method = Defined Methods.``textDocument/publishDiagnostics``
         ``params`` = Defined {
             uri = "A:/dir/file.ext"
+            version = Undefined
             diagnostics = [|
                 {
                     severity = Defined DiagnosticSeverity.Information
@@ -168,11 +169,13 @@ let doubleMessageRoundTrip() = writerToReaderMessageRoundTripProperty [
     PositiveInt 1,
     {
         uri = "a"
+        version = Defined 1
         diagnostics = [||]
     }
     PositiveInt 2,
     {
         uri = "a"
+        version = Defined 2
         diagnostics = [||]
     }
 ]
@@ -181,6 +184,7 @@ let doubleMessageRoundTrip() = writerToReaderMessageRoundTripProperty [
 let writeOptionalField() = writerToReaderMessageRoundTripProperty [
     PositiveInt 1, {
         uri = ""
+        version = Defined 1
         diagnostics = [|
             {
             range = {

@@ -106,7 +106,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     }
     [<Fact>]
     member _.didOpen2() = async {
-        let! r = serverActions (fun c -> { c with removeOldDiagnostics = false }) [
+        let! r = serverActions id [
             "return require 'lib1'" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
 
@@ -114,33 +114,27 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [|
-                    warning (0, 15) (0, 21) 1103 "ModuleNotFound(lib1, C:\lib1.lua)"
-                |]
-            }
-            PublishDiagnostics { uri = "file:///C:/lib1.lua"; diagnostics = [||] }
-            PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }
+            publishDiagnostics "file:///C:/main.lua" 1 [
+                warning (0, 15) (0, 21) 1103 "ModuleNotFound(lib1, C:\lib1.lua)"
+            ]
+            publishDiagnostics "file:///C:/lib1.lua" 2 []
+            publishDiagnostics "file:///C:/main.lua" 3 []
         ]
     }
     [<Fact>]
     member _.didChangeError() = async {
-        let! r = serverActions (fun c -> { c with removeOldDiagnostics = false }) [
+        let! r = serverActions id [
             "return 1 + 1" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
             didChangeFull "return 1 .. 1" ("file:///C:/main.lua", 2)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
         ]
-        r =? [
-            PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [|
-                    error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
-                    error (0, 12) (0, 13) 1004 "ConstraintMismatch(1.., ..string)"
-                |]
-            }
+        sortDiagnosticsOrFail r =? [
+            publishDiagnostics "file:///C:/main.lua" 1 []
+            publishDiagnostics "file:///C:/main.lua" 2 [
+                error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
+                error (0, 12) (0, 13) 1004 "ConstraintMismatch(1.., ..string)"
+            ]
         ]
     }
     [<Fact>]
@@ -158,7 +152,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                 | _ -> false
         ]
         r =? [
-            PublishDiagnostics { uri = "file:///C:/main.lua"; diagnostics = [||] }
+            publishDiagnostics "file:///C:/main.lua" 1 []
             {
                 contents = {
                     kind = MarkupKind.markdown
@@ -184,30 +178,24 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
-        r =? [
-            PublishDiagnostics {
-                uri = "file:///C:/lib.lua"
-                diagnostics = [|
-                    error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
-                    error (0, 12) (0, 13) 1004 "ConstraintMismatch(2.., ..string)"
-                |]
-            }
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [|
-                    { error (0, 18) (0, 23) 1104 "ExternalModuleError(C:\\lib.lua, (1,8 - 1,9) Error: ConstraintMismatch(1.., ..string))" with
-                        relatedInformation = Defined [|
-                            {
-                                location = {
-                                    uri = "file:///C:/lib.lua"
-                                    range = range (0, 7) (0, 8)
-                                }
-                                message = "ConstraintMismatch(1.., ..string)"
+        sortDiagnosticsOrFail r =? [
+            publishDiagnostics "file:///C:/lib.lua" 1 [
+                error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
+                error (0, 12) (0, 13) 1004 "ConstraintMismatch(2.., ..string)"
+            ]
+            publishDiagnostics "file:///C:/main.lua" 2 [
+                { error (0, 18) (0, 23) 1104 "ExternalModuleError(C:\\lib.lua, (1,8 - 1,9) Error: ConstraintMismatch(1.., ..string))" with
+                    relatedInformation = Defined [|
+                        {
+                            location = {
+                                uri = "file:///C:/lib.lua"
+                                range = range (0, 7) (0, 8)
                             }
-                        |]
-                    }
-                |]
-            }
+                            message = "ConstraintMismatch(1.., ..string)"
+                        }
+                    |]
+                }
+            ]
         ]
     }
     [<Fact>]
@@ -226,10 +214,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [||]
-            }
+            publishDiagnostics "file:///C:/main.lua" 1 []
         ]
     }
     [<Fact>]
@@ -242,10 +227,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [||]
-            }
+            publishDiagnostics "file:///C:/main.lua" 1 [
+                warning (0, 18) (0, 23) 1103 "ModuleNotFound(lib, C:\lib.lua)"
+            ]
+            publishDiagnostics "file:///C:/main.lua" 2 []
         ]
     }
     [<Fact>]
@@ -268,11 +253,8 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        r =? [
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [||]
-            }
+        removeOldDiagnostics r =? [
+            publishDiagnostics "file:///C:/main.lua" 2 []
         ]
     }
     [<Fact>]
@@ -282,12 +264,9 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
         r =? [
-            PublishDiagnostics {
-                uri = "file:///C:/main.lua"
-                diagnostics = [|
-                    error (0, 6) (0, 7) 0007 "RequireName"
-                |]
-            }
+            publishDiagnostics "file:///C:/main.lua" 1 [
+                error (0, 6) (0, 7) 0007 "RequireName"
+            ]
         ]
     }
     [<Fact>]
@@ -307,9 +286,6 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilHasDiagnosticsOf "file:///project/main.lua"
         ]
         r =? [
-            PublishDiagnostics {
-                uri = "file:///project/main.lua"
-                diagnostics = [||]
-            }
+            publishDiagnostics "file:///project/main.lua" 1 []
         ]
     }
