@@ -113,13 +113,13 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "return 123" &> ("file:///C:/lib1.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        sortDiagnosticsOrFail r =? [
+        sortDiagnosticsAndOthers r =? ([
             publishDiagnostics "file:///C:/main.lua" 1 [
                 warning (0, 15) (0, 21) 1103 "ModuleNotFound(lib1, C:\lib1.lua)"
             ]
             publishDiagnostics "file:///C:/lib1.lua" 2 []
             publishDiagnostics "file:///C:/main.lua" 3 []
-        ]
+        ], [])
     }
     [<Fact>]
     member _.didChangeError() = async {
@@ -129,13 +129,13 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             didChangeFull "return 1 .. 1" ("file:///C:/main.lua", 2)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
         ]
-        sortDiagnosticsOrFail r =? [
+        sortDiagnosticsAndOthers r =? ([
             publishDiagnostics "file:///C:/main.lua" 1 []
             publishDiagnostics "file:///C:/main.lua" 2 [
                 error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
                 error (0, 12) (0, 13) 1004 "ConstraintMismatch(1.., ..string)"
             ]
-        ]
+        ], [])
     }
     [<Fact>]
     member _.hoverType() = async {
@@ -178,7 +178,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
-        sortDiagnosticsOrFail r =? [
+        sortDiagnosticsAndOthers r =? ([
             publishDiagnostics "file:///C:/lib.lua" 1 [
                 error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
                 error (0, 12) (0, 13) 1004 "ConstraintMismatch(2.., ..string)"
@@ -196,7 +196,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     |]
                 }
             ]
-        ]
+        ], [])
     }
     [<Fact>]
     member _.didChangeWatchedFiles() = async {
@@ -226,11 +226,8 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        r =? [
-            publishDiagnostics "file:///C:/main.lua" 1 [
-                warning (0, 18) (0, 23) 1103 "ModuleNotFound(lib, C:\lib.lua)"
-            ]
-            publishDiagnostics "file:///C:/main.lua" 2 []
+        removeOldDiagnostics r =? [
+            PublishDiagnostics <| publishDiagnosticsParams "file:///C:/main.lua" []
         ]
     }
     [<Fact>]
