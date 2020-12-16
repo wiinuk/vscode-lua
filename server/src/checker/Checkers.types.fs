@@ -298,7 +298,14 @@ module CheckerEnv =
         let forInRestVars = "values"
 
     let types env = env.rare.noUpdate.types
+    let typeEnv env =
+        let env = env.rare.noUpdate
+        {
+            system = env.types
+            stringTableTypes = env.defaultGlobalEnv.stringMetaTableIndexType @ env.additionalGlobalEnv.Value.stringMetaTableIndexType
+        }
     let (|Types|) env = types env
+    let (|TypeEnv|) env = typeEnv env
     let typeCache env = env.rare.noUpdate.typeCache
     let (|TypeCache|) env = typeCache env
 
@@ -307,7 +314,7 @@ module CheckerEnv =
     let reportWarn env span kind = report env <| Diagnostic.warn span kind
     let reportInfo env span kind = report env <| Diagnostic.info span kind
     let reportIfUnifyError env span t1 t2 =
-        match Type.unify (types env) t1 t2 with
+        match Type.unify (typeEnv env) t1 t2 with
         | ValueSome e -> reportError env span <| K.UnifyError e
         | _ -> ()
 
@@ -373,8 +380,8 @@ module CheckerEnv =
     let newMultiVarTypeWith env displayName c = newVarTypeWith env displayName (types env).multiKind c
     let newMultiVarType env displayName = newMultiVarTypeWith env displayName Constraints.any
 
-    let isMultiKind (Types types) t = Type.kind types t = types.multiKind
-    let isValueKind (Types types) t = Type.kind types t = types.valueKind
+    let isMultiKind (TypeEnv env) t = Type.kind env t = env.system.multiKind
+    let isValueKind (TypeEnv env) t = Type.kind env t = env.system.valueKind
 
     let sourceLocation env span = [Location(env.rare.noUpdate.filePath, span)]
 
@@ -527,7 +534,7 @@ module Type =
             match remainingVs, remainingTs with
             | [], [] -> ()
             | struct(_, v)::vs, struct(t, span)::ts ->
-                match Type.unify (CheckerEnv.types env) v t with
+                match Type.unify (CheckerEnv.typeEnv env) v t with
                 | ValueSome e -> CheckerEnv.reportError env span <| K.UnifyError e
                 | _ -> ()
 
@@ -683,7 +690,7 @@ module Type =
         |> Type.makeWithLocation (CheckerEnv.sourceLocation env.env span)
 
     and varParam (env: _ byref) span v =
-        let types = CheckerEnv.types env.env
+        let { system = types } as typeEnv = CheckerEnv.typeEnv env.env
         match v with
         | None -> types.empty |> Type.makeWithLocation (CheckerEnv.sourceLocation env.env span)
         | Some { kind = D.VariadicParameter(n, c); trivia = span } ->
@@ -701,7 +708,7 @@ module Type =
                 | _ -> CheckerEnv.TypeNames.implicitMultiVar
 
             let m' = CheckerEnv.newMultiVarTypeWith env.env n c' |> Type.makeWithLocation l
-            match Type.unify types m m' with
+            match Type.unify typeEnv m m' with
             | ValueSome e -> CheckerEnv.reportError env.env c.trivia <| K.UnifyError e
             | _ -> ()
         m
@@ -783,7 +790,7 @@ module DocumentCheckers =
             reportWarn env nameSpan k
 
         // 宣言済みの変数の型と一致しているか
-        match Type.unify (types env) oldDecl.scheme newDecl.scheme with
+        match Type.unify (typeEnv env) oldDecl.scheme newDecl.scheme with
         | ValueSome e -> reportError env typeSign.trivia (DiagnosticKind.UnifyError e); false
         | _ -> true
 
@@ -799,7 +806,7 @@ module DocumentCheckers =
         | TypeDefinitionKind.Alias oldType ->
 
             // 宣言済みの変数の型と一致しているか
-            match Type.unify (types env) oldType newType with
+            match Type.unify (typeEnv env) oldType newType with
             | ValueSome e -> reportError env nameSpan (DiagnosticKind.UnifyError e); false
             | _ -> true
 
@@ -837,7 +844,7 @@ module DocumentCheckers =
                 // 型変数の種を単一化する
                 // @generic T
                 // @generic T...
-                match unifyKind (Type.kind (types env) bind.varType) kind with
+                match unifyKind (Type.kind (typeEnv env) bind.varType) kind with
                 | ValueSome e ->
                     let (Name n) = nameToken
                     reportError env n.trivia.span <| DiagnosticKind.UnifyError e
@@ -1153,7 +1160,7 @@ module DocumentCheckers =
         if lastClass.isStringMetaTableIndex then
             g
             |> Local.modify (fun g ->
-                { g with stringMetaTableIndexType = g.stringMetaTableIndexType @ NonEmptyList.toList d }
+                { g with stringMetaTableIndexType = g.stringMetaTableIndexType @ [generalizedType] }
             )
 
     let processRemainingModifierTags env modifierTags =

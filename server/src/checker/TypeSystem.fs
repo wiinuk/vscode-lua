@@ -1,4 +1,4 @@
-﻿[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module rec LuaChecker.TypeSystem
 open Cysharp.Text
 open System.Collections.Generic
@@ -119,27 +119,33 @@ let addVar v env =
     if containsVar v env.visitedVars then ValueNone else
     ValueSome { env with visitedVars = v::env.visitedVars }
 
+[<Struct>]
+type TypeEnv = {
+    system: TypeSystem
+    stringTableTypes: Type list
+}
+
 module Type =
     let withEntity t x: Type = { t with kind = x }
     let makeWithLocation location t: Type = { kind = t; trivia = location }
     let makeWithEmptyLocation t = makeWithLocation [] t
 
     /// `fun(…): (…)`
-    let (|Function|) types t = types.unFn t
+    let (|Function|) types t = types.system.unFn t
     /// `()`
     let (|IsEmpty|) types = function
-        | NamedType(t, _) -> types.emptyConstant = t
+        | NamedType(t, _) -> types.system.emptyConstant = t
         | _ -> false
     /// `(::)`
-    let (|Cons|) types t = types.unCons t
+    let (|Cons|) types t = types.system.unCons t
     /// `...`
     let (|MultiVar|) types = function
-        | VarType({ varKind = k } as r) when k = types.multiKind -> ValueSome r
+        | VarType({ varKind = k } as r) when k = types.system.multiKind -> ValueSome r
         | _ -> ValueNone
 
     /// `'m...`
     let (|MultiParameter|) types = function
-        | ParameterType(TypeParameterId(_, k) as p) when k = types.multiKind -> ValueSome p
+        | ParameterType(TypeParameterId(_, k) as p) when k = types.system.multiKind -> ValueSome p
         | _ -> ValueNone
 
     let newVarWith displayName level kind c = VarType { target = Var(level, c); varKind = kind; varDisplayName = displayName }
@@ -272,7 +278,7 @@ module Type =
             | NamedKind _ -> k
             | FunKind(_, k) -> k
 
-        | InterfaceType _ -> types.valueKind
+        | InterfaceType _ -> types.system.valueKind
         | TypeAbstraction(_, t) -> kind types t
         | ParameterType(TypeParameterId(_, k))
         | VarType { varKind = k } -> k
@@ -636,7 +642,7 @@ let unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2) =
     |> Constraints.makeWithLocation (c1.trivia @ c2.trivia)
     |> Ok
 
-let typeToSpace types = function
+let typeToSpace { system = types } = function
     | { kind = NamedType(t, _) } ->
         if t = types.nilConstant then ValueSome TagSpace.nil
         elif t = types.booleanConstant then ValueSome TagSpace.allBoolean
@@ -673,9 +679,23 @@ let matchConstraints types env1 env2 (c1, r1, t1) t2 =
         )
 
     // number :> { f: t }
-    | InterfaceConstraint cfs, NamedType _ ->
+    | InterfaceConstraint cfs, NamedType(c, ts) ->
+        match ts, types.stringTableTypes with
 
-        // TODO: フィールドが存在する名前付き型もある
+        // string :> { byte: …, char: … }
+        | [], _::_ when c = types.system.stringConstant ->
+            let rec aux = function
+                | [] -> ValueNone
+                | stringTableType::ts ->
+
+                match matchConstraints types env1 env2 (c1, r1, t1) stringTableType with
+                | ValueNone -> aux ts
+                | r -> r
+
+            aux types.stringTableTypes
+
+        | _ ->
+
         // unify number (?a: { x: number }) = Some(TypeMismatch ...)
         if Constraints.hasField c1 then
             let kv = Seq.head cfs
