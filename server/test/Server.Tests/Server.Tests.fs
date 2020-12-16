@@ -290,3 +290,26 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
         ]
     }
+    [<Fact>]
+    member _.customGlobalModule() = async {
+        let withConfig c =
+            { c with
+                globalModuleFiles = [
+                    {|
+                    path = "/system/custom-standard.d.lua"
+                    source = "---@global MyVariable string"
+                    |}
+                ]
+                rootUri = Uri "file:///project" |> ValueSome
+            }
+        let! r = serverActions withConfig [
+            "return MyVariable" &> ("file:///project/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///project/main.lua"
+        ]
+        r =? [
+            PublishDiagnostics {
+                uri = "file:///project/main.lua"
+                diagnostics = [||]
+            }
+        ]
+    }
