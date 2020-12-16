@@ -164,8 +164,8 @@ type ConnectionConfig = {
     timeoutMap: TimeSpan -> TimeSpan
     backgroundCheckDelay: TimeSpan
     serverPlatform: PlatformID option
-    initialFiles: {| source: string; path: string |} list
-    rootUri: Uri voption
+    initialFiles: {| source: string; uri: string |} list
+    rootUri: Uri
     globalModuleFiles: {| source: string; path: string |} list
 }
 module ConnectionConfig =
@@ -181,7 +181,7 @@ module ConnectionConfig =
                 let path = Path.GetFullPath path
                 {| path = path; source = File.ReadAllText path |}
         ]
-        rootUri = ValueSome <| Uri "file:///C:/"
+        rootUri = Uri "file:///C:/"
     }
 type Client<'V,'R> = {
     clientToServer: Stream
@@ -358,7 +358,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
         fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
 
     for f in config.initialFiles do
-        fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
+        fileSystem.writeAllText(DocumentPath.ofRelativeUri config.rootUri (Uri(f.uri, UriKind.RelativeOrAbsolute)), f.source)
 
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
@@ -411,7 +411,7 @@ let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
 let serverActions withConfig messages = async {
     let config = withConfig ConnectionConfig.defaultValue
     let! rs = serverActionsWithBoilerPlate withConfig [
-        Send <| Initialize { rootUri = config.rootUri }
+        Send <| Initialize { rootUri = ValueSome config.rootUri }
         waitUntilExists 5.<_> <| function
             | InitializeResponse _ -> true
             | _ -> false
@@ -477,7 +477,7 @@ let didSave path = Send <| DidSave {
     }
 }
 /// `WriteFile(…)`
-let (?>) source path = WriteFile(DocumentPath.ofUri (Uri path), source)
+let (?>) source uri = WriteFile(DocumentPath.ofUri (Uri uri), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}

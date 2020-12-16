@@ -107,10 +107,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.didOpen2() = async {
         let! r = serverActions id [
-            "return require 'lib1'" &> ("C:/main.lua", 1)
+            "return require 'lib1'" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
 
-            "return 123" &> ("C:/lib1.lua", 1)
+            "return 123" &> ("file:///C:/lib1.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
@@ -127,9 +127,9 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.didChangeError() = async {
         let! r = serverActions id [
-            "return 1 + 1" &> ("C:/main.lua", 1)
+            "return 1 + 1" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
-            didChangeFull "return 1 .. 1" ("C:/main.lua", 2)
+            didChangeFull "return 1 .. 1" ("file:///C:/main.lua", 2)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
         ]
         r =? [
@@ -146,7 +146,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.hoverType() = async {
         let! r = serverActions id [
-            "local x = 1 + 2" &> ("C:/main.lua", 1)
+            "local x = 1 + 2" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
 
             Send <| Hover {
@@ -178,10 +178,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.externalModuleErrorMessage() = async {
         let! r = serverActions id [
-            "return 1 .. 2" &> ("C:/lib.lua", 1)
+            "return 1 .. 2" &> ("file:///C:/lib.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/lib.lua"
 
-            "local x = require 'lib'" &> ("C:/main.lua", 1)
+            "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
         r =? [
@@ -213,7 +213,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.didChangeWatchedFiles() = async {
         let! r = serverActions id [
-            "return 1 + 2" ?> "C:/lib.lua"
+            "return 1 + 2" ?> "file:///C:/lib.lua"
             Send <| DidChangeWatchedFiles {
                 changes = [|
                     {
@@ -222,7 +222,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     }
                 |]
             }
-            "local x = require 'lib'" &> ("C:/main.lua", 1)
+            "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         r =? [
@@ -235,10 +235,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.externalFileNoReply() = async {
         let files = [
-            {| source = "return 1 + 2"; path = "C:/lib.lua" |}
+            {| source = "return 1 + 2"; uri = "file:///C:/lib.lua" |}
         ]
         let! r = serverActions (fun c -> { c with initialFiles = files }) [
-            "local x = require 'lib'" &> ("C:/main.lua", 1)
+            "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         removeOldDiagnostics r =? [
@@ -251,13 +251,13 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.externalFileEdit() = async {
         let files = [
-            {| source = "return 1 + 2"; path = "C:/lib.lua" |}
+            {| source = "return 1 + 2"; uri = "file:///C:/lib.lua" |}
         ]
         let! r = serverActions (fun c -> { c with initialFiles = files }) [
-            "local x = require 'lib' .. 'a'" &> ("C:/main.lua", 1)
+            "local x = require 'lib' .. 'a'" &> ("file:///C:/main.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" (Array.isEmpty >> not)
 
-            "return 'x'" ?> "C:/lib.lua"
+            "return 'x'" ?> "file:///C:/lib.lua"
             Send <| DidChangeWatchedFiles {
                 changes = [|
                     {
@@ -278,7 +278,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.syntaxError() = async {
         let! r = serverActions id [
-            "local = 1" &> ("C:/main.lua", 1)
+            "local = 1" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
         ]
         r =? [
@@ -300,7 +300,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     source = "---@global MyVariable string"
                     |}
                 ]
-                rootUri = Uri "file:///project" |> ValueSome
+                rootUri = Uri "file:///project"
             }
         let! r = serverActions withConfig [
             "return MyVariable" &> ("file:///project/main.lua", 1)
