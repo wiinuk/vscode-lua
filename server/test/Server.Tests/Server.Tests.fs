@@ -75,7 +75,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilExists 5.<_> <| function ShutdownResponse -> true | _ -> false
             Send Exit
         ]
-        normalizeMessages r =? normalizeMessages [
+        r =? normalizeMessages [
             InitializeResponse {
                 capabilities = {
                     hoverProvider = true
@@ -106,7 +106,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     }
     [<Fact>]
     member _.didOpen2() = async {
-        let! r = serverActions id [
+        let! r = serverActions (fun c -> { c with removeOldDiagnostics = false }) [
             "return require 'lib1'" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
 
@@ -126,7 +126,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     }
     [<Fact>]
     member _.didChangeError() = async {
-        let! r = serverActions id [
+        let! r = serverActions (fun c -> { c with removeOldDiagnostics = false }) [
             "return 1 + 1" &> ("file:///C:/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///C:/main.lua"
             didChangeFull "return 1 .. 1" ("file:///C:/main.lua", 2)
@@ -241,7 +241,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        removeOldDiagnostics r =? [
+        r =? [
             PublishDiagnostics {
                 uri = "file:///C:/main.lua"
                 diagnostics = [||]
@@ -268,7 +268,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        removeOldDiagnostics r =? [
+        r =? [
             PublishDiagnostics {
                 uri = "file:///C:/main.lua"
                 diagnostics = [||]
