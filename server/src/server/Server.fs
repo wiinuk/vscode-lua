@@ -39,7 +39,9 @@ let start withOptions (input, output) =
     let project = Project.empty options.fileSystem (Checker.standardEnv packagePath) options.caseSensitiveModuleResolve
     let project =
         [ for path in options.globalModulePaths ->
-            Path.Combine(Environment.CurrentDirectory, path) |> Path.GetFullPath |> Uri |> DocumentPath.ofUri rootUri
+            let path = Path.Combine(Environment.CurrentDirectory, path) |> Path.GetFullPath |> Uri |> DocumentPath.ofUri rootUri
+            ifDebug { trace $"adding {path} to project as global module." }
+            path
         ]
         |> Checker.addInitialGlobalModules project
 
