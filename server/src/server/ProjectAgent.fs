@@ -46,10 +46,10 @@ module private Helpers =
             | ValueNone -> InFs(path, agent.project.projectRare.fileSystem.lastWriteTime path)
             | ValueSome document -> InMemory(document.contents, document.version)
 
-        ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toLocalPath path) }
+        ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
         ifDebug { agent.watch.Restart() }
         let _, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path source
-        ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toLocalPath path) }
+        ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
 
         let agent = { agent with project = project }
 
@@ -97,10 +97,10 @@ module private Helpers =
     let checkProjectFileOrCachedResult agent path project =
         match Project.tryFind path project with
         | ValueSome sourceFile ->
-            ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toLocalPath path) }
+            ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
             ifDebug { agent.watch.Restart() }
             let typedTree, diagnostics, project = Checkers.checkSourceFileCached project path sourceFile
-            ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toLocalPath path) }
+            ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
             Some typedTree, diagnostics, project
 
         | ValueNone -> None, upcast [], project
@@ -155,24 +155,24 @@ let shutdown agent id () =
     agent
 
 let didOpenTextDocument agent { DidOpenTextDocumentParams.textDocument = d } =
-    let path = DocumentPath.ofUri agent.root d.uri
+    let path = DocumentPath.ofRelativeUri agent.root d.uri
     let agent = { agent with documents = Documents.open' path d.text d.version agent.documents }
     checkAndResponse agent path
 
 let didChangeTextDocument agent { textDocument = d; contentChanges = contentChanges } =
-    let path = DocumentPath.ofUri agent.root d.uri
+    let path = DocumentPath.ofRelativeUri agent.root d.uri
     let documents = Documents.change path d.version contentChanges agent.documents
     { agent with documents = documents }
     |> addLowPriorityCheckFiles [path]
 
 let didCloseTextDocument agent (p: DidCloseTextDocumentParams) =
-    let path = DocumentPath.ofUri agent.root p.textDocument.uri
+    let path = DocumentPath.ofRelativeUri agent.root p.textDocument.uri
     let agent = { agent with documents = Documents.close path agent.documents }
     postToBackgroundAgent agent <| PublishDiagnostics(agent, path, ValueNone, [])
     agent
 
 let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDocument } =
-    let savedFile = DocumentPath.ofUri agent.root textDocument.uri
+    let savedFile = DocumentPath.ofRelativeUri agent.root textDocument.uri
     let files = [
         for path in Documents.openedPaths agent.documents do
             if Checker.isAncestor savedFile path agent.project then
@@ -183,16 +183,15 @@ let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDoc
 let didChangeWatchedFiles agent { changes = changes } =
     let mutable agent' = agent
     for change in changes do
-        let path = DocumentPath.ofUri agent'.root change.uri
-        ifDebug { Log.Format(agent.resources.LogMessages.FileChanged, DocumentPath.toLocalPath path, change.``type``) }
+        let path = DocumentPath.ofRelativeUri agent'.root change.uri
+        ifDebug { Log.Format(agent.resources.LogMessages.FileChanged, DocumentPath.toUriString path, change.``type``) }
 
-        let (DocumentPath p) = path
-        if p.EndsWith ".lua" then
+        if DocumentPath.toUriString(path).EndsWith(".lua", StringComparison.InvariantCultureIgnoreCase) then
             agent' <- processFileEvent agent' path change
     agent'
 
 let hover agent id { HoverParams.textDocument = textDocument; position = position } =
-    let path = DocumentPath.ofUri agent.root textDocument.uri
+    let path = DocumentPath.ofRelativeUri agent.root textDocument.uri
     match Documents.tryFind path agent.documents with
     | ValueNone -> sendResponse agent id <| Ok ValueNone; agent
     | ValueSome document ->
@@ -285,13 +284,11 @@ let processMessage inbox agent = function
 let processEnumerateFilesResponse agent files =
     let mutable agent = agent
     for filePath in files do
-        match DocumentPath.toLocalPath filePath |> Path.GetExtension with
-        | ".lua" ->
+        if DocumentPath.toUriString(filePath).EndsWith(".lua", StringComparison.InvariantCultureIgnoreCase) then
             agent <- processFileEvent agent filePath {
                 uri = DocumentPath.toUri filePath
                 ``type`` = FileChangeType.Created
             }
-        | _ -> ()
     agent
 
 let create state = new MailboxProcessor<_>(fun inbox ->

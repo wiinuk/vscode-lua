@@ -45,7 +45,7 @@ module ServerResources =
                 let r =
                     try
                         let resource = ServerResources.Load path
-                        ifInfo { Log.Format(resource.LogMessages.LoadResourceFrom, Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path))) }
+                        ifInfo { Log.Format(resource.LogMessages.LoadResourceFrom, Path.GetFullPath path) }
                         Ok resource
 
                     with e -> Error e

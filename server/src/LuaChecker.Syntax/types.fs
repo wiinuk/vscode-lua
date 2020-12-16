@@ -1,4 +1,4 @@
-﻿namespace LuaChecker
+namespace LuaChecker
 open Cysharp.Text
 open LuaChecker.Primitives
 open System
@@ -79,15 +79,41 @@ module Span =
 
     let inRange i x = x.start <= i && i < x.end'
 
-/// absolute/normalized path
+/// absolute/normalized uri
 [<Struct>]
-type DocumentPath = DocumentPath of string
+type DocumentPath = private DocumentPath of string
 module DocumentPath =
-    let toLocalPath (DocumentPath x) = x
+    open System.IO
+
     let toUri(DocumentPath x) = Uri x
-    let ofUri (baseUri: Uri) (x: Uri) =
-        let x = if x.IsAbsoluteUri then x else Uri(baseUri, x)
-        DocumentPath <| Uri("file://" + x.LocalPath).LocalPath
+    let toUriString(DocumentPath x) = x
+    let toPathOrNone localFileUri =
+        let uri = toUri localFileUri
+        if uri.IsFile && uri.IsLoopback then ValueSome uri.LocalPath
+        else ValueNone
+
+    let toPathOrFail localFileUri =
+        match toPathOrNone localFileUri with
+        | ValueSome x -> x
+        | _ -> invalidArg (nameof localFileUri) $"local file URI is required: {localFileUri}"
+
+    let ofUri (absoluteUri: Uri) =
+        if not absoluteUri.IsAbsoluteUri then
+            invalidArg (nameof absoluteUri) $"absolute URI is required: {absoluteUri}"
+
+        DocumentPath(string absoluteUri)
+
+    let ofRelativeUri (baseUri: Uri) (relativeOrAbsoluteUri: Uri) =
+        if not relativeOrAbsoluteUri.IsAbsoluteUri
+        then Uri(baseUri, relativeOrAbsoluteUri)
+        else relativeOrAbsoluteUri
+        |> ofUri
+
+    let ofPath absoluteOSPath =
+        if not <| Path.IsPathFullyQualified(absoluteOSPath + "") then
+            invalidArg (nameof absoluteOSPath) $"fully qualified path is required: {absoluteOSPath}"
+
+        UriBuilder("file", "", Path = absoluteOSPath).Uri |> ofUri
 
     let equalityComparer caseSensitive =
         if caseSensitive then
