@@ -1047,3 +1047,17 @@ let implicitSelfAndExplicitSelf() =
     =? multi [
         types.string
     ]
+
+[<Fact>]
+let loopAndIfReturnTyping() =
+    chunkResult id "
+    local function f(b)
+        while true do
+            if b then return 123 + 456 end
+        end
+    end
+    return f(false)
+    "
+    =? multi [
+        types.number
+    ]
