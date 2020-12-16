@@ -271,7 +271,7 @@ let unifyAbstractionAndTagSpaceConstraint() =
 
 [<Fact>]
 let stringTypeToTagSpace() =
-    typeToSpace types' types.string =? ValueSome TagSpace.allString
+    typeToSpace typeEnv' types.string =? ValueSome TagSpace.allString
 
 [<Fact>]
 let unifyStringSpaceConstraintInMulti() =
@@ -293,7 +293,7 @@ let unifyElementTypeConstrainedMultiVarAndEmpty() =
         |> C.multiElementType
         |> Type.newMultiVarWith 1
 
-    unify t1 Type.empty
+    unify t1 Type.empty =? ValueNone
 
 [<Fact(DisplayName = "unify (?es...(?a := (?x: 'a'..))) ()")>]
 let unifyAssignedElementTypeConstrainedMultiVarAndEmpty() =
@@ -304,4 +304,20 @@ let unifyAssignedElementTypeConstrainedMultiVarAndEmpty() =
         |> C.multiElementType
         |> Type.newMultiVarWith 1
 
-    unify t1 Type.empty
+    unify t1 Type.empty =? ValueNone
+
+[<Fact(DisplayName = "unify string (?x: { upper: fun(string) -> string })")>]
+let stringAsInterface() =
+    let upperType = types.fn(types.string, types.string)
+    let typeEnv =
+        { typeEnv' with
+            stringTableTypes = [
+                Type.interfaceType [
+                    "upper", upperType
+                ]
+            ]
+        }
+
+    let t1 = types.string
+    let t2 = Type.newVarWithFields 1 ["upper", upperType]
+    Type.unify typeEnv t1 t2 =? ValueNone

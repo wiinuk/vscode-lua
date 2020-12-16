@@ -11,6 +11,7 @@ module rec TypeExtensions =
     type K = LuaChecker.DiagnosticKind
 
     let types' = standardTypeSystem
+    let typeEnv' = { system = types'; stringTableTypes = [] }
     let stringKeyInterfaceType fs = fs |> Seq.map (fun (k, t) -> FieldKey.String k, t) |> Map
     let withEmptyLocation x = { kind = x; trivia = [] }
 
@@ -27,7 +28,7 @@ module rec TypeExtensions =
         let newMultiVarWith level c = Type.newVarWith "" level types'.multiKind c |> Type.makeWithEmptyLocation
         let newVar level = TypeSystem.Type.newVar "" level types'.valueKind |> Type.makeWithEmptyLocation
         let newAssigned t =
-            VarType { target = Assigned t; varKind = Type.kind types' t; varDisplayName = "" }
+            VarType { target = Assigned t; varKind = Type.kind typeEnv' t; varDisplayName = "" }
             |> Type.makeWithEmptyLocation
 
     type NormalizeState = {
@@ -523,12 +524,12 @@ module Helpers =
 
     /// `fun(…) -> $x` => $x
     let (|FunctionReturnType|_|) = function
-        | Type.Function types' (ValueSome(_, r)) -> r |> Some
+        | Type.Function typeEnv' (ValueSome(_, r)) -> r |> Some
         | _ -> None
 
     /// `()` => nil | `($x, …)` => $x
     let (|MultiToValueType|) = function
-        | Type.Cons types' (ValueSome(t, _)) -> t
+        | Type.Cons typeEnv' (ValueSome(t, _)) -> t
         | _ -> types'.nil |> Type.makeWithEmptyLocation
 
     let (|FunctionReturnType1|_|) = function
@@ -813,7 +814,7 @@ module Helpers =
     /// ParseAndCheck
     let (&><) source path = ParseAndCheck(path, source)
 
-    let unify t1 t2 = Type.unify types' t1 t2
+    let unify t1 t2 = Type.unify typeEnv' t1 t2
 
     type EmptyLocationTypes = {
         multiKind: Kind

@@ -928,7 +928,17 @@ let standardLibraryIsAutomaticallyLoaded() =
     ]
 
 [<Fact>]
-let stringMethod() =
+let stringField() =
+    chunkResult id "
+    ---@global x string
+    return x.upper(x)
+    "
+    =? multi [
+        types.string
+    ]
+
+[<Fact>]
+let stringLiteralMethod() =
     chunkResult id "
     return ('abc'):byte(1)
     "
@@ -937,7 +947,7 @@ let stringMethod() =
     ]
 
 [<Fact>]
-let stringField() =
+let stringLiteralField() =
     chunkResult id "
     return ('abc').char(1, 2, 3)
     "
@@ -946,7 +956,7 @@ let stringField() =
     ]
 
 [<Fact>]
-let stringMetaTable() =
+let stringLiteralMetaTable() =
     chunkResult (fun c -> { c with projectConfig = { c.projectConfig with initialGlobalModulePaths = [] } }) "
     ---@_Feature stringMetaTableIndex
     ---@class MyStringMetaTable
@@ -957,6 +967,13 @@ let stringMetaTable() =
     =? multi [
         types.number
     ]
+
+[<Fact>]
+let stringLiteralAsInterface() =
+    chunkResult id "
+    local function byte1(x) return x:byte(1) end
+    return byte1 'a'
+    "
 
 [<Fact>]
 let implicitSelfTyping() =
