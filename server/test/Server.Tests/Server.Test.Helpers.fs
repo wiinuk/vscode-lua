@@ -356,7 +356,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     let fileSystem = FileSystem.memory()
     for f in config.globalModuleFiles do
         fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
-        
+
     for f in config.initialFiles do
         fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
 

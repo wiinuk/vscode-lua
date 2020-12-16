@@ -445,10 +445,7 @@ module Helpers =
     }
     let toDocumentPath path =
         let path = Path.ChangeExtension(path, ".lua")
-        let path =
-            if Path.IsPathRooted path then path
-            else Path.Combine("C:/", path)
-        DocumentPath.ofPath path
+        DocumentPath.ofRelativeUri (System.Uri "file:///C:/") (System.Uri(path, System.UriKind.RelativeOrAbsolute))
 
     type ProjectAction =
         | AddOrUpdate of path: string * source: string
