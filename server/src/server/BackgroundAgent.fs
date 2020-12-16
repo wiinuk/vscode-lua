@@ -70,7 +70,7 @@ let create agent = new MailboxProcessor<_>(fun inbox ->
             return! loop agent
 
         | EnumerateFiles(fs, dir, dest) ->
-            fs.enumerateFiles (DocumentPath.ofUri null dir) |> ImmutableArray.CreateRange |> EnumerateFilesResponse |> dest.Post
+            fs.enumerateFiles (DocumentPath.ofUri dir) |> ImmutableArray.CreateRange |> EnumerateFilesResponse |> dest.Post
             return! loop agent
     }
     loop agent

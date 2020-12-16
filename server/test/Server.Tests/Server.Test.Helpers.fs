@@ -164,7 +164,9 @@ type ConnectionConfig = {
     timeoutMap: TimeSpan -> TimeSpan
     backgroundCheckDelay: TimeSpan
     serverPlatform: PlatformID option
-    initialFiles: {| source: string; path: string |} list
+    initialFiles: {| source: string; uri: string |} list
+    rootUri: Uri
+    globalModuleFiles: {| source: string; path: string |} list
 }
 module ConnectionConfig =
     let defaultValue = {
@@ -174,6 +176,12 @@ module ConnectionConfig =
         backgroundCheckDelay = TimeSpan.Zero
         serverPlatform = Some PlatformID.Win32NT
         initialFiles = []
+        globalModuleFiles = [
+            for path in Server.ServerCreateOptions.defaultOptions.globalModulePaths do
+                let path = Path.GetFullPath path
+                {| path = path; source = File.ReadAllText path |}
+        ]
+        rootUri = Uri "file:///C:/"
     }
 type Client<'V,'R> = {
     clientToServer: Stream
@@ -337,15 +345,6 @@ let clientRead { responseHandlers = responseHandlers; receivedMessageLog = logs;
     aux()
 }
 
-let copyTextFilesFromRealFileSystem fileSystem paths =
-    let paths = [
-        for path in paths do
-            let path = Uri(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path)))
-            DocumentPath.ofUri (Uri "file:///") path
-    ]
-    for path in paths do
-        fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toLocalPath path))
-
 let serverActionsWithBoilerPlate withConfig actions = async {
     let config = withConfig ConnectionConfig.defaultValue
     let writeTimeout = config.timeoutMap(config.writeTimeout).TotalMilliseconds |> int
@@ -355,11 +354,11 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     use serverToClient = new BlockingStream(ReadTimeout = readTimeout, WriteTimeout = writeTimeout)
 
     let fileSystem = FileSystem.memory()
-    for f in config.initialFiles do
-        fileSystem.writeAllText(DocumentPath.ofUri null (Uri f.path), f.source)
+    for f in config.globalModuleFiles do
+        fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
 
-    let globalModulePaths = Server.ServerCreateOptions.defaultOptions.globalModulePaths
-    copyTextFilesFromRealFileSystem fileSystem globalModulePaths
+    for f in config.initialFiles do
+        fileSystem.writeAllText(DocumentPath.ofRelativeUri config.rootUri (Uri(f.uri, UriKind.RelativeOrAbsolute)), f.source)
 
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
@@ -371,7 +370,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
                 platform = config.serverPlatform
                 resourcePaths = ["./resources.xml"]
                 backgroundCheckDelay = config.backgroundCheckDelay
-                globalModulePaths = globalModulePaths
+                globalModulePaths = [for f in config.globalModuleFiles do f.path]
             }
         )
         serverToClient.CompleteWriting()
@@ -410,8 +409,12 @@ let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
     WaitUntil(predicate, Some 5.<_>)
 
 let serverActions withConfig messages = async {
+    let config = withConfig ConnectionConfig.defaultValue
     let! rs = serverActionsWithBoilerPlate withConfig [
-        Send <| Initialize { rootUri = ValueSome(Uri "file:///C:/") }
+        Send <| Initialize { rootUri = ValueSome config.rootUri }
+        waitUntilExists 5.<_> <| function
+            | InitializeResponse _ -> true
+            | _ -> false
         Send Initialized
         receiveRequest 5.<_> <| function
             | RegisterCapability _ -> Some RegisterCapabilityResponse
@@ -474,7 +477,7 @@ let didSave path = Send <| DidSave {
     }
 }
 /// `WriteFile(…)`
-let (?>) source path = WriteFile(DocumentPath.ofUri null (Uri path), source)
+let (?>) source uri = WriteFile(DocumentPath.ofUri (Uri uri), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}

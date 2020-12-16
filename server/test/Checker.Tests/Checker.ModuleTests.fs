@@ -12,10 +12,10 @@ type private K = LuaChecker.DiagnosticKind
 [<Fact>]
 let indirectModuleRequire() =
     projectSchemes id [
-        "return require('lib1')" &> "C:/main.lua"
-        "return require('framework1')" &> "C:/lib1.lua"
-        "return 'aaa'" &> "C:/framework1.lua"
-        Check "C:/main.lua"
+        "return require('lib1')" &> "main.lua"
+        "return require('framework1')" &> "lib1.lua"
+        "return 'aaa'" &> "framework1.lua"
+        Check "main.lua"
     ] =? [
         Ok(type0 types.string)
     ]
@@ -23,24 +23,24 @@ let indirectModuleRequire() =
 [<Fact>]
 let moduleNotFound() =
     projectSchemes id [
-        "return require('lib1')" &> "C:/main.lua"
-        Check "C:/main.lua"
+        "return require('lib1')" &> "main.lua"
+        Check "main.lua"
     ] =? [
         Error [
-            warning (15, 21) <| K.ModuleNotFound("lib1", [toDocumentPath "C:/lib1.lua"])
+            warning (15, 21) <| K.ModuleNotFound("lib1", [toDocumentPath "lib1.lua"])
         ]
     ]
 
 [<Fact>]
 let errorFromExternalModule() =
     projectSchemes id [
-        "return 'aa' + 'bb'" &> "C:/lib1.lua"
-        "return require('lib1')" &> "C:/main.lua"
-        Check "C:/main.lua"
+        "return 'aa' + 'bb'" &> "lib1.lua"
+        "return require('lib1')" &> "main.lua"
+        Check "main.lua"
     ] =? [
         Error [
             error (15, 21) <| K.ExternalModuleError(
-                toDocumentPath "C:/lib1.lua",
+                toDocumentPath "lib1.lua",
                 error (7, 11) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "aa", Constraints.tagOrLower TagSpace.allNumber))
             )
         ]
@@ -49,10 +49,10 @@ let errorFromExternalModule() =
 [<Fact>]
 let latestExternalModule() =
     projectSchemes id [
-        "return 'aa'" &> "C:/lib1.lua"
-        "return require('lib1')" &> "C:/main.lua"
-        "return 123" &> "C:/lib1.lua"
-        Check "C:/main.lua"
+        "return 'aa'" &> "lib1.lua"
+        "return require('lib1')" &> "main.lua"
+        "return 123" &> "lib1.lua"
+        Check "main.lua"
     ] =? [
         Ok(type0 types.number)
     ]
@@ -60,11 +60,11 @@ let latestExternalModule() =
 [<Fact>]
 let externalModuleUpdate() =
     projectSchemes id [
-        "return 'aa'" &> "C:/lib1.lua"
-        "return require('lib1')" &> "C:/main.lua"
-        Check "C:/main.lua"
-        "return 123" &> "C:/lib1.lua"
-        Check "C:/main.lua"
+        "return 'aa'" &> "lib1.lua"
+        "return require('lib1')" &> "main.lua"
+        Check "main.lua"
+        "return 123" &> "lib1.lua"
+        Check "main.lua"
     ] =? [
         Ok(type0 types.string)
         Ok(type0 types.number)
@@ -73,15 +73,15 @@ let externalModuleUpdate() =
 [<Fact>]
 let removedModuleError() =
     projectSchemes id [
-        "return 'aa'" &> "C:/lib1.lua"
-        "return require('lib1')" &> "C:/main.lua"
-        Check "C:/main.lua"
-        Remove "C:/lib1.lua"
-        Check "C:/main.lua"
+        "return 'aa'" &> "lib1.lua"
+        "return require('lib1')" &> "main.lua"
+        Check "main.lua"
+        Remove "lib1.lua"
+        Check "main.lua"
     ] =? [
         Ok(type0 types.string)
         Error [
-            warning (15, 21) <| K.ModuleNotFound("lib1", [toDocumentPath "C:/lib1.lua"])
+            warning (15, 21) <| K.ModuleNotFound("lib1", [toDocumentPath "lib1.lua"])
         ]
     ]
 
@@ -89,11 +89,11 @@ let removedModuleError() =
 let selfRecursionModuleError() =
     // lib1 -> lib1
     projectSchemes id [
-        "return require 'lib1'" &> "C:/lib1.lua"
-        Check "C:/lib1.lua"
+        "return require 'lib1'" &> "lib1.lua"
+        Check "lib1.lua"
     ] =? [
         Error [
-            warning (15, 21) <| K.RecursiveModuleReference(toDocumentPath "C:/lib1.lua")
+            warning (15, 21) <| K.RecursiveModuleReference(toDocumentPath "lib1.lua")
         ]
     ]
 
@@ -102,15 +102,15 @@ let mutualRecursionModuleError() =
     // lib1 -> lib2
     // lib2 -> lib1
     projectSchemes id [
-        "return require 'lib2'" &> "C:/lib1.lua"
-        "return require 'lib1' + 1" &> "C:/lib2.lua"
-        Check "C:/lib1.lua"
+        "return require 'lib2'" &> "lib1.lua"
+        "return require 'lib1' + 1" &> "lib2.lua"
+        Check "lib1.lua"
     ] =? [
         Error [
             warning (15, 21) (
                 K.ExternalModuleError(
-                    toDocumentPath "C:/lib2.lua",
-                    warning (15, 21) <| K.RecursiveModuleReference(toDocumentPath "C:/lib1.lua")
+                    toDocumentPath "lib2.lua",
+                    warning (15, 21) <| K.RecursiveModuleReference(toDocumentPath "lib1.lua")
                 )
             )
         ]
@@ -122,10 +122,10 @@ let doubleReference() =
     // main -> lib2
     // main -> lib1
     projectSchemes id [
-        "return require 'lib1' + require 'lib2'" &> "C:/main.lua"
-        "return require 'lib2'" &> "C:/lib1.lua"
-        "return 123" &> "C:/lib2.lua"
-        Check "C:/main.lua"
+        "return require 'lib1' + require 'lib2'" &> "main.lua"
+        "return require 'lib2'" &> "lib1.lua"
+        "return 123" &> "lib2.lua"
+        Check "main.lua"
     ] =? [
         Ok(type0 types.number)
     ]
@@ -227,8 +227,8 @@ let caseSensitiveModuleResolve() =
 [<Fact>]
 let resolveModuleNameWithDot() =
     projectSchemes id [
-        "return 'ok'" &> "C:/lib1/ver2.lua"
-        "return require 'lib1.ver2'" &> "C:/main.lua"
+        "return 'ok'" &> "lib1/ver2.lua"
+        "return require 'lib1.ver2'" &> "main.lua"
         Check "main"
     ] =? [
         Ok <| type0 types.string
@@ -237,23 +237,23 @@ let resolveModuleNameWithDot() =
 [<Fact>]
 let resolveModuleNameWithDotFailure() =
     projectSchemes id [
-        "return 'ok'" &> "C:/lib1.ver2.lua"
-        "return require 'lib1.ver2'" &> "C:/main.lua"
+        "return 'ok'" &> "lib1.ver2.lua"
+        "return require 'lib1.ver2'" &> "main.lua"
         Check "main"
     ] =? [
         Error [
-            warning (15, 26) <| K.ModuleNotFound("lib1.ver2", [toDocumentPath "C:/lib1/ver2.lua"])
+            warning (15, 26) <| K.ModuleNotFound("lib1.ver2", [toDocumentPath "lib1/ver2.lua"])
         ]
     ]
 
 [<Fact>]
 let packagePath() =
     projectSchemes id [
-        "return 'ok'" &> "C:/libraries/lib1.lua"
+        "return 'ok'" &> "libraries/lib1.lua"
         "
         package.path = package.path..';./libraries/?.lua'
         return require 'lib1'
-        " &> "C:/main.lua"
+        " &> "main.lua"
         Check "main"
     ] =? [
         Ok <| type0 types.string
@@ -262,12 +262,12 @@ let packagePath() =
 [<Fact>]
 let packagePathPrecedence() =
     projectSchemes id [
-        "return 123" &> "C:/libraries/lib1.lua"
-        "return 'ok'" &> "C:/lib1.lua"
+        "return 123" &> "libraries/lib1.lua"
+        "return 'ok'" &> "lib1.lua"
         "
         package.path = package.path..';./libraries/?.lua'
         return require 'lib1'
-        " &> "C:/main.lua"
+        " &> "main.lua"
         Check "main"
     ] =? [
         Ok <| type0 types.string
@@ -276,12 +276,12 @@ let packagePathPrecedence() =
 [<Fact>]
 let packagePathPrecedence2() =
     projectSchemes id [
-        "return 123" &> "C:/libraries/lib1.lua"
-        "return 'ok'" &> "C:/lib1.lua"
+        "return 123" &> "libraries/lib1.lua"
+        "return 'ok'" &> "lib1.lua"
         "
         package.path = './libraries/?.lua;'..package.path
         return require 'lib1'
-        " &> "C:/main.lua"
+        " &> "main.lua"
         Check "main"
     ] =? [
         Ok <| type0 types.number
