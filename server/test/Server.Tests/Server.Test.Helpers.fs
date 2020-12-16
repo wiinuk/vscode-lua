@@ -376,6 +376,10 @@ let removeOldDiagnostics messages =
         | PublishDiagnostics d -> uriToLatestDiagnosticVersion.[d.uri] = d.version
         | _ -> true
     )
+    |> List.map (function
+        | PublishDiagnostics d -> PublishDiagnostics { d with version = Undefined }
+        | x -> x
+    )
 
 let serverActionsWithBoilerPlate withConfig actions = async {
     let config = withConfig ConnectionConfig.defaultValue
@@ -518,10 +522,14 @@ let (?>) source uri = WriteFile(DocumentPath.ofUri (Uri uri), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}
-let publishDiagnostics uri version diagnostics = PublishDiagnostics {
+let publishDiagnosticsParams uri diagnostics = {
     uri = uri
-    version = Defined version
+    version = Undefined
     diagnostics = Seq.toArray diagnostics
+}
+let publishDiagnostics uri version diagnostics = PublishDiagnostics {
+    publishDiagnosticsParams uri diagnostics with
+        version = Defined version
 }
 let sortDiagnosticsOrFail = List.sortBy <| function
     | PublishDiagnostics d -> d.version

@@ -213,8 +213,8 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "local x = require 'lib'" &> ("file:///C:/main.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        r =? [
-            publishDiagnostics "file:///C:/main.lua" 1 []
+        removeOldDiagnostics r =? [
+            PublishDiagnostics <| publishDiagnosticsParams "file:///C:/main.lua" []
         ]
     }
     [<Fact>]
@@ -254,7 +254,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
         removeOldDiagnostics r =? [
-            publishDiagnostics "file:///C:/main.lua" 2 []
+            PublishDiagnostics <| publishDiagnosticsParams "file:///C:/main.lua" []
         ]
     }
     [<Fact>]
