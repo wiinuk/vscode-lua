@@ -113,7 +113,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             "return 123" &> ("file:///C:/lib1.lua", 1)
             waitUntilMatchLatestDiagnosticsOf "file:///C:/main.lua" Array.isEmpty
         ]
-        r =? [
+        sortDiagnosticsOrFail r =? [
             publishDiagnostics "file:///C:/main.lua" 1 [
                 warning (0, 15) (0, 21) 1103 "ModuleNotFound(lib1, C:\lib1.lua)"
             ]
