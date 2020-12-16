@@ -201,7 +201,7 @@ let writeOptionalField() = writerToReaderMessageRoundTripProperty [
 [<Fact>]
 let documentPathRoundTrip() =
     let roundTripTest expected =
-        let source = DocumentPath.ofUri null expected
+        let source = DocumentPath.ofUri expected
         let actual = DocumentPath.toUri source
         actual =? expected
 
@@ -209,12 +209,12 @@ let documentPathRoundTrip() =
 
 [<Fact>]
 let escapedDocumentPath() =
-    let d = DocumentPath.ofUri null (Uri "file:///c%3A/dir/file.ext")
-    d =? DocumentPath.ofUri null (DocumentPath.toUri d)
+    let d = DocumentPath.ofUri (Uri "file:///c%3A/dir/file.ext")
+    d =? DocumentPath.ofUri (DocumentPath.toUri d)
 
 [<Fact>]
 let pathToDocumentPathRoundTrip() =
     let absolutePath = Environment.CurrentDirectory
 
-    DocumentPath.ofUri null (Uri absolutePath)
-    |> DocumentPath.toLocalPath =? absolutePath
+    DocumentPath.ofUri (Uri absolutePath)
+    |> DocumentPath.toPathOrFail =? absolutePath
