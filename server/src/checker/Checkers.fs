@@ -171,7 +171,7 @@ module private Helpers =
             packagePaths
             |> List.map (fun packagePath ->
                 let modulePath = packagePath.Replace("?", moduleName)
-                DocumentPath.ofUri filePath (System.Uri(modulePath, System.UriKind.RelativeOrAbsolute))
+                DocumentPath.ofRelativeUri filePath (System.Uri(modulePath, System.UriKind.RelativeOrAbsolute))
             )
 
         let moduleFile =
