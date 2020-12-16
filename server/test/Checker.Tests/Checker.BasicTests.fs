@@ -946,6 +946,19 @@ let stringField() =
     ]
 
 [<Fact>]
+let stringMetaTable() =
+    chunkResult (fun c -> { c with projectConfig = { c.projectConfig with initialGlobalModulePaths = [] } }) "
+    ---@_Feature stringMetaTableIndex
+    ---@class MyStringMetaTable
+    ---@field myField number
+
+    return ('X').myField
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
 let implicitSelfTyping() =
     chunkResult id "
     local p = {

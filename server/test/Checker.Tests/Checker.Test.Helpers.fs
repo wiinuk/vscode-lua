@@ -434,15 +434,6 @@ module Helpers =
     open TypeExtensions
     open LuaChecker.TypedSyntaxes
 
-    type SourceConfig = {
-        path: string
-        source: string
-    }
-    type CheckConfig<'TypeEnv> = {
-        path: string
-        sources: SourceConfig list
-        withTypeEnv: 'TypeEnv -> 'TypeEnv
-    }
     let toDocumentPath path =
         let path = Path.ChangeExtension(path, ".lua")
         DocumentPath.ofRelativeUri (System.Uri "file:///C:/") (System.Uri(path, System.UriKind.RelativeOrAbsolute))
@@ -464,6 +455,25 @@ module Helpers =
         platform: System.PlatformID
         luaExeDir: string option
         withTypeEnv: 'TypeEnv -> 'TypeEnv
+        initialGlobalModulePaths: string list
+    }
+    module ProjectConfig =
+        let defaultValue = {
+            luaPath = None
+            caseSensitiveModuleResolve = false
+            platform = System.PlatformID.Win32NT
+            luaExeDir = None
+            withTypeEnv = id
+            initialGlobalModulePaths = ["./standard.d.lua"]
+        }
+    type SourceConfig = {
+        path: string
+        source: string
+    }
+    type CheckConfig<'TypeEnv> = {
+        path: string
+        sources: SourceConfig list
+        projectConfig: ProjectConfig<'TypeEnv>
     }
     let addInitialGlobalModulesFromRealFileSystem p paths =
         let paths = [ for path in paths do Path.GetFullPath path |> DocumentPath.ofPath ]
@@ -474,18 +484,12 @@ module Helpers =
 
     let projectActions withConfig actions =
         let fs = FileSystem.memory()
-        let config = withConfig {
-            luaPath = None
-            caseSensitiveModuleResolve = false
-            platform = System.PlatformID.Win32NT
-            luaExeDir = None
-            withTypeEnv = id
-        }
+        let config = withConfig ProjectConfig.defaultValue
         let packagePath = TopEnv.packagePath config.luaPath config.platform config.luaExeDir
         let env = standardEnv packagePath
         let env = { env with initialGlobalEnv = { env.initialGlobalEnv with types = config.withTypeEnv env.initialGlobalEnv.types } }
         let p = Project.empty fs env config.caseSensitiveModuleResolve
-        let p = addInitialGlobalModulesFromRealFileSystem p ["./standard.d.lua"]
+        let p = addInitialGlobalModulesFromRealFileSystem p config.initialGlobalModulePaths
 
         let checks, _ =
             actions
@@ -573,10 +577,10 @@ module Helpers =
         )
 
     let checkChunk withConfig source =
-        let { path = path; sources = sources; withTypeEnv = withTypeEnv } = withConfig {
+        let { path = path; sources = sources; projectConfig = projectConfig } = withConfig {
             path = "C:/dir/file.lua"
             sources = []
-            withTypeEnv = id
+            projectConfig = ProjectConfig.defaultValue
         }
 
         let actions = [
@@ -585,7 +589,7 @@ module Helpers =
             Check path
         ]
 
-        match projectActions (fun c -> { c with withTypeEnv = withTypeEnv }) actions with
+        match projectActions (fun _ -> projectConfig) actions with
         | [CheckResult(scheme, e, _)] -> scheme, e
         | xs -> failwithf "%A" xs
 
