@@ -20,7 +20,7 @@ let sendNotification agent methods parameters =
 
     agent.writeAgent.Post <| WriteMessage jsonBytes
 
-let publishDiagnostics agent projectAgent path document diagnostics =
+let publishDiagnostics agent projectAgent path version document diagnostics =
     let diagnostics =
         match document with
         | ValueNone -> [||]
@@ -35,6 +35,7 @@ let publishDiagnostics agent projectAgent path document diagnostics =
 
     {
         uri = DocumentPath.toUri(path).ToString()
+        version = Defined version
         diagnostics = diagnostics
     }
     |> ValueSome
@@ -61,8 +62,8 @@ let create agent = new MailboxProcessor<_>(fun inbox ->
     let rec loop agent = async {
         match! inbox.Receive() with
         | QuitBackgroundAgent -> return ()
-        | PublishDiagnostics(projectAgent, path, document, diagnostics) ->
-            publishDiagnostics agent projectAgent path document diagnostics
+        | PublishDiagnostics(projectAgent, path, version, document, diagnostics) ->
+            publishDiagnostics agent projectAgent path version document diagnostics
             return! loop agent
 
         | HoverHitTestAndResponse(id, projectAgent, document, tree, position) ->
