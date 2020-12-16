@@ -944,3 +944,73 @@ let stringField() =
     =? multi [
         types.string
     ]
+
+[<Fact>]
+let implicitSelfTyping() =
+    chunkResult id "
+    local p = {
+        x = 1 + 2,
+        m = function(self) return 1 + 2 end
+    }
+    function p:m() return self.x end
+    return p:m()
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let implicitSelfParameters() =
+    chunkResult id "
+    local p = {
+        x = 1 + 2,
+        m = function(self, v1, v2) return v1 + v2 end
+    }
+    function p:m(v1, v2) return self.x + v1 + v2 end
+    return p:m(1, 2)
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let implicitSelfParametersWithVariadic() =
+    chunkResult id "
+    local p = {
+        x = 1 + 2,
+        m = function(self, v1, v2, ...) return v1 + v2 end
+    }
+    function p:m(v1, v2, ...) return self.x + v1 + v2 end
+    return p:m(1, 2)
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let implicitSelfVariadic() =
+    chunkResult id "
+    local p = {
+        x = 1 + 2,
+        getX = function(self, ...) return 1 + 2 end
+    }
+    function p:getX(...) return self.x end
+    return p:getX()
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let implicitSelfAndExplicitSelf() =
+    chunkResult id "
+    local p = {
+        x = 1 + 2,
+        m = function(self, self) return 'a' .. 'b' end
+    }
+    function p:m(self) return self end
+    return p:m 'X'
+    "
+    =? multi [
+        types.string
+    ]

@@ -538,7 +538,7 @@ let exp env x =
         literal x.trivia (literalType env k <| sourceLocation env l.trivia.span) l
 
     | Function(functionKeyword, body) ->
-        let struct(body, functionType) = funcBody (enterTypeScope env) functionKeyword None body
+        let struct(body, functionType) = funcBody (enterTypeScope env) functionKeyword None [] body
         let functionType = Scheme.generalizeAndAssign env.rare.typeLevel functionType
         withSpan x.trivia <| T.Function body, functionType
 
@@ -762,7 +762,7 @@ let field env ({ itemIndex = itemIndex } as state) f =
 
 let nameListNoExtend env lastMultiType names =
     let nameAndTypes =
-        SepBy.toNonEmptyList names
+        names
         |> NonEmptyList.map (fun (Name { kind = name } as n) ->
             let t = newValueVarType env name |@ sourceLocation env (Name.measure n)
             struct(n, t)
@@ -774,7 +774,7 @@ let nameListNoExtend env lastMultiType names =
 
     struct(nameAndTypes, namesType)
 
-let nameList env lastMultiType { kind = names } =
+let nameList env lastMultiType names =
     let struct(nameAndTypes, namesType) = nameListNoExtend env lastMultiType names
     let env =
         nameAndTypes
@@ -797,33 +797,34 @@ let varArgParameter env dot3 =
         )
     struct(varArg, varArgType)
 
-let funcBody (Types types as env) functionKeyword name { kind = FuncBody(lb, parameters, rb, body, end'); trivia = t } =
-    let parameters, parameterAndVarArgType, varArgType, env' =
+let funcBody (Types types as env) functionKeyword name implicitParameters { kind = FuncBody(lb, parameters, rb, body, end'); trivia = t } =
+    let names, dot3, parameterListSpan =
         match parameters with
-        | None ->
-            let l = sourceLocation env (Span.merge lb.trivia.span rb.trivia.span)
-            None, types.empty |@ l, types.empty |@ l, env
+        | None -> NonEmptyList.tryOfList implicitParameters, None, Span.merge lb.trivia.span rb.trivia.span
+        | Some ps ->
 
-        | Some x ->
-
-        match x.kind with
+        match ps.kind with
+        | VarParameter varArg -> NonEmptyList.tryOfList implicitParameters, Some varArg, ps.trivia
         | ParameterList(names, varArg) ->
-            let varArg, varArgType =
-                match varArg with
-                | None -> None, types.empty |@ sourceLocation env x.trivia
-                | Some(_, dot3) ->
 
-                let struct(varArg, varArgType) = varArgParameter env dot3
-                Some varArg, varArgType
+        let varArg = match varArg with Some(_, varArg) -> Some varArg | _ -> None
+        ValueSome <| NonEmptyList.appendList implicitParameters (SepBy.toNonEmptyList names.kind), varArg, ps.trivia
 
-            let struct(names, namesType, env) = nameList env varArgType names
-            let parameters = T.ParameterList(NonEmptyList.toList names, varArg) |> withSpan x.trivia |> Some
-            parameters, namesType, varArgType, env
+    let struct(varArg, varArgType) =
+        match dot3 with
+        | None -> None, types.empty |@ sourceLocation env parameterListSpan
+        | Some dot3 ->
+            let struct(varArg, varArgType) = varArgParameter env dot3
+            Some varArg, varArgType
 
-        | VarParameter varArg ->
-            let struct(varArg, varArgType) = varArgParameter env varArg
-            let parameters = T.ParameterList([], Some varArg) |> withSpan x.trivia |> Some
-            parameters, varArgType, varArgType, env
+    let struct(parameters, parameterAndVarArgType, env') =
+        match names with
+        | ValueSome names ->
+            let struct(names, parameterAndVarArgType, env) = nameList env varArgType names
+            let parameters = T.ParameterList(NonEmptyList.toList names, varArg) |> withSpan parameterListSpan |> Some
+            parameters, parameterAndVarArgType, env
+        | _ ->
+            None, varArgType, env
 
     let returnType = newMultiVarType env TypeNames.functionResult |@ sourceLocation env t
     let location =
@@ -1106,7 +1107,7 @@ let local env state span (names, values) =
             NonEmptyList.toList es, t
 
     let namesOverflow = newMultiVarType (enterTypeScope env) TypeNames.multiOverflow |@ sourceLocation env span
-    let struct(nameAndTypes, namesType) = nameListNoExtend (enterTypeScope env) namesOverflow names.kind
+    let struct(nameAndTypes, namesType) = nameListNoExtend (enterTypeScope env) namesOverflow (SepBy.toNonEmptyList names.kind)
 
     // 両辺の型を単一化
     reportIfUnifyError env names.trivia namesType valuesType
@@ -1296,7 +1297,7 @@ let forIn (Types types as env) state span (names, exprs, body) =
     reportIfUnifyError env' exprs.trivia exprsType iteratorType
 
     let varType = types.cons(v, vs) |@ l
-    let struct(names', namesType, env'') = nameList env' (types.empty |@ l) names
+    let struct(names', namesType, env'') = nameList env' (types.empty |@ l) (SepBy.toNonEmptyList names.kind)
     reportIfUnifyError env' names.trivia namesType varType
 
     let struct(body', _, state) = block env'' state body
@@ -1304,7 +1305,7 @@ let forIn (Types types as env) state span (names, exprs, body) =
     let stat = T.ForIn(names', exprs', body') |> withSpan span
     stat, env, state
 
-let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, self) }, body) =
+let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, methodName) }, body) =
     let pathType = variableType env var
     let var' = T.Var(var, pathType, ValueNone)
 
@@ -1316,23 +1317,24 @@ let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, s
         ) pathType
 
     let self', body' =
-        match self with
+        match methodName with
         | None ->
             // `function a.f(vs…) return r end` =
             // `a.f = function(vs…) return r end`
-            let struct(body', functionType) = funcBody env functionKeyword None body
+            let struct(body', functionType) = funcBody env functionKeyword None [] body
             unifyDiagnosticsAt env body pathType functionType
             None, body'
 
-        | Some(_, methodName) ->
+        | Some(colon, methodName) ->
             // `function a.b:f(vs…) return r end` =
             // `a.b.f = function(self, vs…) return r end`
 
-            // `vs...`: ?vs...
+            // `vs…`: ?vs...
             // `r`: ?r
             // `a.b`: ('b: { f: (fun('b, ?vs...): ?r) })
             let pathType = memberType env pathType methodName
-            let struct(body', functionType) = funcBody env functionKeyword None body
+            let implicitSelf = Syntax.Name { kind = "self"; trivia = colon.trivia }
+            let struct(body', functionType) = funcBody env functionKeyword None [implicitSelf] body
             reportIfUnifyError env (Name.measure methodName) pathType functionType
 
             let self = makeVar methodName functionType
@@ -1344,7 +1346,7 @@ let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, s
 let localFunction env state span (functionKeyword, Name { kind = name; trivia = nameTrivia } & var, body) =
     let env' = enterTypeScope env
     let nameLocation = Some <| Location(env.rare.noUpdate.filePath, nameTrivia.span)
-    let struct(body, functionType) = funcBody env' functionKeyword (Some(nameLocation, name)) body
+    let struct(body, functionType) = funcBody env' functionKeyword (Some(nameLocation, name)) [] body
     let functionScheme = Scheme.generalizeAndAssign env.rare.typeLevel functionType
     let env = extend nameLocation name functionScheme env
     let stat = T.LocalFunction(T.Var(var, functionScheme, ValueNone), body) |> withSpan span
