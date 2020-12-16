@@ -75,13 +75,13 @@ module FileSystem =
     open System.IO
 
     let systemIO = {
-        readAllText = fun x -> DocumentPath.toLocalPath x |> File.ReadAllText
-        lastWriteTime = fun x -> DocumentPath.toLocalPath x |> File.GetLastWriteTime
-        writeAllText = fun struct(p, c) -> File.WriteAllText(DocumentPath.toLocalPath p, c)
-        deleteFile = fun x -> DocumentPath.toLocalPath x |> File.Delete
+        readAllText = fun x -> DocumentPath.toPathOrFail x |> File.ReadAllText
+        lastWriteTime = fun x -> DocumentPath.toPathOrFail x |> File.GetLastWriteTime
+        writeAllText = fun struct(p, c) -> File.WriteAllText(DocumentPath.toPathOrFail p, c)
+        deleteFile = fun x -> DocumentPath.toPathOrFail x |> File.Delete
         enumerateFiles = fun x ->
-            Directory.EnumerateFiles(DocumentPath.toLocalPath x, "*", EnumerationOptions())
-            |> Seq.map (System.Uri >> DocumentPath.ofUri null)
+            Directory.EnumerateFiles(DocumentPath.toPathOrFail x, "*", EnumerationOptions())
+            |> Seq.map DocumentPath.ofPath
     }
     let memory() =
         let gate = obj()
@@ -96,11 +96,13 @@ module FileSystem =
             deleteFile = fun x -> lock gate <| fun _ -> backingStore.Remove x |> ignore
             lastWriteTime = fun x -> lock gate <| fun _ -> fst backingStore.[x]
             enumerateFiles = fun x -> lock gate <| fun _ -> seq {
-                let rootPath = DocumentPath.toLocalPath x
+                let rootPath = DocumentPath.toPathOrFail x
                 for kv in backingStore do
+
                     // NOTE: テスト用の雑実装
-                    if DocumentPath.toLocalPath(kv.Key).StartsWith rootPath then
-                        kv.Key
+                    match DocumentPath.toPathOrNone kv.Key with
+                    | ValueSome path when path.StartsWith rootPath -> kv.Key
+                    | _ -> ()
             }
         }
 

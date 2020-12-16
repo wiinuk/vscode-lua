@@ -55,10 +55,16 @@ let marshalDiagnosticKindToCode = function
     | DiagnosticKind.UnifyError x -> 1000 + unifyErrorToTag x
     | x -> 1100 + diagnosticKindToTag x - 2
 
-let showPath x = DocumentPath.toUri(x).LocalPath
+let showPath x =
+    match DocumentPath.toPathOrNone x with
+    | ValueSome x -> x
+    | _ -> DocumentPath.toUriString x
+
 let showRelativePath context path =
-    let root = Uri("file:///" + context.root.LocalPath).LocalPath
-    Path.GetRelativePath(root, DocumentPath.toLocalPath path)
+    let pathInRoot = DocumentPath.toUri path |> context.root.MakeRelativeUri
+    if pathInRoot.IsAbsoluteUri
+    then DocumentPath.ofUri pathInRoot |> showPath
+    else pathInRoot.ToString()
 
 let (|Messages|) context = context.resources.DiagnosticMessages
 type private P = Syntax.ParseError

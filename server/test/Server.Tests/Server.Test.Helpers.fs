@@ -355,10 +355,10 @@ let serverActionsWithBoilerPlate withConfig actions = async {
 
     let fileSystem = FileSystem.memory()
     for f in config.globalModuleFiles do
-        fileSystem.writeAllText(DocumentPath.ofUri null (Uri(Path.GetFullPath f.path)), f.source)
+        fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
         
     for f in config.initialFiles do
-        fileSystem.writeAllText(DocumentPath.ofUri null (Uri(Path.GetFullPath f.path)), f.source)
+        fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
 
     let server = async {
         let reader = MessageReader.borrowStream clientToServer
@@ -477,7 +477,7 @@ let didSave path = Send <| DidSave {
     }
 }
 /// `WriteFile(…)`
-let (?>) source path = WriteFile(DocumentPath.ofUri null (Uri path), source)
+let (?>) source path = WriteFile(DocumentPath.ofUri (Uri path), source)
 let didChangeWatchedFiles changes = Send <| DidChangeWatchedFiles { changes = [|
     for path, changeType in changes do { uri = Uri path; ``type`` = changeType }
 |]}

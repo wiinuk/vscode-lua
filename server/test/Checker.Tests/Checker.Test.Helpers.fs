@@ -443,13 +443,12 @@ module Helpers =
         sources: SourceConfig list
         withTypeEnv: 'TypeEnv -> 'TypeEnv
     }
-    let toDocumentPath x =
-        let x =
-            match Path.GetExtension(x + "").ToLowerInvariant() with
-            | ".lua" -> x
-            | _ -> Path.ChangeExtension(x, ".lua")
-
-        DocumentPath.ofUri (System.Uri "C:/") (System.Uri(x, System.UriKind.RelativeOrAbsolute))
+    let toDocumentPath path =
+        let path = Path.ChangeExtension(path, ".lua")
+        let path =
+            if Path.IsPathRooted path then path
+            else Path.Combine("C:/", path)
+        DocumentPath.ofPath path
 
     type ProjectAction =
         | AddOrUpdate of path: string * source: string
@@ -470,13 +469,9 @@ module Helpers =
         withTypeEnv: 'TypeEnv -> 'TypeEnv
     }
     let addInitialGlobalModulesFromRealFileSystem p paths =
-        let paths = [
-            for path in paths do
-                let path = System.Uri(Path.GetFullPath(Path.Combine(System.Environment.CurrentDirectory, path)))
-                DocumentPath.ofUri (System.Uri "file:///") path
-        ]
+        let paths = [ for path in paths do Path.GetFullPath path |> DocumentPath.ofPath ]
         for path in paths do
-            p.projectRare.fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toLocalPath path))
+            p.projectRare.fileSystem.writeAllText(path, File.ReadAllText(DocumentPath.toPathOrFail path))
 
         addInitialGlobalModules p paths
 
