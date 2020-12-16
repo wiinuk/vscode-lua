@@ -73,6 +73,7 @@ let start withOptions (input, output) =
         nextRequestId = 1
         random = Random()
         watch = Stopwatch()
+        nextDiagnosticsVersion = 1
     }
     let errorHandler e = raise e
     writeAgent.Error.Add errorHandler
