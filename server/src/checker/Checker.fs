@@ -109,6 +109,7 @@ let standardEnv packagePath = {
     initialGlobalEnv = {
         names = Map.empty
         types = standardTypes |> Map.map (fun _ -> NonEmptyList.singleton)
+        stringMetaTableIndexType = []
     }
     packagePath = packagePath
 }

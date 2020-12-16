@@ -38,11 +38,13 @@ type TypeDefinition = {
 type Env = {
     names: Map<string, Declaration NonEmptyList>
     types: Map<string, TypeDefinition NonEmptyList>
+    stringMetaTableIndexType: TypeDefinition list
 }
 module Env =
     let empty = {
         names = Map.empty
         types = Map.empty
+        stringMetaTableIndexType = []
     }
     let merge mergeNames mergeTypes child parent =
         let types =
@@ -65,4 +67,9 @@ module Env =
                 Map.add parentName mergedDefs names
             ) child.names
 
-        { types = types; names = names }
+        let stringMetaTableIndexType =
+            match child.stringMetaTableIndexType, parent.stringMetaTableIndexType with
+            | [], xs | xs, [] -> xs
+            | c::cs, p::ps -> mergeTypes (NonEmptyList(c, cs)) (NonEmptyList(p, ps)) |> NonEmptyList.toList
+
+        { types = types; names = names; stringMetaTableIndexType = stringMetaTableIndexType }

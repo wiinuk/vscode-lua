@@ -747,7 +747,7 @@ module DocumentCheckers =
         | "package" -> DeclarationKind.GlobalPackage |> ValueSome
         | _ -> ValueNone
 
-    let inline parseOfModifierTags (|Parse|) env tags =
+    let inline parseFeatureOfTags (|Parse|) env tags =
         match tags with
         | [] -> ValueNone
         | _ ->
@@ -770,10 +770,10 @@ module DocumentCheckers =
         |> ValueOption.map (fun struct(_, k) -> k)
 
     let declKindOfModifierTags env modifierTags =
-        parseOfModifierTags featureNameToKind env modifierTags |> ValueOption.defaultValue DeclarationKind.NoFeatures
+        parseFeatureOfTags featureNameToKind env modifierTags |> ValueOption.defaultValue DeclarationKind.NoFeatures
 
     let reportIfIncludesFeatureTag env modifierTags =
-        parseOfModifierTags (fun _ -> ValueNone) env modifierTags |> ValueOption.defaultValue ()
+        parseFeatureOfTags (fun _ -> ValueNone) env modifierTags |> ValueOption.defaultValue ()
 
     let unifyDeclAndReport env (Name({ kind = n; trivia = { span = nameSpan } } )) typeSign newDecl oldDecl =
 
@@ -987,9 +987,12 @@ module DocumentCheckers =
         tempType: 'tempType
         fields: 'fields
         tempEnv: 'tempEnv
+        isStringMetaTableIndex: bool
     }
     let classTag env modifierTags (Name { kind = n; trivia = nameTrivia } as name, parent) =
-        reportIfIncludesFeatureTag env modifierTags
+        let isStringMetaTableIndex =
+            parseFeatureOfTags (function "stringMetaTableIndex" -> ValueSome true | _ -> ValueNone) env modifierTags
+            |> ValueOption.defaultValue false
 
         // 自動型変数のためのスコープの開始
         let env = enterTemporaryTypeVarNameScope env
@@ -1033,6 +1036,7 @@ module DocumentCheckers =
             tempType = t
             fields = Map.empty
             tempEnv = env
+            isStringMetaTableIndex = isStringMetaTableIndex
         }
 
     let fieldTag env modifierTags lastClass tagSpan (visibility, key, typeSign) =
@@ -1093,6 +1097,7 @@ module DocumentCheckers =
             tempType = tempType
             fields = Map.add key.kind key.trivia lastClass.fields
             tempEnv = tempEnv
+            isStringMetaTableIndex = lastClass.isStringMetaTableIndex
         }
 
     /// `type … (a: C) … . a` で C がインターフェース制約で C の中に a がないとき、`type … . C` に変換する
@@ -1143,6 +1148,13 @@ module DocumentCheckers =
             NonEmptyList.singleton d
 
         g.Value <- { g.Value with types = Map.add n d g.Value.types }
+
+        // 文字列の追加インターフェースを表す型を追加する
+        if lastClass.isStringMetaTableIndex then
+            g
+            |> Local.modify (fun g ->
+                { g with stringMetaTableIndexType = g.stringMetaTableIndexType @ NonEmptyList.toList d }
+            )
 
     let processRemainingModifierTags env modifierTags =
         for tag in modifierTags do

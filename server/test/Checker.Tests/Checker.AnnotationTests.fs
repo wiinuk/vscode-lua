@@ -128,7 +128,7 @@ let constrainedTypeError() =
 let functionTypeAndFunType() =
     let fun' = types.number
     let addFunType = Map.add "fun" <| NonEmptyList.singleton { typeKind = TypeDefinitionKind.Alias fun'; locations = [] }
-    chunkScheme (fun c -> { c with withTypeEnv = addFunType })
+    chunkScheme (fun c -> { c with projectConfig = { c.projectConfig with withTypeEnv = addFunType } })
         "return --[[---@type fun(fun): (fun)]](10)"
     =?
     type0 ([fun'] ->. [fun'])
