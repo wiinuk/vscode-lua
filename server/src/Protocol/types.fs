@@ -60,6 +60,7 @@ type Methods =
     | ``workspace/executeCommand`` = 52uy
     | ``workspace/symbol`` = 53uy
     | ``workspace/workspaceFolders`` = 54uy
+    | ``textDocument/semanticTokens/full`` = 55uy
 
 type JsonRpcVersion =
     | ``2.0`` = 2uy
@@ -250,10 +251,62 @@ type TextDocumentSyncOptions = {
     save: SaveOptions OptionalField
     change: TextDocumentSyncKind
 }
+
 [<Struct>]
+type SemanticTokensFullOptions = {
+    delta: bool OptionalField
+}
+module SemanticTokenTypes =
+    let Namespace = "namespace"
+    /// 汎用的な型を表す。Class や Enum などに分類できない型
+    let Type = "type"
+    let Class = "class"
+    let Enum = "enum"
+    let Interface = "interface"
+    let Struct = "struct"
+    let TypeParameter = "typeParameter"
+    let Parameter = "parameter"
+    let Variable = "variable"
+    let Property = "property"
+    let EnumMember = "enumMember"
+    let Event = "event"
+    let Function = "function"
+    let Method = "method"
+    let Macro = "macro"
+    let Keyword = "keyword"
+    let Modifier = "modifier"
+    let Comment = "comment"
+    let String = "string"
+    let Number = "number"
+    let Regexp = "regexp"
+    let Operator = "operator"
+
+module SemanticTokenModifiers =
+    let Declaration = "declaration"
+    let Definition = "definition"
+    let Readonly = "readonly"
+    let Static = "static"
+    let Deprecated = "deprecated"
+    let Abstract = "abstract"
+    let Async = "async"
+    let Modification = "modification"
+    let Documentation = "documentation"
+    let DefaultLibrary = "defaultLibrary"
+
+[<Struct>]
+type SemanticTokensLegend = {
+    tokenTypes: string array
+    tokenModifiers: string array
+}
+type SemanticTokensOptions = {
+    legend: SemanticTokensLegend
+    range: boolean OptionalField // | {}
+    full: SemanticTokensFullOptions OptionalField // | boolean
+}
 type ServerCapabilities = {
     hoverProvider: bool
     textDocumentSync: TextDocumentSyncOptions
+    semanticTokensProvider: SemanticTokensOptions OptionalField
 }
 [<Struct>]
 type InitializeResult = {
@@ -307,6 +360,16 @@ type RegistrationParams = {
     registrations: Registration array
 }
 
+[<Struct; RequireQualifiedAccess>]
+type SemanticTokensParams = {
+    textDocument: TextDocumentIdentifier
+}
+[<Struct>]
+type SemanticTokens = {
+    resultId: string OptionalField
+    data: int32 array
+}
+type SemanticTokensResponse = SemanticTokens voption
 [<Sealed>]
 type JsonRegistrationParser(options) =
     inherit JsonElementParser<Registration>()

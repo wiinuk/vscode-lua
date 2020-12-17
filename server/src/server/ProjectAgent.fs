@@ -128,6 +128,16 @@ let initialize agent id { rootUri = rootUri } =
                 save = Defined { includeText = false }
                 change = TextDocumentSyncKind.Incremental
             }
+            semanticTokensProvider = Defined {
+                legend = {
+                    tokenTypes = [||]
+                    tokenModifiers = [||]
+                }
+                range = Defined false
+                full = Defined {
+                    delta = Defined false
+                }
+            }
         }
     }
     agent
@@ -215,6 +225,17 @@ let hover agent id { HoverParams.textDocument = textDocument; position = positio
         postToBackgroundAgent agent <| HoverHitTestAndResponse(id, agent, document, tree, position)
         agent
 
+let semanticTokensFull agent id { SemanticTokensParams.textDocument = textDocument } =
+    let path = DocumentPath.ofRelativeUri agent.root textDocument.uri
+    match Documents.tryFind path agent.documents with
+    | ValueNone -> sendResponse agent id <| Ok ValueNone; agent
+    | ValueSome _ ->
+        sendResponse agent id <| Ok {
+            SemanticTokens.resultId = Undefined
+            data = [||]
+        }
+        agent
+
 let processPendingRequest agent path =
     fst <| checkAndResponseSingleFile agent path
 
@@ -242,6 +263,7 @@ let processRequest agent id ps = function
     | M.initialize -> JsonElement.parse ps |> initialize agent id
     | M.``textDocument/hover`` -> JsonElement.parse ps |> hover agent id
     //| M.``workspace/didChangeWorkspaceFolders`` ->
+    | M.``textDocument/semanticTokens/full`` -> JsonElement.parse ps |> semanticTokensFull agent id
     | M.shutdown -> JsonElement.parse ps |> shutdown agent id
 
     | method ->

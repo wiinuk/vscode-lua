@@ -65,6 +65,16 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                         save = Defined { includeText = false }
                         change = TextDocumentSyncKind.Incremental
                     }
+                    semanticTokensProvider = Defined {
+                        legend = {
+                            tokenTypes = [||]
+                            tokenModifiers = [||]
+                        }
+                        range = Defined false
+                        full = Defined {
+                            delta = Defined false
+                        }
+                    }
                 }
             }
             RegisterCapability {
@@ -275,5 +285,23 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         ]
         r =? [
             publishDiagnostics "file:///c:/main.lua" 1 []
+        ]
+    }
+    [<Fact>]
+    member _.semanticToken() = async {
+        let! r = serverActions id [
+            "local x = 10" &> ("file:///main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///main.lua"
+            Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
+            waitUntilExists 5.<_> <| function
+                | SemanticTokensResponse _ -> true
+                | _ -> false
+        ]
+        r =? [
+            publishDiagnostics "file:///main.lua" 1 []
+            SemanticTokensResponse <| ValueSome {
+                resultId = Undefined
+                data = [||]
+            }
         ]
     }
