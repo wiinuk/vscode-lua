@@ -285,9 +285,9 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
 
         let! r = serverActions (fun c -> { c with rootUri = Uri "file:///c%3A/"; createFileSystem = fileSystem }) [
             "local x = 10" &> ("file:///c%3A/main.lua", 1)
-            waitUntilHasDiagnosticsOf "file:///c%3A/main.lua"
+            waitUntilHasDiagnosticsOf "file:///c:/main.lua"
         ]
         r =? [
-            publishDiagnostics "file:///c%3A/main.lua" 1 []
+            publishDiagnostics "file:///c:/main.lua" 1 []
         ]
     }

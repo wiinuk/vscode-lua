@@ -101,7 +101,7 @@ module DocumentPath =
         if not absoluteUri.IsAbsoluteUri then
             invalidArg (nameof absoluteUri) $"absolute URI is required: {absoluteUri}"
 
-        DocumentPath(string absoluteUri)
+        string absoluteUri |> Uri.UnescapeDataString |> DocumentPath
 
     let ofRelativeUri (baseUri: Uri) (relativeOrAbsoluteUri: Uri) =
         if not relativeOrAbsoluteUri.IsAbsoluteUri
