@@ -3,6 +3,7 @@ open FSharp.Data.UnitSystems.SI.UnitSymbols
 open LuaChecker
 open LuaChecker.Server
 open LuaChecker.Server.Json
+open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
@@ -11,6 +12,7 @@ open System.Diagnostics
 open System.IO
 open System.Text.Json
 open System.Threading
+open Xunit.Abstractions
 
 
 let (=?) l r = if not (l = r) then failwithf "%0A =? %0A" l r
@@ -166,6 +168,7 @@ type ConnectionConfig = {
     serverPlatform: PlatformID option
     initialFiles: {| source: string; uri: string |} list
     rootUri: Uri
+    createFileSystem: unit -> FileSystem
     globalModuleFiles: {| source: string; path: string |} list
 }
 module ConnectionConfig =
@@ -182,6 +185,7 @@ module ConnectionConfig =
                 {| path = path; source = File.ReadAllText path |}
         ]
         rootUri = Uri "file:///C:/"
+        createFileSystem = FileSystem.memory
     }
 type Client<'V,'R> = {
     clientToServer: Stream
@@ -389,7 +393,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
     use clientToServer = new BlockingStream(ReadTimeout = readTimeout, WriteTimeout = writeTimeout)
     use serverToClient = new BlockingStream(ReadTimeout = readTimeout, WriteTimeout = writeTimeout)
 
-    let fileSystem = FileSystem.memory()
+    let fileSystem = config.createFileSystem()
     for f in config.globalModuleFiles do
         fileSystem.writeAllText(DocumentPath.ofPath (Path.GetFullPath f.path), f.source)
 
@@ -543,3 +547,21 @@ let sortDiagnosticsAndOthers messages =
         |> List.sortBy (function PublishDiagnostics d -> d.version | _ -> failwith "")
 
     diagnostics, others
+
+type TestsFixture() =
+    let mutable outputLogger = None
+
+    member _.SetOutput(output: ITestOutputHelper) =
+        match outputLogger with
+        | None ->
+            let logger = { new Logger() with
+                member _.Log e = output.WriteLine("[{0:O}] {1} : {2} : {3}", e.time, e.source, e.level, e.message)
+            }
+            outputLogger <- Some logger
+            Logger.add Log.logger logger
+
+        | _ -> ()
+
+    interface IDisposable with
+        member _.Dispose() =
+            outputLogger |> Option.iter (Logger.remove Log.logger)
