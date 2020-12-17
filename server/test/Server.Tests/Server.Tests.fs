@@ -271,8 +271,9 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.encodedUri() = async {
         let fileSystem _ =
             let checkPath p =
-                if DocumentPath.toPathOrFail p |> System.IO.Path.IsPathFullyQualified |> not then
-                    failwith $"%A{p}"
+                let local = DocumentPath.toPathOrFail p
+                if local.ToLowerInvariant().StartsWith "c:" |> not then
+                    failwith $"%A{p} → {local}"
 
             let backing = FileSystem.memory()
             {
