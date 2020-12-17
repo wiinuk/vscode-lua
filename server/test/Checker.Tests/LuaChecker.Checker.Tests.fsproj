@@ -12,6 +12,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Compile Include="Checker.Test.Utils.fs" />
+    <Compile Include="Tests.fs" />
     <Compile Include="Scanner.Tests.fs" />
     <Compile Include="Parser.Tests.fs" />
     <Compile Include="DocParser.Tests.fs" />

@@ -2,7 +2,6 @@ namespace LuaChecker.Server
 open FsCheck
 open FsCheck.Xunit
 open LuaChecker
-open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Server.Test.Helpers
 open LuaChecker.Text.Json
@@ -12,26 +11,8 @@ open global.Xunit
 open Xunit.Abstractions
 
 
-type TestsFixture() =
-    let mutable outputLogger = None
-
-    member _.SetupOutput(output: ITestOutputHelper) =
-        match outputLogger with
-        | None ->
-            let logger = { new Logger() with
-                member _.Log e = output.WriteLine("[{0:O}] {1} : {2} : {3}", e.time, e.source, e.level, e.message)
-            }
-            outputLogger <- Some logger
-            Logger.add Log.logger logger
-
-        | _ -> ()
-
-    interface IDisposable with
-        member _.Dispose() =
-            outputLogger |> Option.iter (Logger.remove Log.logger)
-
 type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
-    do fixture.SetupOutput output
+    do fixture.SetOutput output
     interface TestsFixture IClassFixture
 
     [<Property>]
@@ -284,5 +265,15 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         ]
         r =? [
             publishDiagnostics "file:///project/main.lua" 1 []
+        ]
+    }
+    [<Fact>]
+    member _.encodedUri() = async {
+        let! r = serverActions (fun c -> { c with rootUri = Uri "file:///c%3A/" }) [
+            "local x = 10" &> ("file:///c%3A/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///c:/main.lua"
+        ]
+        r =? [
+            publishDiagnostics "file:///c:/main.lua" 1 []
         ]
     }
