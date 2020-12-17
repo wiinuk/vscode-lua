@@ -34,7 +34,6 @@ module private rec Testers =
     }
 
     let inside env x = Span.inRange env.index x.span
-    let outside env x = not <| inside env x
 
     let inline option f = function
         | None -> false
@@ -86,7 +85,7 @@ module private rec Testers =
 
     let expList env xs = nonEmptyList (exp env) xs
     let exp env x =
-        if outside env.noUpdate x then false else
+        inside env.noUpdate x &&
 
         match x.entity with
         | Literal(x, t, trivia) -> literal env x t trivia
@@ -130,20 +129,20 @@ module private rec Testers =
             list (exp env) x3
 
     let parameterList env x =
-        if outside env.noUpdate x then false else
+        inside env.noUpdate x &&
         match x.entity with
         | ParameterList(x1, x2) ->
             list (name env) x1 ||
             option (reserved env) x2
 
     let funcBody env x =
-        if outside env.noUpdate x then false else
+        inside env.noUpdate x &&
         let { entity = FuncBody(x1, x2) } = x
         option (parameterList env) x1 ||
         block env x2
 
     let field env x =
-        if outside env.noUpdate x then false else
+        inside env.noUpdate x &&
         match x.entity with
         | Init x -> exp env x
         | MemberInit(x1, x2) ->
@@ -215,7 +214,7 @@ module private rec Testers =
         nameList env x1 || list (exp env) x2
 
     let stat env x =
-        if outside env.noUpdate x then false else
+        inside env.noUpdate x &&
 
         match x.entity with
         | FunctionCall x -> exp env x
@@ -231,17 +230,17 @@ module private rec Testers =
         | Local(x1, x2) -> localStat env (x1, x2)
 
     let lastStat env x =
-        if outside env.noUpdate x then false else
+        inside env.noUpdate x &&
 
         match x.entity with
         | Break -> false
         | Return x -> list (exp env) x
 
     let block env x =
-        if outside env.noUpdate x then false else
-
-        list (stat env) x.entity.stats
-        || option (lastStat env) x.entity.lastStat
+        inside env.noUpdate x && (
+            list (stat env) x.entity.stats ||
+            option (lastStat env) x.entity.lastStat
+        )
 
     let chunk env x = block env x
 
