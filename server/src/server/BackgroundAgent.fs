@@ -6,6 +6,7 @@ open LuaChecker.Text.Json
 open System
 open System.Collections.Immutable
 open type Marshalling.MarshallingContext
+open type Marshalling.PrettyThis
 open type ProjectAgent
 open type BackgroundAgent
 open type TypedSyntaxes.Chunk
@@ -49,12 +50,16 @@ let hoverHitTestAndResponse requestId projectAgent document tree position =
         resources = projectAgent.resources
         documents = projectAgent.documents
     }
+    let this = {
+        marshallingContext = context
+        renderedText = ""
+    }
     let result =
-        match Block.hitTest Marshalling.prettyTokenInfo context index tree.entity with
-        | ValueNone -> ValueNone
-        | ValueSome markdown ->
-            let markdown = { kind = MarkupKind.markdown; value = markdown }
+        if Block.hitTest Marshalling.prettyTokenInfo this index tree.entity then
+            let markdown = { kind = MarkupKind.markdown; value = this.renderedText }
             ValueSome { contents = markdown; range = Undefined }
+        else
+            ValueNone
 
     WriteAgent.sendResponse projectAgent.writeAgent requestId (Ok result)
 

@@ -364,12 +364,12 @@ let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSym
     b.Append "```"
     b.ToString()
 
-let renderVarCore server (varSymbol: _ inref) t info =
+let renderVarCore context (varSymbol: _ inref) t info =
     let scope = TypePrintScope.empty
     let mutable state = TypePrintState.create TypeWriteOptions.Default
 
     match info with
-    | ValueSome { schemeInstantiation = ValueSome x } -> renderInstantiatedVar server &scope &state &varSymbol x
+    | ValueSome { schemeInstantiation = ValueSome x } -> renderInstantiatedVar context &scope &state &varSymbol x
     | _ ->
 
     let struct(ps, t) = Scheme.takeHeadParameters [] t
@@ -380,24 +380,24 @@ let renderVarCore server (varSymbol: _ inref) t info =
     b.Append "\n```"
     b.ToString()
 
-let renderVar server (Var(Name.Name { kind = n }, t, info)) =
+let renderVar context (Var(Name { kind = n }, t, info)) =
     use mutable name = ZString.CreateStringBuilder()
     name.Append n
-    renderVarCore server &name t info
+    renderVarCore context &name t info
 
-let renderReserved server (ReservedVar(_, k, t, info)) =
+let renderReserved context (ReservedVar(_, k, t, info)) =
     use mutable symbolName = ZString.CreateStringBuilder()
     symbolName.Append '('
     for x in Printer.showKind Printer.PrintConfig.defaultConfig k do
         symbolName.Append x
     symbolName.Append ')'
 
-    renderVarCore server &symbolName t info
+    renderVarCore context &symbolName t info
 
-let renderModulePath server modulePath =
+let renderModulePath context modulePath =
     use mutable b = ZString.CreateStringBuilder()
     let moduleUri = DocumentPath.toUri modulePath
-    let relativePath = showRelativePath server modulePath
+    let relativePath = showRelativePath context modulePath
 
     // [libraries/lib1.lua](file:///C:/workspace/libraries/lib1.lua)
     b.Append '['; b.Append relativePath; b.Append "]("; b.Append moduleUri; b.Append ")"
@@ -414,9 +414,9 @@ let renderSimpleType (b: Utf16ValueStringBuilder byref) t =
     b.Append(t.kind, &scope, &state)
     b.Append "\n```"
 
-let renderLiteral server t info =
+let renderLiteral context t info =
     match info with
-    | ValueSome { externalModulePath = ValueSome modulePath } -> renderModulePath server modulePath
+    | ValueSome { externalModulePath = ValueSome modulePath } -> renderModulePath context modulePath
     | _ ->
 
     use mutable b = ZString.CreateStringBuilder()
@@ -428,9 +428,13 @@ let renderTypeTag t =
     renderSimpleType &b t
     b.ToString()
 
+type PrettyThis = {
+    marshallingContext: MarshallingContext
+    mutable renderedText: string
+}
 let prettyTokenInfo = {
-    var = fun struct(s, x, _) -> renderVar s x
-    reserved = fun struct(s, x, _) -> renderReserved s x
-    literal = fun struct(s, _, t, _, i) -> renderLiteral s t i
-    typeTag = fun struct(_, _, t, _) -> renderTypeTag t
+    var = fun struct(s, x, _) -> s.renderedText <- renderVar s.marshallingContext x
+    reserved = fun struct(s, x, _) -> s.renderedText <- renderReserved s.marshallingContext x
+    literal = fun struct(s, _, t, _, i) -> s.renderedText <- renderLiteral s.marshallingContext t i
+    typeTag = fun struct(s, _, t, _) -> s.renderedText <- renderTypeTag t
 }

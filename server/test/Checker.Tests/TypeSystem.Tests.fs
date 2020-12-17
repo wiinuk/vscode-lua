@@ -108,15 +108,21 @@ let typedHitTest() =
     let getNormalizedType t _ _ = normalize () t
 
     let visitor = {
-        var = fun struct(_, T.Var(Name n, t, l), e) ->
-            TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e
-        reserved = fun struct(_, T.ReservedVar(s, k, t, l), e) -> k, s.span, getNormalizedType t l e
-        literal = fun struct(_, x, t, _, _) -> TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t
-        typeTag = fun struct(_, s, t, _) -> TokenKind.Unknown, s.trivia, Scheme.normalize t
+        var = fun struct(this, T.Var(Name n, t, l), e) ->
+            this := Some(TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
+        reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> this := Some(k, s.span, getNormalizedType t l e)
+        literal = fun struct(this, x, t, _, _) -> this := Some(TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
+        typeTag = fun struct(this, s, t, _) -> this := Some(TokenKind.Unknown, s.trivia, Scheme.normalize t)
     }
     let test i source =
         match checkChunk id source with
-        | Some s, [] -> LuaChecker.Block.hitTest visitor () i s.entity
+        | Some s, [] ->
+            let result = ref None
+            if LuaChecker.Block.hitTest visitor result i s.entity then
+                Option.unbox !result
+            else
+                ValueNone
+
         | _, es -> failwithf "%A" <| Seq.toList es
 
     let typed (start, end') kind type' =
