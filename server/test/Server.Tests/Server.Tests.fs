@@ -269,22 +269,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     }
     [<Fact>]
     member _.encodedUri() = async {
-        let fileSystem _ =
-            let checkPath p =
-                let local = DocumentPath.toPathOrFail p
-                if local.ToLowerInvariant().StartsWith "c:" |> not then
-                    failwith $"%A{p} → {local}"
-
-            let backing = FileSystem.memory()
-            {
-                deleteFile = fun p -> checkPath p; backing.deleteFile p
-                readAllText = fun p -> checkPath p; backing.readAllText p
-                writeAllText = fun struct(p, c) -> checkPath p; backing.writeAllText(p, c)
-                lastWriteTime = fun p -> checkPath p; backing.lastWriteTime p
-                enumerateFiles = fun p -> checkPath p; backing.enumerateFiles p
-            }
-
-        let! r = serverActions (fun c -> { c with rootUri = Uri "file:///c%3A/"; createFileSystem = fileSystem }) [
+        let! r = serverActions (fun c -> { c with rootUri = Uri "file:///c%3A/" }) [
             "local x = 10" &> ("file:///c%3A/main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///c:/main.lua"
         ]
