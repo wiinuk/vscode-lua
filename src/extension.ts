@@ -1,6 +1,6 @@
 import * as path from "path"
 import { ExtensionContext, window as Window, workspace } from "vscode"
-import { LanguageClient, LanguageClientOptions, RevealOutputChannelOn, ServerOptions, Executable, TransportKind } from "vscode-languageclient"
+import { LanguageClient, LanguageClientOptions, RevealOutputChannelOn, ServerOptions, Executable, TransportKind } from "vscode-languageclient/node"
 import * as supportedRuntimeSpecs from "./supported-runtime-specs.json"
 
 let client: LanguageClient | null = null
