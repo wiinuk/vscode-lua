@@ -18,13 +18,13 @@ type TypedSyntaxVisitor<'This> = {
     typeTag: struct ('This * D.TypeSign * Type * TypeEnvironment) -> unit
 }
 
-module private rec Testers =
+module private rec IterageRange =
     type Name = S.Name
 
     type HitEnvNoUpdate<'This> = {
         visitor: TypedSyntaxVisitor<'This>
         visitorThis: 'This
-        index: int
+        range: Span
     }
     [<Struct>]
     type HitEnv<'This> = {
@@ -33,30 +33,24 @@ module private rec Testers =
         noUpdate: HitEnvNoUpdate<'This>
     }
 
-    let inside env x = Span.inRange env.index x.span
+    let intersectingWithSpan env x = Span.isIntersecting env.noUpdate.range x
+    let intersecting env x = intersectingWithSpan env x.span
 
     let inline option f = function
-        | None -> false
         | Some x -> f x
+        | _ -> false
+
+    /// `( || )` の正格バージョン
+    /// `x ||. y` = `let _x = x in let _y = y in _x || _y`
+    let (||.) x y = x || y
 
     let inline list f xs =
-        let mutable list = xs
         let mutable result = false
-        while
-            match list with
-            | [] -> false
-            | x::xs ->
-                if f x then
-                    result <- true
-                    false
-                else
-                    list <- xs
-                    true
-            do ()
+        for x in (xs: _ list) do result <- result ||. f x
         result
 
     let inline nonEmptyList find (NonEmptyList(x, xs)) =
-        find x ||
+        find x ||.
         list find xs
 
     let nameList env xs = nonEmptyList (name env) xs
@@ -65,15 +59,27 @@ module private rec Testers =
         typeParameterOwners = env.typeParameterOwners
         typeLevel = env.typeLevel
     }
+    let extendByTypeParameterOwner env (Var(_, t, _) as x1) =
+        let vars =
+            match t with
+            | { kind = TypeAbstraction(vs, _) } -> vs
+            | _ -> []
+
+        match vars with
+        | [] -> { env with HitEnv.typeLevel = env.typeLevel + 1 }
+        | _ -> { env with typeLevel = env.typeLevel + 1; typeParameterOwners = x1::env.typeParameterOwners }
+
     let name env (Var(name = Name.Name x) as v) =
-        if not <| Span.inRange env.noUpdate.index x.trivia.span then false else
-        env.noUpdate.visitor.var(env.noUpdate.visitorThis, v, envToTypeEnv env)
-        true
+        intersectingWithSpan env x.trivia.span && (
+            env.noUpdate.visitor.var(env.noUpdate.visitorThis, v, envToTypeEnv env)
+            true
+        )
 
     let reserved env (ReservedVar(trivia = x) as v) =
-        if not <| Span.inRange env.noUpdate.index x.span then false else
-        env.noUpdate.visitor.reserved(env.noUpdate.visitorThis, v, envToTypeEnv env)
-        true
+        intersectingWithSpan env x.span && (
+            env.noUpdate.visitor.reserved(env.noUpdate.visitorThis, v, envToTypeEnv env)
+            true
+        )
 
     let literal env x t trivia =
         env.noUpdate.visitor.literal(env.noUpdate.visitorThis, x, t, envToTypeEnv env, trivia)
@@ -85,7 +91,7 @@ module private rec Testers =
 
     let expList env xs = nonEmptyList (exp env) xs
     let exp env x =
-        inside env.noUpdate x &&
+        intersecting env x &&
 
         match x.entity with
         | Literal(x, t, trivia) -> literal env x t trivia
@@ -93,17 +99,17 @@ module private rec Testers =
         | Function x -> funcBody env x
         | NewTable x -> list (field env) x
         | Binary(x1, x2, x3) ->
-            exp env x1 ||
-            reserved env x2 ||
+            exp env x1 ||.
+            reserved env x2 ||.
             exp env x3
 
         | Unary(x1, x2) ->
-            reserved env x1 ||
+            reserved env x1 ||.
             exp env x2
 
         | Wrap x -> exp env x
         | TypeReinterpret(x1, x2, t) ->
-            if Span.inRange env.noUpdate.index x1.trivia then
+            if intersectingWithSpan env x1.trivia then
                 env.noUpdate.visitor.typeTag(env.noUpdate.visitorThis, x1, t, envToTypeEnv env)
                 true
             else
@@ -112,109 +118,99 @@ module private rec Testers =
         | Variable x -> name env x
 
         | Index(x1, x2) ->
-            exp env x1 ||
+            exp env x1 ||.
             exp env x2
 
         | Member(x1, x2) ->
-            exp env x1 ||
+            exp env x1 ||.
             name env x2
 
         | Call(x1, x2) ->
-            exp env x1 ||
+            exp env x1 ||.
             list (exp env) x2
 
         | CallWithSelf(x1, x2, x3) ->
-            exp env x1 ||
-            name env x2 ||
+            exp env x1 ||.
+            name env x2 ||.
             list (exp env) x3
 
     let parameterList env x =
-        inside env.noUpdate x &&
+        intersecting env x &&
         match x.entity with
         | ParameterList(x1, x2) ->
-            list (name env) x1 ||
+            list (name env) x1 ||.
             option (reserved env) x2
 
     let funcBody env x =
-        inside env.noUpdate x &&
+        intersecting env x &&
         let { entity = FuncBody(x1, x2) } = x
-        option (parameterList env) x1 ||
+        option (parameterList env) x1 ||.
         block env x2
 
     let field env x =
-        inside env.noUpdate x &&
+        intersecting env x &&
         match x.entity with
         | Init x -> exp env x
         | MemberInit(x1, x2) ->
-            name env x1 ||
+            name env x1 ||.
             exp env x2
 
         | IndexInit(x1, x2) ->
-            exp env x1 ||
+            exp env x1 ||.
             exp env x2
 
     let elseIfClause env (ElseIf(x1, x2)) =
-        exp env x1 ||
+        exp env x1 ||.
         block env x2
 
     let elseClause env x = block env x
 
     let assignStat env (x1, x2) =
-        nonEmptyList (exp env) x1 ||
+        nonEmptyList (exp env) x1 ||.
         expList env x2
 
     let whileStat env (x1, x2) =
-        exp env x1 || block env x2
+        exp env x1 ||. block env x2
 
     let repeatUntilStat env (x1, x2) =
-        block env x1 ||
+        block env x1 ||.
         exp env x2
 
     let ifStat env (x1, x2, x3, x4) =
-        exp env x1 ||
-        block env x2 ||
-        list (elseIfClause env) x3 ||
+        exp env x1 ||.
+        block env x2 ||.
+        list (elseIfClause env) x3 ||.
         option (elseClause env) x4
 
     let forStat env (x1, x2, x3, x4, x5) =
-        name env x1 ||
-        exp env x2 ||
-        exp env x3 ||
-        option (exp env) x4 ||
+        name env x1 ||.
+        exp env x2 ||.
+        exp env x3 ||.
+        option (exp env) x4 ||.
         block env x5
 
     let forInStat env (x1, x2, x3) =
-        nameList env x1 ||
-        expList env x2 ||
+        nameList env x1 ||.
+        expList env x2 ||.
         block env x3
 
     let functionDeclStat env (x1, x2, x3, x4) =
-        name env x1 ||
-        list (name env) x2 ||
-        option (name env) x3 ||
+        name env x1 ||.
+        list (name env) x2 ||.
+        option (name env) x3 ||.
         funcBody env x4
 
     let localFunctionStat env (x1, x2) =
-        name env x1 ||
-
-        let (Var(_, t, _)) = x1
-        let vars =
-            match t with
-            | { kind = TypeAbstraction(vs, _) } -> vs
-            | _ -> []
-
-        let env =
-            match vars with
-            | [] -> { env with typeLevel = env.typeLevel + 1 }
-            | _ -> { env with typeLevel = env.typeLevel + 1; typeParameterOwners = x1::env.typeParameterOwners }
-
-        funcBody env x2
+        name env x1 ||. (
+            intersecting env x2 &&
+            funcBody (extendByTypeParameterOwner env x1) x2
+        )
 
     let localStat env (x1, x2) =
-        nameList env x1 || list (exp env) x2
+        nameList env x1 ||. list (exp env) x2
 
     let stat env x =
-        inside env.noUpdate x &&
+        intersecting env x &&
 
         match x.entity with
         | FunctionCall x -> exp env x
@@ -230,31 +226,34 @@ module private rec Testers =
         | Local(x1, x2) -> localStat env (x1, x2)
 
     let lastStat env x =
-        inside env.noUpdate x &&
+        intersecting env x &&
 
         match x.entity with
         | Break -> false
         | Return x -> list (exp env) x
 
     let block env x =
-        inside env.noUpdate x && (
-            list (stat env) x.entity.stats ||
+        intersecting env x && (
+            list (stat env) x.entity.stats ||.
             option (lastStat env) x.entity.lastStat
         )
 
     let chunk env x = block env x
 
 module Block =
-    open Testers
+    open IterageRange
 
-    let hitTest visitor visitorThis position source =
+    let iterateRange visitor visitorThis range source =
         let env = {
             noUpdate = {
                 visitor = visitor
                 visitorThis = visitorThis
-                index = position
+                range = range
             }
             typeParameterOwners = []
             typeLevel = 0
         }
         chunk env source
+
+    let hitTest visitor visitorThis position source =
+        iterateRange visitor visitorThis { start = position; end' = position + 1 } source

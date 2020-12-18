@@ -107,21 +107,27 @@ let typedHitTest() =
     let normalize _ t = Type.apply { visitedVars = []; other = [] } t |> Scheme.normalize
     let getNormalizedType t _ _ = normalize () t
 
+    let push this x = this := x::!this
     let visitor = {
         var = fun struct(this, T.Var(Name n, t, l), e) ->
-            this := Some(TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
-        reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> this := Some(k, s.span, getNormalizedType t l e)
-        literal = fun struct(this, x, t, _, _) -> this := Some(TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
-        typeTag = fun struct(this, s, t, _) -> this := Some(TokenKind.Unknown, s.trivia, Scheme.normalize t)
+            push this (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
+        reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> push this (k, s.span, getNormalizedType t l e)
+        literal = fun struct(this, x, t, _, _) -> push this (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
+        typeTag = fun struct(this, s, t, _) -> push this (TokenKind.Unknown, s.trivia, Scheme.normalize t)
     }
     let test i source =
         match checkChunk id source with
         | Some s, [] ->
-            let result = ref None
+            let result = ref []
             if LuaChecker.Block.hitTest visitor result i s.entity then
-                Option.unbox !result
+                match !result with
+                | [] -> ValueNone
+                | [x] -> ValueSome x
+                | xs -> failwith $"multiple result: {xs}"
             else
-                ValueNone
+                match !result with
+                | [] -> ValueNone
+                | xs -> failwith $"has result: {xs}"
 
         | _, es -> failwithf "%A" <| Seq.toList es
 

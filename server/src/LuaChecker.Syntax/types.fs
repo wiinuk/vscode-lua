@@ -78,6 +78,7 @@ module Span =
         | Some x -> measure x
 
     let inRange i x = x.start <= i && i < x.end'
+    let isIntersecting x1 x2 = inRange x1.start x2 || inRange x2.start x1
 
 /// absolute/normalized uri
 [<Struct>]
