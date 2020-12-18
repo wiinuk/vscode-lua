@@ -130,8 +130,8 @@ let initialize agent id { rootUri = rootUri } =
             }
             semanticTokensProvider = Defined {
                 legend = {
-                    tokenTypes = [||]
-                    tokenModifiers = [||]
+                    tokenTypes = Seq.toArray Marshalling.semanticTokenTypeLegend
+                    tokenModifiers = Seq.toArray Marshalling.semanticTokenModifiersLegend
                 }
                 range = Defined false
                 full = Defined {
@@ -220,21 +220,31 @@ let hover agent id { HoverParams.textDocument = textDocument; position = positio
     let agent = { agent with project = project }
 
     match tree with
-    | None -> sendResponse agent id <| Ok ValueNone; agent
-    | Some tree ->
-        postToBackgroundAgent agent <| HoverHitTestAndResponse(id, agent, document, tree, position)
-        agent
+    | None -> sendResponse agent id <| Ok ValueNone
+    | Some tree -> postToBackgroundAgent agent <| HoverHitTestAndResponse(id, agent, document, tree, position)
+    agent
 
 let semanticTokensFull agent id { SemanticTokensParams.textDocument = textDocument } =
     let path = DocumentPath.ofRelativeUri agent.root textDocument.uri
     match Documents.tryFind path agent.documents with
     | ValueNone -> sendResponse agent id <| Ok ValueNone; agent
-    | ValueSome _ ->
-        sendResponse agent id <| Ok {
-            SemanticTokens.resultId = Undefined
-            data = [||]
+    | ValueSome document ->
+
+    let tree, _, project = checkProjectFileOrCachedResult agent path agent.project
+    let agent = { agent with project = project }
+
+    match tree with
+    | None -> sendResponse agent id <| Ok ValueNone
+    | Some tree ->
+        ResponseSemanticTokens {
+            requestId = id
+            writeAgent = agent.writeAgent
+            document = document
+            tree = tree
+            rangeOrFull = ValueNone
         }
-        agent
+        |> postToBackgroundAgent agent
+    agent
 
 let processPendingRequest agent path =
     fst <| checkAndResponseSingleFile agent path

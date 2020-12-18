@@ -9,6 +9,8 @@ open System
 open System.Text
 open global.Xunit
 open Xunit.Abstractions
+type private T = Marshalling.KnownSemanticTokenTypes
+type private M = Marshalling.KnownSemanticTokenModifiers
 
 
 type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
@@ -67,8 +69,17 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     }
                     semanticTokensProvider = Defined {
                         legend = {
-                            tokenTypes = [||]
-                            tokenModifiers = [||]
+                            tokenTypes = [|
+                                "namespace"; "type"; "class"; "enum"; "interface";
+                                "struct"; "typeParameter"; "parameter"; "variable"; "property";
+                                "enumMember"; "event"; "function"; "method"; "macro";
+                                "keyword"; "modifier"; "comment"; "string"; "number";
+                                "regexp"; "operator"
+                            |]
+                            tokenModifiers = [|
+                                "declaration"; "definition"; "readonly"; "static"; "deprecated";
+                                "abstract"; "async"; "modification"; "documentation"; "defaultLibrary"
+                            |]
                         }
                         range = Defined false
                         full = Defined {
@@ -301,7 +312,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             publishDiagnostics "file:///main.lua" 1 []
             SemanticTokensResponse <| ValueSome {
                 resultId = Undefined
-                data = [||]
+                data = [|
+                    0; 6; 1; int T.typeParameter; int M.Empty;
+                    0; 4; 2; int T.enumMember; int M.Empty;
+                |]
             }
         ]
     }

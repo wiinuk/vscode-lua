@@ -8,7 +8,6 @@ open LuaChecker.Text.Json
 open LuaChecker.TypeSystem
 open LuaChecker.TypedSyntaxes
 open System
-open System.IO
 
 
 type MarshallingContext = {
@@ -33,6 +32,14 @@ let marshalPosition (Position(line, char)) = {
     line = line
     character = char
 }
+let positionToIndex lineMap position =
+    LineMap.lineStartPosition position.line lineMap + position.character
+
+let rangeToSpan lineMap range = {
+    start = positionToIndex lineMap range.start
+    end' = positionToIndex lineMap range.``end``
+}
+
 let marshalSpanToRange lineMap { start = start; end' = end' } = {
     start = marshalPosition <| LineMap.findPosition start lineMap
     ``end`` = marshalPosition <| LineMap.findPosition end' lineMap
@@ -437,4 +444,138 @@ let prettyTokenInfo = {
     reserved = fun struct(s, x, _) -> s.renderedText <- renderReserved s.marshallingContext x
     literal = fun struct(s, _, t, _, i) -> s.renderedText <- renderLiteral s.marshallingContext t i
     typeTag = fun struct(s, _, t, _) -> s.renderedText <- renderTypeTag t
+}
+
+(*
+let xs = [
+    "namespace"; "type"; "class"; "enum"; "interface"; "struct"; "typeParameter"; "parameter";
+    "variable"; "property"; "enumMember"; "event"; "function"; "method"; "macro"; "keyword";
+    "modifier"; "comment"; "string"; "number"; "regexp"; "operator";
+]
+printfn "type KnownSemanticTokenTypes ="
+for i, n in List.indexed xs do
+    printfn $"    | ``{n}`` = {i}"
+printfn $"    | KnownMax = {List.length xs - 1}"
+*)
+type KnownSemanticTokenTypes =
+    | ``namespace`` = 0
+    | ``type`` = 1
+    | ``class`` = 2
+    | ``enum`` = 3
+    | ``interface`` = 4
+    | ``struct`` = 5
+    | ``typeParameter`` = 6
+    | ``parameter`` = 7
+    | ``variable`` = 8
+    | ``property`` = 9
+    | ``enumMember`` = 10
+    | ``event`` = 11
+    | ``function`` = 12
+    | ``method`` = 13
+    | ``macro`` = 14
+    | ``keyword`` = 15
+    | ``modifier`` = 16
+    | ``comment`` = 17
+    | ``string`` = 18
+    | ``number`` = 19
+    | ``regexp`` = 20
+    | ``operator`` = 21
+    | KnownMax = 21
+
+(*
+let xs = [
+    "declaration"; "definition"; "readonly"; "static"; "deprecated"; "abstract"; "async";
+    "modification"; "documentation"; "defaultLibrary";
+]
+printfn "[<Flags>]"
+printfn "type KnownSemanticTokenModifiers ="
+printfn "    | Empty = 0"
+for i, n in List.indexed xs do
+    printfn $"    | ``{n}`` = {pown 2 i}"
+printfn $"    | KnownMaxBitCount = {List.length xs - 1}"
+*)
+[<Flags>]
+type KnownSemanticTokenModifiers =
+    | Empty = 0
+    | ``declaration`` = 1
+    | ``definition`` = 2
+    | ``readonly`` = 4
+    | ``static`` = 8
+    | ``deprecated`` = 16
+    | ``abstract`` = 32
+    | ``async`` = 64
+    | ``modification`` = 128
+    | ``documentation`` = 256
+    | ``defaultLibrary`` = 512
+    | KnownMaxBitCount = 9
+
+let semanticTokenTypeLegend = [
+    for n in Enum.GetNames typeof<KnownSemanticTokenTypes> do
+        if Char.IsLower n.[0] then
+            n
+]
+let semanticTokenModifiersLegend = [
+    for n in Enum.GetNames typeof<KnownSemanticTokenModifiers> do
+        if Char.IsLower n.[0] then
+            n
+]
+
+type CollectSemanticsThis = {
+    buffer: int ResizeArray
+    lineMap: LineMap
+    mutable lastLine: int
+    mutable lastStartChar: int
+}
+
+type private T = KnownSemanticTokenTypes
+type private M = KnownSemanticTokenModifiers
+
+let writeTokenRange this { start = start; end' = end' } =
+    let (Position(line1, char1)) = LineMap.findPosition start this.lineMap
+    let line = line1
+    let startChar = char1
+    let length = end' - start
+    let deltaLine = line - this.lastLine
+    let deltaStartChar =
+
+        // 同じ行
+        if deltaLine = 0 then startChar - this.lastStartChar
+
+        // 違う行
+        else startChar
+
+    this.buffer.Add deltaLine
+    this.buffer.Add deltaStartChar
+    this.buffer.Add length
+    this.lastLine <- line
+    this.lastStartChar <- startChar
+
+// TODO:
+let private writeDummyTokenType this { Span.start = start } =
+    let tokenType = enum<T> (start % (int T.KnownMax + 1))
+    let tokenModifiers = M.Empty
+    this.buffer.Add(int tokenType)
+    this.buffer.Add(int tokenModifiers)
+
+let writeVarToken this (Var(name = Name { trivia = { span = span } })) typeEnv =
+    writeTokenRange this span
+    writeDummyTokenType this span
+
+let writeReservedToken this (ReservedVar(trivia = { span = span })) typeEnv =
+    writeTokenRange this span
+    writeDummyTokenType this span
+
+let writeLiteralToken this { trivia = { Syntaxes.Trivia.span = span } } _ _ _ =
+    writeTokenRange this span
+    writeDummyTokenType this span
+
+let writeTypeTag this { trivia = span } t typeEnd =
+    writeTokenRange this span
+    writeDummyTokenType this span
+
+let collectSemanticsTokenData = {
+    var = fun struct(s, x, e) -> writeVarToken s x e
+    reserved = fun struct(s, x, e) -> writeReservedToken s x e
+    literal = fun struct(s, l, t, e, i) -> writeLiteralToken s l t e i
+    typeTag = fun struct(s, d, t, e) -> writeTypeTag s d t e
 }

@@ -1,10 +1,12 @@
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module LuaChecker.Server.BackgroundAgent
 open LuaChecker
+open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
 open System.Collections.Immutable
+open type Marshalling.CollectSemanticsThis
 open type Marshalling.MarshallingContext
 open type Marshalling.PrettyThis
 open type ProjectAgent
@@ -63,6 +65,35 @@ let hoverHitTestAndResponse requestId projectAgent document tree position =
 
     WriteAgent.sendResponse projectAgent.writeAgent requestId (Ok result)
 
+let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
+    ifDebug { agent.watch.Restart() }
+    let {
+        ResponseSemanticTokens.requestId = id
+        writeAgent = writeAgent
+        document = { Document.lineMap = Lazy lineMap }
+        tree = tree
+        rangeOrFull = rangeOrFull
+        } = x
+
+    let range =
+        match rangeOrFull with
+        | ValueSome range -> Marshalling.rangeToSpan lineMap range
+        | _ -> tree.span
+
+    let this = {
+        buffer = buffer
+        lineMap = lineMap
+        lastLine = 0
+        lastStartChar = 0
+    }
+    Block.iterateRange Marshalling.collectSemanticsTokenData this range tree.entity |> ignore
+    WriteAgent.sendResponse writeAgent id <| Ok {
+        resultId = Undefined
+        data = buffer.ToArray()
+    }
+    buffer.Clear()
+    ifDebug { trace $"semantic tokens calculation complete: {agent.watch.ElapsedMilliseconds}ms" }
+
 let create agent = new MailboxProcessor<_>(fun inbox ->
     let rec loop agent = async {
         match! inbox.Receive() with
@@ -77,6 +108,10 @@ let create agent = new MailboxProcessor<_>(fun inbox ->
 
         | EnumerateFiles(fs, dir, dest) ->
             fs.enumerateFiles (DocumentPath.ofUri dir) |> ImmutableArray.CreateRange |> EnumerateFilesResponse |> dest.Post
+            return! loop agent
+
+        | ResponseSemanticTokens x ->
+            responseSemanticTokens agent x
             return! loop agent
     }
     loop agent

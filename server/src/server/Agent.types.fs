@@ -18,11 +18,22 @@ type WriteAgentMessage =
 type BackgroundAgent = {
     resources: ServerResources.Resources
     writeAgent: WriteAgentMessage MailboxProcessor
+    semanticTokensDataBuffer: int ResizeArray
+    watch: Stopwatch
+}
+[<Struct>]
+type ResponseSemanticTokens = {
+    requestId: int
+    writeAgent: WriteAgentMessage MailboxProcessor
+    document: Document
+    tree: TypedSyntaxes.Chunk
+    rangeOrFull: Protocol.Range voption
 }
 type BackgroundAgentMessage =
     | PublishDiagnostics of ProjectAgent * DocumentPath * version: int * Document voption * LuaChecker.Diagnostic seq
     | EnumerateFiles of FileSystem * Uri * destination: ProjectAgentMessage MailboxProcessor
     | HoverHitTestAndResponse of requestId: int * agent: ProjectAgent * document: Document * tree: TypedSyntaxes.Chunk * position: Position
+    | ResponseSemanticTokens of ResponseSemanticTokens
     | QuitBackgroundAgent
 
 and ProjectAgent = {
