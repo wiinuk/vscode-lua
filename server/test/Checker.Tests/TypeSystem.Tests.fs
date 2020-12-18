@@ -121,13 +121,13 @@ let typedHitTest() =
             let result = ref []
             if LuaChecker.Block.hitTest visitor result i s.entity then
                 match !result with
-                | [] -> ValueNone
+                | [] -> failwith $"empty result: '{source}' @{i} -> []"
                 | [x] -> ValueSome x
-                | xs -> failwith $"multiple result: {xs}"
+                | xs -> failwith $"multiple result: %A{xs}"
             else
                 match !result with
                 | [] -> ValueNone
-                | xs -> failwith $"has result: {xs}"
+                | xs -> failwith $"has result: %A{xs}"
 
         | _, es -> failwithf "%A" <| Seq.toList es
 
@@ -143,6 +143,114 @@ let typedHitTest() =
     test 31 source =? typed (31, 32) (TokenKind.Name "a") types.number
     test 33 source =? typed (33, 34) TokenKind.Add ([types.number; types.number] ->. [types.number])
     test 35 source =? typed (35, 37) (TokenKind.Number 10.) types.number
+
+let tokens source (start, end') =
+    let push this x = this := x::!this
+    let tuple x = x.start, x.end'
+    let visitor = {
+        var = fun struct(this, T.Var(name = Name n), _) -> push this (TokenKind.Name n.kind, tuple n.trivia.span)
+        reserved = fun struct(this, T.ReservedVar(trivia = s; kind = k), _) -> push this (k, tuple s.span)
+        literal = fun struct(this, x, _, _, _) -> push this (TokenKind.ofLiteralKind x.kind, tuple x.trivia.span)
+        typeTag = fun struct(this, s, _, _) -> push this (TokenKind.Unknown, tuple s.trivia)
+    }
+
+    let range = { start = start; end' = end' }
+    let result = ref []
+    let tree = checkChunk id source |> fst |> Option.get
+    if Block.iterateRange visitor result range tree.entity then
+        match !result with
+        | [] -> failwith $"empty result: `{source}` @%A{range} -> []"
+        | xs -> List.rev xs
+    else
+        match !result with
+        | [] -> []
+        | xs -> failwith $"has result: `{source}` @%A{range} -> %A{xs}"
+
+[<Fact>]
+let iterateRange() =
+    let source = "local function add10(a) return a + 10 end"
+    // "" "" "local function add10(a) return a + 10 end"
+    tokens source (0, 0) =? []
+    // "" "l" "ocal function add10(a) return a + 10 end"
+    tokens source (0, 1) =? []
+    // "" "local f" "unction add10(a) return a + 10 end"
+    tokens source (0, 7) =? []
+    // "" "local function " "add10(a) return a + 10 end"
+    tokens source (0, 15) =? []
+    // "" "local function a" "dd10(a) return a + 10 end"
+    tokens source (0, 16) =? [
+        TokenKind.Name "add10", (15, 20)
+    ]
+    // "" "local function add10" "(a) return a + 10 end"
+    tokens source (0, 20) =? [
+        TokenKind.Name "add10", (15, 20)
+    ]
+    // "" "local function add10(" "a) return a + 10 end"
+    tokens source (0, 21) =? [
+        TokenKind.Name "add10", (15, 20)
+    ]
+    // "" "local function add10(a" ") return a + 10 end"
+    tokens source (0, 22) =? [
+        TokenKind.Name "add10", (15, 20)
+        TokenKind.Name "a", (21, 22)
+    ]
+    // "" "local function add10(a) return a" " + 10 end"
+    tokens source (0, 32) =? [
+        TokenKind.Name "add10", (15, 20)
+        TokenKind.Name "a", (21, 22)
+        TokenKind.Name "a", (31, 32)
+    ]
+    // "" "local function add10(a) return a + 10" " end"
+    tokens source (0, 36) =? [
+        TokenKind.Name "add10", (15, 20)
+        TokenKind.Name "a", (21, 22)
+        TokenKind.Name "a", (31, 32)
+        TokenKind.Add, (33, 34)
+        TokenKind.Number 10., (35, 37)
+    ]
+    // "" "local function add10(a) return a + 10 end" ""
+    tokens source (0, 41) =? [
+        TokenKind.Name "add10", (15, 20)
+        TokenKind.Name "a", (21, 22)
+        TokenKind.Name "a", (31, 32)
+        TokenKind.Add, (33, 34)
+        TokenKind.Number 10., (35, 37)
+    ]
+
+    // "local function add10(a) return " "a" " + 10 end"
+    tokens source (31, 32) =? [
+        TokenKind.Name "a", (31, 32)
+    ]
+    // "local function add10(a) return " "a +" " 10 end"
+    tokens source (31, 34) =? [
+        TokenKind.Name "a", (31, 32)
+        TokenKind.Add, (33, 34)
+    ]
+    // "local function add10(a) return " "a + 1" "0 end"
+    tokens source (31, 36) =? [
+        TokenKind.Name "a", (31, 32)
+        TokenKind.Add, (33, 34)
+        TokenKind.Number 10., (35, 37)
+    ]
+
+[<Fact>]
+let iterateRangeProperty() = check <| fun block (n1, n2) ->
+    let source =
+        block
+        |> Printer.block {
+            config = Printer.PrintConfig.defaultConfig
+            printToken = Printer.printToken
+        }
+        |> String.concat ""
+
+    let start, end' =
+        if source.Length = 0 then 0, 0 else
+
+        let n1, n2 = abs n1 % source.Length, abs n2 % source.Length
+        min n1 n2, max n1 n2 + 1
+
+    tokens source (0, 0) =? []
+    tokens source (start, end') |> ignore
 
 [<Fact(DisplayName = "generalize (?a: { f: ?b }) = (type ('0: { f: '1 }) '1. '0)")>]
 let generalizeInterfaceConstraints() =

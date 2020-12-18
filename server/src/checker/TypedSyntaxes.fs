@@ -1,4 +1,4 @@
-﻿module rec LuaChecker.TypedSyntaxes
+module rec LuaChecker.TypedSyntaxes
 open LuaChecker
 open LuaChecker.Primitives
 open LuaChecker.TypeSystem
@@ -24,7 +24,7 @@ module LeafInfo =
 
 type VarList = Var NonEmptyList
 type Var = Var of name: S.Name * Type * LeafInfo voption
-type ReservedVar = ReservedVar of trivia: S.Trivia * Syntax.TokenKind * Type * LeafInfo voption
+type ReservedVar = ReservedVar of trivia: S.Trivia * kind: Syntax.TokenKind * Type * LeafInfo voption
 
 type ParameterList = ParameterList' Entity
 type ParameterList' = ParameterList of Var list * varArg: ReservedVar option
