@@ -61,6 +61,7 @@ type Methods =
     | ``workspace/symbol`` = 53uy
     | ``workspace/workspaceFolders`` = 54uy
     | ``textDocument/semanticTokens/full`` = 55uy
+    | ``textDocument/semanticTokens/range`` = 56uy
 
 type JsonRpcVersion =
     | ``2.0`` = 2uy
@@ -363,6 +364,11 @@ type RegistrationParams = {
 [<Struct; RequireQualifiedAccess>]
 type SemanticTokensParams = {
     textDocument: TextDocumentIdentifier
+}
+[<RequireQualifiedAccess>]
+type SemanticTokensRangeParams = {
+    textDocument: TextDocumentIdentifier
+    range: Range
 }
 [<Struct>]
 type SemanticTokens = {

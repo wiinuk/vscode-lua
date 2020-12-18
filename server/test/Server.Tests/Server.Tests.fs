@@ -299,22 +299,49 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         ]
     }
     [<Fact>]
-    member _.semanticToken() = async {
+    member _.semanticTokenFull() = async {
         let! r = serverActions id [
             "local x = 10" &> ("file:///main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///main.lua"
             Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
             waitUntilExists 5.<_> <| function
-                | SemanticTokensResponse _ -> true
+                | SemanticTokensFullResponse _ -> true
                 | _ -> false
         ]
         r =? [
             publishDiagnostics "file:///main.lua" 1 []
-            SemanticTokensResponse <| ValueSome {
+            SemanticTokensFullResponse <| ValueSome {
                 resultId = Undefined
                 data = [|
                     0; 6; 1; int T.typeParameter; int M.Empty;
                     0; 4; 2; int T.enumMember; int M.Empty;
+                |]
+            }
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenRange() = async {
+        let! r = serverActions id [
+            "local x = 10\nlocal y = 'test'" &> ("file:///main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///main.lua"
+            Send <| SemanticTokensRange {
+                SemanticTokensRangeParams.textDocument = { uri = Uri "file:///main.lua" }
+                range = {
+                    start = { line = 1; character = 0 }
+                    ``end`` = { line = 1; character = 15 }
+                }
+            }
+            waitUntilExists 5.<_> <| function
+                | SemanticTokensRangeResponse _ -> true
+                | _ -> false
+        ]
+        r =? [
+            publishDiagnostics "file:///main.lua" 1 []
+            SemanticTokensRangeResponse <| ValueSome {
+                resultId = Undefined
+                data = [|
+                    1; 6; 1; int T.``number``; int M.Empty;
+                    0; 4; 6; int T.``type``; int M.Empty;
                 |]
             }
         ]

@@ -97,7 +97,9 @@ type ProtocolMessage =
     | Shutdown
     | ShutdownResponse
     | SemanticTokensFull of SemanticTokensParams
-    | SemanticTokensResponse of SemanticTokens voption
+    | SemanticTokensFullResponse of SemanticTokens voption
+    | SemanticTokensRange of SemanticTokensRangeParams
+    | SemanticTokensRangeResponse of SemanticTokens voption
 
     // notification
     | Initialized
@@ -262,14 +264,20 @@ let clientWrite client actions = async {
         | Hover x ->
             writeRequest m Methods.``textDocument/hover`` (ValueSome x) <| fun e ->
                 JsonElement.parse<_> e |> HoverResponse
+
         | SemanticTokensFull x ->
             writeRequest m Methods.``textDocument/semanticTokens/full`` (ValueSome x) <| fun e ->
-                JsonElement.parse e |> SemanticTokensResponse
+                JsonElement.parse e |> SemanticTokensFullResponse
+
+        | SemanticTokensRange x ->
+            writeRequest m Methods.``textDocument/semanticTokens/range`` (ValueSome x) <| fun e ->
+                JsonElement.parse e |> SemanticTokensRangeResponse
 
         | HoverResponse _
         | ShutdownResponse _
         | InitializeResponse _
-        | SemanticTokensResponse _
+        | SemanticTokensFullResponse _
+        | SemanticTokensRangeResponse _
             -> failwith $"invalid client to server response: %A{m}"
 
         | RegisterCapability _

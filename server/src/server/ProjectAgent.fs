@@ -133,7 +133,7 @@ let initialize agent id { rootUri = rootUri } =
                     tokenTypes = Seq.toArray Marshalling.semanticTokenTypeLegend
                     tokenModifiers = Seq.toArray Marshalling.semanticTokenModifiersLegend
                 }
-                range = Defined false
+                range = Defined true
                 full = Defined {
                     delta = Defined false
                 }
@@ -224,8 +224,8 @@ let hover agent id { HoverParams.textDocument = textDocument; position = positio
     | Some tree -> postToBackgroundAgent agent <| HoverHitTestAndResponse(id, agent, document, tree, position)
     agent
 
-let semanticTokensFull agent id { SemanticTokensParams.textDocument = textDocument } =
-    let path = DocumentPath.ofRelativeUri agent.root textDocument.uri
+let semanticTokensCore agent id { TextDocumentIdentifier.uri = uri } rangeOrFull =
+    let path = DocumentPath.ofRelativeUri agent.root uri
     match Documents.tryFind path agent.documents with
     | ValueNone -> sendResponse agent id <| Ok ValueNone; agent
     | ValueSome document ->
@@ -241,10 +241,16 @@ let semanticTokensFull agent id { SemanticTokensParams.textDocument = textDocume
             writeAgent = agent.writeAgent
             document = document
             tree = tree
-            rangeOrFull = ValueNone
+            rangeOrFull = rangeOrFull
         }
         |> postToBackgroundAgent agent
     agent
+
+let semanticTokensFull agent id { SemanticTokensParams.textDocument = textDocument } =
+    semanticTokensCore agent id textDocument ValueNone
+
+let semanticTokensRange agent id ({ SemanticTokensRangeParams.textDocument = textDocument } as p) =
+    semanticTokensCore agent id textDocument <| ValueSome p.range
 
 let processPendingRequest agent path =
     fst <| checkAndResponseSingleFile agent path
@@ -274,6 +280,7 @@ let processRequest agent id ps = function
     | M.``textDocument/hover`` -> JsonElement.parse ps |> hover agent id
     //| M.``workspace/didChangeWorkspaceFolders`` ->
     | M.``textDocument/semanticTokens/full`` -> JsonElement.parse ps |> semanticTokensFull agent id
+    | M.``textDocument/semanticTokens/range`` -> JsonElement.parse ps |> semanticTokensRange agent id
     | M.shutdown -> JsonElement.parse ps |> shutdown agent id
 
     | method ->
