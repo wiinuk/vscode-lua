@@ -59,7 +59,7 @@ module private rec IterageRange =
         typeParameterOwners = env.typeParameterOwners
         typeLevel = env.typeLevel
     }
-    let extendByTypeParameterOwner env (Var(_, t, _) as x1) =
+    let extendByTypeParameterOwner env (Var(varType = t) as x1) =
         let vars =
             match t with
             | { kind = TypeAbstraction(vs, _) } -> vs

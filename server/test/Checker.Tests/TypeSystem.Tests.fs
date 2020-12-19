@@ -109,7 +109,7 @@ let typedHitTest() =
 
     let push this x = this := x::!this
     let visitor = {
-        var = fun struct(this, T.Var(Name n, t, l), e) ->
+        var = fun struct(this, T.Var(name = Name n; varType = t; leaf = l), e) ->
             push this (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
         reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> push this (k, s.span, getNormalizedType t l e)
         literal = fun struct(this, x, t, _, _) -> push this (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)

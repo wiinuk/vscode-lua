@@ -23,7 +23,26 @@ module LeafInfo =
     }
 
 type VarList = Var NonEmptyList
-type Var = Var of name: S.Name * Type * LeafInfo voption
+
+type IdentifierKind =
+    /// `local LocalId = …` `local function Local(…) …`
+    | LocalId
+    /// `ReferenceId` `ReferenceId = …` `function ReferenceId(…) …`
+    | ReferenceId
+    /// `function(ParameterId, …) …`
+    | ParameterId
+    /// `x.FieldId` `{ FieldId = … }`
+    | FieldId
+    /// `x:MethodId(…)` `function x:MethodId(…) …`
+    | MethodId
+
+type Var =
+    | Var of
+        name: S.Name *
+        varType: Type *
+        kind: IdentifierKind *
+        leaf: LeafInfo voption
+
 type ReservedVar = ReservedVar of trivia: S.Trivia * kind: Syntax.TokenKind * Type * LeafInfo voption
 
 type ParameterList = ParameterList' Entity

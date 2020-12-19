@@ -388,8 +388,14 @@ let renderVarCore context (varSymbol: _ inref) t info =
     b.Append "\n```"
     b.ToString()
 
-let renderVar context (Var(Name { kind = n }, t, info)) =
+let renderVar context (Var(Name { kind = n }, t, k, info)) =
     use mutable name = ZString.CreateStringBuilder()
+    match k with
+    | LocalId
+    | ParameterId -> name.Append "local "
+    | FieldId -> name.Append "."
+    | MethodId -> name.Append ":"
+    | ReferenceId -> ()
     name.Append n
     renderVarCore context &name t info
 
@@ -549,7 +555,7 @@ let private writeTokenSemantics this tokenType tokenModifiers =
     this.buffer.Add(int<KnownSemanticTokenModifiers> tokenModifiers)
 
 /// `...` `+` `#` …
-let writeReservedToken this (ReservedVar(trivia = { span = span }; kind = kind)) _typeEnv =
+let writeReservedTokenSemantics this (ReservedVar(trivia = { span = span }; kind = kind)) _typeEnv =
     writeTokenRange this span
     let struct(tokenType, tokenModifiers) =
         match kind with
@@ -557,7 +563,7 @@ let writeReservedToken this (ReservedVar(trivia = { span = span }; kind = kind))
         | _ -> T.operator, M.``static``
     writeTokenSemantics this tokenType tokenModifiers
 
-let writeLiteralToken this { trivia = { Syntaxes.Trivia.span = span }; kind = kind } _type _typeEnv leafInfo =
+let writeLiteralTokenSemantics this { trivia = { Syntaxes.Trivia.span = span }; kind = kind } _type _typeEnv leafInfo =
     writeTokenRange this span
     let struct(tokenType, tokenModifiers) =
         match kind with
@@ -633,7 +639,7 @@ let findTypeParameterConstraints id ps =
 let resolveTypeParameterConstraints typeEnv id =
     typeEnv.typeParameterOwners
     |> List.tryPick (function
-        | Var(_, { kind = TypeAbstraction(ps, _) }, _) ->
+        | Var(varType = { kind = TypeAbstraction(ps, _) }) ->
             findTypeParameterConstraints id ps
 
         | _ -> None
@@ -668,19 +674,19 @@ let rec typeSemantics this { Token.kind = type' } typeParameters typeEnv =
     // `type(t) -> …`
     | TypeAbstraction(ps, t) -> typeSemantics this t (ps @ typeParameters) typeEnv
 
-let writeVarToken this (Var(Name { trivia = { span = span } }, type', leafInfo)) typeEnv =
+let writeVarTokenSemantics this (Var(name = Name { trivia = { span = span } }; varType = type')) typeEnv =
     writeTokenRange this span
     let struct(tokenType, tokenModifiers) = typeSemantics this type' [] typeEnv |> ValueOption.defaultValue (T.variable, M.Empty)
     writeTokenSemantics this tokenType tokenModifiers
 
-let writeTypeTag this { trivia = span; kind = syntax: Documents.TypeSign' } t typeEnv =
+let writeTypeTagSemantics this { trivia = span; kind = syntax: Documents.TypeSign' } t typeEnv =
     writeTokenRange this span
     let struct(tokenType, tokenModifiers) = typeSemantics this t [] typeEnv |> ValueOption.defaultValue (T.``type``, M.Empty)
     writeTokenSemantics this tokenType tokenModifiers
 
 let collectSemanticsTokenData = {
-    reserved = fun struct(this, reserved, typeEnv) -> writeReservedToken this reserved typeEnv
-    literal = fun struct(this, literal, type', typeEnv, leafInfo) -> writeLiteralToken this literal type' typeEnv leafInfo
-    var = fun struct(this, var, typeEnv) -> writeVarToken this var typeEnv
-    typeTag = fun struct(this, syntax, type', typeEnv) -> writeTypeTag this syntax type' typeEnv
+    reserved = fun struct(this, reserved, typeEnv) -> writeReservedTokenSemantics this reserved typeEnv
+    literal = fun struct(this, literal, type', typeEnv, leafInfo) -> writeLiteralTokenSemantics this literal type' typeEnv leafInfo
+    var = fun struct(this, var, typeEnv) -> writeVarTokenSemantics this var typeEnv
+    typeTag = fun struct(this, syntax, type', typeEnv) -> writeTypeTagSemantics this syntax type' typeEnv
 }

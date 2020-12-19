@@ -161,7 +161,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     value = String.concat "\n" [
                         "```lua"
                         "---@generic x: number.."
-                        "x: x"
+                        "local x: x"
                         "```"
                     ]
                 }
