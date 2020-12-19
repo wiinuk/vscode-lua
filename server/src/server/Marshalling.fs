@@ -8,6 +8,7 @@ open LuaChecker.Text.Json
 open LuaChecker.TypeSystem
 open LuaChecker.TypedSyntaxes
 open System
+module S = LuaChecker.Syntaxes
 
 
 type MarshallingContext = {
@@ -523,6 +524,7 @@ let semanticTokenModifiersLegend = [
 type CollectSemanticsThis = {
     buffer: int ResizeArray
     lineMap: LineMap
+    typeSystemEnv: TypeEnv
     mutable lastLine: int
     mutable lastStartChar: int
 }
@@ -531,51 +533,154 @@ type private T = KnownSemanticTokenTypes
 type private M = KnownSemanticTokenModifiers
 
 let writeTokenRange this { start = start; end' = end' } =
-    let (Position(line1, char1)) = LineMap.findPosition start this.lineMap
-    let line = line1
-    let startChar = char1
-    let length = end' - start
-    let deltaLine = line - this.lastLine
-    let deltaStartChar =
+    let (Position(line, startChar)) = LineMap.findPosition start this.lineMap
+    let lastLine = this.lastLine
+    let lastStartChar = this.lastStartChar
 
-        // 同じ行
-        if deltaLine = 0 then startChar - this.lastStartChar
+    this.buffer.Add(line - lastLine)
+    this.buffer.Add(if line = lastLine then startChar - lastStartChar else startChar)
+    this.buffer.Add(end' - start)
 
-        // 違う行
-        else startChar
-
-    this.buffer.Add deltaLine
-    this.buffer.Add deltaStartChar
-    this.buffer.Add length
     this.lastLine <- line
     this.lastStartChar <- startChar
 
-// TODO:
-let private writeDummyTokenType this { Span.start = start } =
-    let tokenType = enum<T> (start % (int T.KnownMax + 1))
-    let tokenModifiers = M.Empty
-    this.buffer.Add(int tokenType)
-    this.buffer.Add(int tokenModifiers)
+let private writeTokenSemantics this tokenType tokenModifiers =
+    this.buffer.Add(int<KnownSemanticTokenTypes> tokenType)
+    this.buffer.Add(int<KnownSemanticTokenModifiers> tokenModifiers)
 
-let writeVarToken this (Var(name = Name { trivia = { span = span } })) typeEnv =
+/// `...` `+` `#` …
+let writeReservedToken this (ReservedVar(trivia = { span = span }; kind = kind)) _typeEnv =
     writeTokenRange this span
-    writeDummyTokenType this span
+    let struct(tokenType, tokenModifiers) =
+        match kind with
+        | TokenKind.Dot3 -> T.parameter, M.readonly
+        | _ -> T.operator, M.``static``
+    writeTokenSemantics this tokenType tokenModifiers
 
-let writeReservedToken this (ReservedVar(trivia = { span = span })) typeEnv =
+let writeLiteralToken this { trivia = { Syntaxes.Trivia.span = span }; kind = kind } _type _typeEnv leafInfo =
     writeTokenRange this span
-    writeDummyTokenType this span
+    let struct(tokenType, tokenModifiers) =
+        match kind with
+        | S.Number _ -> T.number, M.Empty
+        | S.String _ ->
+            match leafInfo with
+            | ValueSome { externalModulePath = ValueSome _ } -> T.``namespace``, M.Empty
+            | _ -> T.string, M.Empty
+        | _ -> T.keyword, M.Empty
+    writeTokenSemantics this tokenType tokenModifiers
 
-let writeLiteralToken this { trivia = { Syntaxes.Trivia.span = span } } _ _ _ =
-    writeTokenRange this span
-    writeDummyTokenType this span
+let namedTypeSemantics this typeConstant = function
 
-let writeTypeTag this { trivia = span } t typeEnd =
+    // `fun(…): (…)`
+    | Type.Function this.typeSystemEnv (ValueSome _) -> ValueSome struct(T.``function``, M.Empty)
+    | _ ->
+
+    let types = this.typeSystemEnv.system
+
+    // `boolean` `nil`
+    if typeConstant = types.booleanConstant || typeConstant = types.nilConstant then
+        ValueSome(T.``struct``, M.readonly)
+
+    // `number`
+    elif typeConstant = types.numberConstant then
+        ValueSome(T.number, M.readonly)
+
+    // `string`
+    elif typeConstant = types.stringConstant then
+        ValueSome(T.string, M.readonly)
+
+    // `table<…,…>`
+    elif typeConstant = types.tableConstant then
+        ValueSome(T.``class``, M.Empty)
+
+    /// `thread<…,…>`
+    elif typeConstant = types.threadConstant then
+        ValueSome(T.``function``, M.async)
+
+    else
+        ValueNone
+
+let isSuperLike (lower, upper) super =
+
+    // `number..` `(1 | 2)..`
+    (TagSpace.isSubset lower super && TagSpace.isFull upper) ||
+
+    // `..number` `..(1 | 2)`
+    (TagSpace.isSubset upper super && TagSpace.isEmpty lower) ||
+
+    // `1..number` `1..(1 | 2)`
+    (TagSpace.isSubset lower super && TagSpace.isSubset upper super)
+
+let constraintsSemantics { Token.kind = constraints } =
+    match constraints with
+    | InterfaceConstraint _ -> ValueSome struct(T.``interface``, M.Empty)
+    | MultiElementTypeConstraint _ -> ValueNone
+    | TagSpaceConstraint(lower, upper) ->
+        ValueSome (
+            if isSuperLike (lower, upper) TagSpace.allString then (T.string, M.Empty)
+            elif isSuperLike (lower, upper) TagSpace.allNumber then (T.number, M.Empty)
+            else (T.enum, M.Empty)
+        )
+
+let findTypeParameterConstraints id ps =
+    ps
+    |> List.tryPick (function
+        | TypeParameter(_, id', c) when id' = id -> Some c
+        | _ -> None
+    )
+
+// TODO: 高速化
+let resolveTypeParameterConstraints typeEnv id =
+    typeEnv.typeParameterOwners
+    |> List.tryPick (function
+        | Var(_, { kind = TypeAbstraction(ps, _) }, _) ->
+            findTypeParameterConstraints id ps
+
+        | _ -> None
+    )
+    |> Option.unbox
+
+let rec typeSemantics this { Token.kind = type' } typeParameters typeEnv =
+    match type' with
+
+    // `fun(…) -> (…)` `nil` `table<…,…>`
+    | NamedType(typeConstant, _) as t -> namedTypeSemantics this typeConstant t
+
+    // `{ x: …, … }`
+    | InterfaceType _ -> ValueSome(T.``class``, M.Empty)
+
+    // `a`
+    | ParameterType id ->
+        match findTypeParameterConstraints id typeParameters with
+        | Some c -> constraintsSemantics c
+        | _ ->
+
+        match resolveTypeParameterConstraints typeEnv id with
+        | ValueSome c -> constraintsSemantics c
+        | _ -> ValueNone
+
+    // `?a`
+    | VarType v ->
+        match v.target with
+        | LuaChecker.Var(_, c) -> constraintsSemantics c
+        | Assigned t -> typeSemantics this t typeParameters typeEnv
+
+    // `type(t) -> …`
+    | TypeAbstraction(ps, t) -> typeSemantics this t (ps @ typeParameters) typeEnv
+
+let writeVarToken this (Var(Name { trivia = { span = span } }, type', leafInfo)) typeEnv =
     writeTokenRange this span
-    writeDummyTokenType this span
+    let struct(tokenType, tokenModifiers) = typeSemantics this type' [] typeEnv |> ValueOption.defaultValue (T.variable, M.Empty)
+    writeTokenSemantics this tokenType tokenModifiers
+
+let writeTypeTag this { trivia = span; kind = syntax: Documents.TypeSign' } t typeEnv =
+    writeTokenRange this span
+    let struct(tokenType, tokenModifiers) = typeSemantics this t [] typeEnv |> ValueOption.defaultValue (T.``type``, M.Empty)
+    writeTokenSemantics this tokenType tokenModifiers
 
 let collectSemanticsTokenData = {
-    var = fun struct(s, x, e) -> writeVarToken s x e
-    reserved = fun struct(s, x, e) -> writeReservedToken s x e
-    literal = fun struct(s, l, t, e, i) -> writeLiteralToken s l t e i
-    typeTag = fun struct(s, d, t, e) -> writeTypeTag s d t e
+    reserved = fun struct(this, reserved, typeEnv) -> writeReservedToken this reserved typeEnv
+    literal = fun struct(this, literal, type', typeEnv, leafInfo) -> writeLiteralToken this literal type' typeEnv leafInfo
+    var = fun struct(this, var, typeEnv) -> writeVarToken this var typeEnv
+    typeTag = fun struct(this, syntax, type', typeEnv) -> writeTypeTag this syntax type' typeEnv
 }

@@ -12,6 +12,7 @@ open type Marshalling.PrettyThis
 open type ProjectAgent
 open type BackgroundAgent
 open type TypedSyntaxes.Chunk
+open type TypeSystem.TypeEnv
 type private M = Protocol.Methods
 
 
@@ -68,10 +69,11 @@ let hoverHitTestAndResponse requestId projectAgent document tree position =
 let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
     ifDebug { agent.watch.Restart() }
     let {
-        ResponseSemanticTokens.requestId = id
+        requestId = id
         writeAgent = writeAgent
-        document = { Document.lineMap = Lazy lineMap }
+        document = { lineMap = Lazy lineMap }
         tree = tree
+        project = project
         rangeOrFull = rangeOrFull
         } = x
 
@@ -80,9 +82,17 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
         | ValueSome range -> Marshalling.rangeToSpan lineMap range
         | _ -> tree.span
 
+    let initialGlobal = project.projectRare.initialGlobal
+    let typeEnv = {
+        system = initialGlobal.typeSystem
+        stringTableTypes =
+            tree.state.additionalGlobalEnv.stringMetaTableIndexType @
+            initialGlobal.initialGlobalEnv.stringMetaTableIndexType
+    }
     let this = {
         buffer = buffer
         lineMap = lineMap
+        typeSystemEnv = typeEnv
         lastLine = 0
         lastStartChar = 0
     }

@@ -238,10 +238,11 @@ let semanticTokensCore agent id { TextDocumentIdentifier.uri = uri } rangeOrFull
     | Some tree ->
         ResponseSemanticTokens {
             requestId = id
-            writeAgent = agent.writeAgent
+            project = agent.project
             document = document
             tree = tree
             rangeOrFull = rangeOrFull
+            writeAgent = agent.writeAgent
         }
         |> postToBackgroundAgent agent
     agent

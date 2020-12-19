@@ -81,7 +81,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                                 "abstract"; "async"; "modification"; "documentation"; "defaultLibrary"
                             |]
                         }
-                        range = Defined false
+                        range = Defined true
                         full = Defined {
                             delta = Defined false
                         }
@@ -313,8 +313,8 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             SemanticTokensFullResponse <| ValueSome {
                 resultId = Undefined
                 data = [|
-                    0; 6; 1; int T.typeParameter; int M.Empty;
-                    0; 4; 2; int T.enumMember; int M.Empty;
+                    0; 6; 1; int T.number; int M.Empty;
+                    0; 4; 2; int T.number; int M.Empty;
                 |]
             }
         ]
@@ -340,8 +340,8 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             SemanticTokensRangeResponse <| ValueSome {
                 resultId = Undefined
                 data = [|
-                    1; 6; 1; int T.``number``; int M.Empty;
-                    0; 4; 6; int T.``type``; int M.Empty;
+                    1; 6; 1; int T.string; int M.Empty;
+                    0; 4; 6; int T.string; int M.Empty;
                 |]
             }
         ]

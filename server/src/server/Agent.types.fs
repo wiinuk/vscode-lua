@@ -24,10 +24,11 @@ type BackgroundAgent = {
 [<Struct>]
 type ResponseSemanticTokens = {
     requestId: int
-    writeAgent: WriteAgentMessage MailboxProcessor
+    project: Project
     document: Document
     tree: TypedSyntaxes.Chunk
     rangeOrFull: Protocol.Range voption
+    writeAgent: WriteAgentMessage MailboxProcessor
 }
 type BackgroundAgentMessage =
     | PublishDiagnostics of ProjectAgent * DocumentPath * version: int * Document voption * LuaChecker.Diagnostic seq
