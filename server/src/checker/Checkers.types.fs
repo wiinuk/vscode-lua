@@ -350,14 +350,15 @@ module CheckerEnv =
         | ValueSome _ as r -> r
         | _ -> resolveType1OrReport span n env env'.defaultGlobalEnv.types
 
-    let extend location s k n t env = {
+    let extend location s k r n t env = {
         env with
             nameToDeclaration =
                 env.nameToDeclaration
                 |> Map.add n {
                     declarationFeatures = DeclarationFeatures.NoFeatures
-                    declarationKind = k
                     declarationScope = s
+                    declarationKind = k
+                    declarationRepresentation = r
                     scheme = t
                     location = location
                 }
@@ -983,8 +984,9 @@ module DocumentCheckers =
         let l = Some <| Location(env.rare.noUpdate.filePath, nameSpan)
         let d = {
             declarationFeatures = features
+            declarationScope = IdentifierScope.Global
             declarationKind = IdentifierKind.Variable
-            declarationScope = DefinitionScope.Global
+            declarationRepresentation = IdentifierRepresentation.Declaration
             scheme = t
             location = l
         }

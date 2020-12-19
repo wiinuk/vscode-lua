@@ -345,8 +345,9 @@ let parentModuleGlobal() =
                         scheme = types.number
                         location = Some <| Location(toDocumentPath "lib1", { start = 20; end' = 31 })
                         declarationFeatures = DeclarationFeatures.NoFeatures
+                        declarationScope = IdentifierScope.Global
                         declarationKind = IdentifierKind.Variable
-                        declarationScope = DefinitionScope.Global
+                        declarationRepresentation = IdentifierRepresentation.Declaration
                     },
                     []
                 )
@@ -412,17 +413,19 @@ let collisionGlobal() =
                 "Id",
                 {
                     scheme = types.string
-                    declarationFeatures = DeclarationFeatures.NoFeatures
-                    declarationScope = DefinitionScope.Global
-                    declarationKind = IdentifierKind.Variable
                     location = Some <| Location(toDocumentPath "lib1", { start = 20; end' = 22 })
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationScope = IdentifierScope.Global
+                    declarationKind = IdentifierKind.Variable
+                    declarationRepresentation = IdentifierRepresentation.Declaration
                 },
                 {
                     scheme = types.number
-                    declarationFeatures = DeclarationFeatures.NoFeatures
-                    declarationScope = DefinitionScope.Global
-                    declarationKind = IdentifierKind.Variable
                     location = Some <| Location(toDocumentPath "lib2", { start = 20; end' = 22 })
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationScope = IdentifierScope.Global
+                    declarationKind = IdentifierKind.Variable
+                    declarationRepresentation = IdentifierRepresentation.Declaration
                 },
                 []
             )

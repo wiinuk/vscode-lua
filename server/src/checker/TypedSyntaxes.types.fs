@@ -1,8 +1,8 @@
 namespace LuaChecker
 open LuaChecker.Primitives
 
-[<RequireQualifiedAccess>]
-type DefinitionScope =
+[<RequireQualifiedAccess; Struct>]
+type IdentifierScope =
     /// global declaration or definition, e.g. `---@global Global …`
     | Global
     /// local definition, e.g. `local Local …` `local function Local(…) …`
@@ -10,10 +10,8 @@ type DefinitionScope =
     /// e.g. `x.Member`
     | Member
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; Struct>]
 type IdentifierKind =
-    /// e.g. `---@class Type`
-    | Type
     /// e.g. `Variable` `Variable = …` `function Variable(…) …`
     | Variable
     /// parameter definition, e.g. `function(Parameter, …) …`
@@ -23,18 +21,29 @@ type IdentifierKind =
     /// method name, e.g. `x:Method(…)` `function x:Method(…) …`
     | Method
 
-[<RequireQualifiedAccess>]
+[<RequireQualifiedAccess; Struct>]
 type DeclarationFeatures =
     | NoFeatures
     | GlobalRequire
     | GlobalPackage
 
+[<RequireQualifiedAccess; Struct>]
+type IdentifierRepresentation =
+    /// e.g. `---@global Declaration …`
+    | Declaration
+    /// e.g. `local Definition …` `---@class Definition …`
+    | Definition
+    /// e.g. `Reference` `Reference = …` `x:Reference(…)` `function x:Reference(…) …` `function Reference(…) …` `---@type Reference`
+    | Reference
+
 type Declaration = {
     scheme: Scheme
     declarationFeatures: DeclarationFeatures
-    declarationScope: DefinitionScope
+    declarationScope: IdentifierScope
     /// Variable or Parameter
     declarationKind: IdentifierKind
+    /// Declaration or Definition
+    declarationRepresentation: IdentifierRepresentation
     location: Location option
 }
 [<RequireQualifiedAccess>]

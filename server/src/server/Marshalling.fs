@@ -388,10 +388,11 @@ let renderVarCore context (varSymbol: _ inref) t info =
     b.Append "\n```"
     b.ToString()
 
-let renderVar context (Var(s, k, Name { kind = n }, t, info)) =
+let renderVar context (Var(s, k, _, Name { kind = n }, t, info)) =
     use mutable name = ZString.CreateStringBuilder()
     match s, k with
-    | DefinitionScope.Local, (IdentifierKind.Variable | IdentifierKind.Parameter) -> name.Append "local "
+    | IdentifierScope.Global, IdentifierKind.Variable -> name.Append "---@global "
+    | IdentifierScope.Local, (IdentifierKind.Variable | IdentifierKind.Parameter) -> name.Append "local "
     | _, IdentifierKind.Field -> name.Append "."
     | _, IdentifierKind.Method -> name.Append ":"
     | _ -> ()
@@ -673,12 +674,31 @@ let rec typeSemantics this { Token.kind = type' } typeParameters typeEnv =
     // `type(t) -> …`
     | TypeAbstraction(ps, t) -> typeSemantics this t (ps @ typeParameters) typeEnv
 
-let writeVarTokenSemantics this (Var(name = Name { trivia = { span = span } }; varType = type')) typeEnv =
+let writeVarTokenSemantics this (Var(_, kind, repr, Name { trivia = { span = span } }, type', _)) typeEnv =
     writeTokenRange this span
-    let struct(tokenType, tokenModifiers) = typeSemantics this type' [] typeEnv |> ValueOption.defaultValue (T.variable, M.Empty)
+    let struct(tokenType, tokenModifiers) =
+        match typeSemantics this type' [] typeEnv with
+        | ValueSome(((T.``function`` | T.number | T.string), _) as s) -> s
+        | _ ->
+
+        let t =
+            match kind with
+            | IdentifierKind.Variable -> T.variable
+            | IdentifierKind.Parameter -> T.parameter
+            | IdentifierKind.Field -> T.property
+            | IdentifierKind.Method -> T.method
+
+        let m =
+            match repr with
+            | IdentifierRepresentation.Declaration -> M.declaration
+            | IdentifierRepresentation.Definition -> M.definition
+            | IdentifierRepresentation.Reference -> M.Empty
+
+        t, m
+
     writeTokenSemantics this tokenType tokenModifiers
 
-let writeTypeTagSemantics this { trivia = span; kind = syntax: Documents.TypeSign' } t typeEnv =
+let writeTypeTagSemantics this { trivia = span; kind = _syntax: Documents.TypeSign' } t typeEnv =
     writeTokenRange this span
     let struct(tokenType, tokenModifiers) = typeSemantics this t [] typeEnv |> ValueOption.defaultValue (T.``type``, M.Empty)
     writeTokenSemantics this tokenType tokenModifiers

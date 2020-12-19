@@ -26,8 +26,9 @@ type VarList = Var NonEmptyList
 
 type Var =
     | Var of
-        scope: DefinitionScope *
+        scope: IdentifierScope *
         kind: IdentifierKind *
+        representation: IdentifierRepresentation *
         name: S.Name *
         varType: Type *
         leaf: LeafInfo voption

@@ -8,7 +8,8 @@ open LuaChecker.Primitives
 module T = LuaChecker.TypedSyntaxes
 module D = LuaChecker.Syntax.Documents
 type private I = LuaChecker.IdentifierKind
-type private S = LuaChecker.DefinitionScope
+type private S = LuaChecker.IdentifierScope
+type private R = LuaChecker.IdentifierRepresentation
 
 
 [<AutoOpen>]
@@ -26,7 +27,7 @@ module private Helpers =
     let inline modifyPackagePath env f = { env with rare = { env.rare with packagePath = f env.rare.packagePath } }
     let withSpan span x = entity span HEmpty x
 
-    let makeVar s k n t = T.Var(s, k, n, t, ValueNone)
+    let makeVar s k r n t = T.Var(s, k, r, n, t, ValueNone)
     let literal span t l = struct(withSpan span (T.Literal(l, t, ValueNone)), t)
 
     let unifyDiagnosticsAt env source t1 t2 =
@@ -320,7 +321,7 @@ module private Helpers =
         | _ -> ()
 
     let trySetSchemeInstantiationInfo scheme tvs instantiated = function
-        | { T.entity = T.Variable(T.Var(n, t, k, s, info)) } as e ->
+        | { T.entity = T.Variable(T.Var(k, s, r, n, t, info)) } as e ->
             let info =
                 match info with
                 | ValueNone -> T.LeafInfo.empty
@@ -329,7 +330,7 @@ module private Helpers =
             let info =
                 ValueSome { info with T.schemeInstantiation = ValueSome(scheme, tvs) }
 
-            struct({ e with T.entity = T.Variable(T.Var(n, t, k, s, info)) }, instantiated)
+            struct({ e with T.entity = T.Variable(T.Var(k, s, r, n, t, info)) }, instantiated)
 
         | e -> struct(e, instantiated)
 
@@ -633,12 +634,13 @@ let variableDecl env (Name { kind = name } as n) =
             declarationFeatures = DeclarationFeatures.NoFeatures
             declarationScope = S.Local
             declarationKind = I.Variable
+            declarationRepresentation = IdentifierRepresentation.Definition
             location = None
         }
 
 let variable env span name =
     let { scheme = t } as d = variableDecl env name
-    struct(withSpan span <| T.Variable(makeVar d.declarationScope I.Variable name t), t)
+    struct(withSpan span <| T.Variable(makeVar d.declarationScope d.declarationKind R.Reference name t), t)
 
 let var env x =
     match x.kind with
@@ -677,7 +679,7 @@ let var env x =
     | Member(self, _, name) ->
         let struct(self, selfType) = prefixExp env self
         let resultType = memberType env selfType name
-        let name = makeVar S.Member I.Field name resultType
+        let name = makeVar S.Member I.Field R.Reference name resultType
         withSpan x.trivia <| T.Member(self, name), resultType
 
 let prefixExp env x =
@@ -736,7 +738,7 @@ let field env ({ itemIndex = itemIndex } as state) f =
 
     | MemberInit(Name { kind = k } as key, _, v) ->
         let struct(v', vt) = exp env v
-        let k' = makeVar S.Member I.Field key vt
+        let k' = makeVar S.Member I.Field R.Definition key vt
         let info = {
             field = f
             keyType = literalType env (String k) <| sourceLocation env (Name.measure key)
@@ -782,14 +784,14 @@ let nameListNoExtend env lastMultiType names =
 
     struct(nameAndTypes, namesType)
 
-let nameList env idKind idScope lastMultiType names =
+let nameList env idKind idScope idRepr lastMultiType names =
     let struct(nameAndTypes, namesType) = nameListNoExtend env lastMultiType names
     let struct(names, env) =
         nameAndTypes
         |> NonEmptyList.mapFold (fun env struct(Name n as name, t) ->
             let location = Some <| Location(env.rare.noUpdate.filePath, n.trivia.span)
-            let name = makeVar idKind idScope name t
-            let env = extend location idKind idScope n.kind (Scheme.ofType t) env
+            let name = makeVar idKind idScope idRepr name t
+            let env = extend location idKind idScope idRepr n.kind (Scheme.ofType t) env
             name, env
         ) env
     struct(names, namesType, env)
@@ -829,7 +831,7 @@ let funcBody (Types types as env) functionKeyword name implicitParameters { kind
     let struct(parameters, parameterAndVarArgType, env') =
         match names with
         | ValueSome names ->
-            let struct(names, parameterAndVarArgType, env) = nameList env S.Local I.Parameter varArgType names
+            let struct(names, parameterAndVarArgType, env) = nameList env S.Local I.Parameter R.Definition varArgType names
             let parameters = T.ParameterList(NonEmptyList.toList names, varArg) |> withSpan parameterListSpan |> Some
             parameters, parameterAndVarArgType, env
         | _ ->
@@ -838,13 +840,13 @@ let funcBody (Types types as env) functionKeyword name implicitParameters { kind
     let returnType = newMultiVarType env TypeNames.functionResult |@ sourceLocation env t
     let location =
         match name with
-        | Some(location, _, _) -> Option.toList location
+        | Some(location, _, _, _) -> Option.toList location
         | _ -> sourceLocation env functionKeyword.trivia.span
 
     let functionType = types.fn(parameterAndVarArgType, returnType) |@ location
     let env' =
         match name with
-        | Some(location, scope, name) -> extend location scope I.Variable name (Scheme.ofType functionType) env'
+        | Some(location, scope, repr, name) -> extend location scope I.Variable repr name (Scheme.ofType functionType) env'
         | _ -> env'
 
     let env' = enterChunkLocal env'
@@ -1044,7 +1046,7 @@ let functionCall (Types types as env) x =
             )
             |@ sourceLocation env fn.trivia.span
 
-        let require' = makeVar DefinitionScope.Global I.Variable f functionType
+        let require' = makeVar S.Global I.Variable R.Reference f functionType
         let require' = withSpan fn.trivia.span <| T.Variable require'
         let trivia =
             modulePath
@@ -1081,7 +1083,7 @@ let functionCall (Types types as env) x =
         let functionType = types.fn(types.cons(selfType, argTypes) |@ nameLocation, resultType) |@ nameLocation
         let selfConstraint = Constraints.ofInterfaceType <| Map.add (FieldKey.String name) functionType Map.empty |@ nameLocation
         unifyDiagnosticsAt env vs selfType (newValueVarTypeWith env TypeNames.indexSelf selfConstraint |@ nameLocation)
-        let name = makeVar S.Member I.Method n functionType
+        let name = makeVar S.Member I.Method R.Reference n functionType
         withSpan x.trivia <| T.CallWithSelf(self, name, args), resultType
 
 let stat env state x =
@@ -1136,12 +1138,12 @@ let local env state span (names, values) =
         nameAndTypes2
         |> NonEmptyList.fold (fun env struct(Name n, t) ->
             let location = Some <| Location(env.rare.noUpdate.filePath, n.trivia.span)
-            extend location S.Local I.Variable n.kind t env
+            extend location S.Local I.Variable R.Definition n.kind t env
         ) env
 
     let names' =
         nameAndTypes2
-        |> NonEmptyList.map (fun struct(n, t) -> makeVar S.Local I.Variable n t)
+        |> NonEmptyList.map (fun struct(n, t) -> makeVar S.Local I.Variable R.Definition n t)
 
     let stat = T.Local(names', values) |> withSpan span
     struct(stat, env, state)
@@ -1252,7 +1254,7 @@ let forStat (TypeCache typeCache as env) state span (Name { kind = name; trivia 
     let env' = enterChunkLocal env
     let varL = sourceLocation env nameSpan
     let struct(_, varV) = Scheme.instantiate env.rare.typeLevel (newValueVarTypeWith env TypeNames.forVar (typeCache.numberOrUpperConstraint |@ varL) |@ varL)
-    let var = makeVar S.Local I.Variable var varV
+    let var = makeVar S.Local I.Variable R.Definition var varV
     let struct(start', startType) = exp env' start
     let startL = sourceLocation env start.trivia
     let startV = newValueVarTypeWith env TypeNames.forStart (typeCache.numberOrLowerConstraint |@ startL) |@ startL
@@ -1271,7 +1273,7 @@ let forStat (TypeCache typeCache as env) state span (Name { kind = name; trivia 
         )
 
     let nameLocation = Some <| Location(env.rare.noUpdate.filePath, nameSpan)
-    let env'' = extend nameLocation S.Local I.Variable name (Scheme.ofType varV) env'
+    let env'' = extend nameLocation S.Local I.Variable R.Definition name (Scheme.ofType varV) env'
     let struct(body', _, state') = block env'' state body
     let state = StatState.merge state state'
     let stat = T.For(var, start', stop', step', body') |> withSpan span
@@ -1306,7 +1308,7 @@ let forIn (Types types as env) state span (names, exprs, body) =
     reportIfUnifyError env' exprs.trivia exprsType iteratorType
 
     let varType = types.cons(v, vs) |@ l
-    let struct(names', namesType, env'') = nameList env' S.Local I.Variable (types.empty |@ l) (SepBy.toNonEmptyList names.kind)
+    let struct(names', namesType, env'') = nameList env' S.Local I.Variable R.Definition (types.empty |@ l) (SepBy.toNonEmptyList names.kind)
     reportIfUnifyError env' names.trivia namesType varType
 
     let struct(body', _, state) = block env'' state body
@@ -1316,13 +1318,13 @@ let forIn (Types types as env) state span (names, exprs, body) =
 
 let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, methodName) }, body) =
     let { scheme = pathType } as pathDecl = variableDecl env var
-    let var' = makeVar pathDecl.declarationScope I.Variable var pathType
+    let var' = makeVar pathDecl.declarationScope I.Variable R.Reference var pathType
 
     let path', pathType =
         path
         |> List.mapFold (fun pathType (_, name) ->
             let pathType = memberType env pathType name
-            makeVar S.Member I.Field name pathType, pathType
+            makeVar S.Member I.Field R.Reference name pathType, pathType
         ) pathType
 
     let self', body' =
@@ -1346,7 +1348,7 @@ let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, m
             let struct(body', functionType) = funcBody env functionKeyword None [implicitSelf] body
             reportIfUnifyError env (Name.measure methodName) pathType functionType
 
-            let self = makeVar S.Member I.Method methodName functionType
+            let self = makeVar S.Member I.Method R.Reference methodName functionType
             Some self, body'
 
     let stat = T.FunctionDecl(var', path', self', body') |> withSpan span
@@ -1355,10 +1357,10 @@ let functionDecl env state span (functionKeyword, { kind = FuncName(var, path, m
 let localFunction env state span (functionKeyword, Name { kind = name; trivia = nameTrivia } & var, body) =
     let env' = enterTypeScope env
     let nameLocation = Some <| Location(env.rare.noUpdate.filePath, nameTrivia.span)
-    let struct(body, functionType) = funcBody env' functionKeyword (Some(nameLocation, S.Local, name)) [] body
+    let struct(body, functionType) = funcBody env' functionKeyword (Some(nameLocation, S.Local, R.Definition, name)) [] body
     let functionScheme = Scheme.generalizeAndAssign env.rare.typeLevel functionType
-    let env = extend nameLocation S.Local I.Variable name functionScheme env
-    let stat = T.LocalFunction(makeVar S.Local I.Variable var functionScheme, body) |> withSpan span
+    let env = extend nameLocation S.Local I.Variable R.Definition name functionScheme env
+    let stat = T.LocalFunction(makeVar S.Local I.Variable R.Definition var functionScheme, body) |> withSpan span
     stat, env, state
 
 let lastStat env state lastStatAndSemicolon =

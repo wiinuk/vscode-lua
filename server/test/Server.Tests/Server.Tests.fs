@@ -346,3 +346,26 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
         ]
     }
+    [<Fact>]
+    member _.semanticTokenFunctionAndInterface() = async {
+        let! r = serverActions id [
+            "local function localFunction(table) return table.field end" &> ("file:///main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///main.lua"
+            Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
+            waitUntilExists 5.<_> <| function
+                | SemanticTokensFullResponse _ -> true
+                | _ -> false
+        ]
+        r =? [
+            publishDiagnostics "file:///main.lua" 1 []
+            SemanticTokensFullResponse <| ValueSome {
+                resultId = Undefined
+                data = [|
+                    0; 15; 13; int T.``function``; int M.Empty;
+                    0; 14; 5; int T.parameter; int M.definition;
+                    0; 14; 5; int T.parameter; int M.Empty;
+                    0; 6; 5; int T.property; int M.Empty;
+                |]
+            }
+        ]
+    }
