@@ -170,10 +170,10 @@ let showSystemType = function
     | SystemTypeCode.Table -> "table"
     | SystemTypeCode.Thread -> "thread"
 
-let showDeclKind (Messages m) = function
-    | DeclarationKind.GlobalPackage -> m.GlobalPackage
-    | DeclarationKind.GlobalRequire -> m.GlobalRequire
-    | DeclarationKind.NoFeatures -> m.NoFeatures
+let showDeclFeatures (Messages m) = function
+    | DeclarationFeatures.GlobalPackage -> m.GlobalPackage
+    | DeclarationFeatures.GlobalRequire -> m.GlobalRequire
+    | DeclarationFeatures.NoFeatures -> m.NoFeatures
 
 let tryFindRange documents path span =
     match Documents.tryFind path documents with
@@ -215,11 +215,11 @@ let rec showDiagnosticKind (Messages m & context) = function
             Seq.map (showTypeDefSummary context n >> (+) "\n") ds |> String.concat ""
         )
     | K.RedeclarationOfBasicType x -> String.Format(m.RedeclarationOfBasicType, showSystemType x)
-    | K.RedeclarationOfSpecialGlobalVariable(name, oldKind, newKind) ->
+    | K.RedeclarationOfSpecialGlobalVariable(name, oldFeatures, newFeatures) ->
         String.Format(
             m.RedeclarationOfSpecialGlobalVariable, name,
-            showDeclKind context oldKind,
-            showDeclKind context newKind
+            showDeclFeatures context oldFeatures,
+            showDeclFeatures context newFeatures
         )
     | K.RedeclarationOfTypeVariable(name, locs) ->
         String.Format(m.RedeclarationOfTypeVariable, name, Seq.map (showLocation context >> (+) "\n") locs |> String.concat "")
@@ -388,14 +388,13 @@ let renderVarCore context (varSymbol: _ inref) t info =
     b.Append "\n```"
     b.ToString()
 
-let renderVar context (Var(Name { kind = n }, t, k, info)) =
+let renderVar context (Var(s, k, Name { kind = n }, t, info)) =
     use mutable name = ZString.CreateStringBuilder()
-    match k with
-    | LocalId
-    | ParameterId -> name.Append "local "
-    | FieldId -> name.Append "."
-    | MethodId -> name.Append ":"
-    | ReferenceId -> ()
+    match s, k with
+    | DefinitionScope.Local, (IdentifierKind.Variable | IdentifierKind.Parameter) -> name.Append "local "
+    | _, IdentifierKind.Field -> name.Append "."
+    | _, IdentifierKind.Method -> name.Append ":"
+    | _ -> ()
     name.Append n
     renderVarCore context &name t info
 

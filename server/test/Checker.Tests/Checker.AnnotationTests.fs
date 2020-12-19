@@ -248,7 +248,7 @@ let specialGlobalRedeclarationWarning() =
     ---@global require _
     "
     =? [
-        warning (16, 23) <| K.RedeclarationOfSpecialGlobalVariable("require", DeclarationKind.GlobalRequire, DeclarationKind.NoFeatures)
+        warning (16, 23) <| K.RedeclarationOfSpecialGlobalVariable("require", DeclarationFeatures.GlobalRequire, DeclarationFeatures.NoFeatures)
     ]
 
 [<Fact>]

@@ -136,7 +136,7 @@ module JsonScheme =
         unionCaseFormatSchemes<LuaChecker.TypeSystem.UnifyError> DiagnosticMessages
         unionCaseFormatSchemes<LuaChecker.DiagnosticKind> DiagnosticMessages
         unionCaseFormatSchemes<LuaChecker.Severity> DiagnosticMessages
-        unionCaseFormatSchemes<LuaChecker.DeclarationKind> DiagnosticMessages
+        unionCaseFormatSchemes<LuaChecker.DeclarationFeatures> DiagnosticMessages
         unionCaseFormatSchemes<OtherMessages> DiagnosticMessages
         unionCaseFormatSchemes<ServerMessages> LogMessages
     ]

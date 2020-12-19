@@ -26,7 +26,7 @@ type DiagnosticKind =
     | TypeNameNotFound of string
     | TypeArityMismatch of expectedArity: int * actualArity: int
     | DuplicateFieldKey of FieldKey * otherFieldSpan: Span
-    | RedeclarationOfSpecialGlobalVariable of name: string * oldKind: DeclarationKind * newKind: DeclarationKind
+    | RedeclarationOfSpecialGlobalVariable of name: string * oldKind: DeclarationFeatures * newKind: DeclarationFeatures
     | RedeclarationOfBasicType of SystemTypeCode
     | RedeclarationOfTypeVariable of name: string * oldTypeLocations: Location list
     | UndeterminedGlobalVariableEnvironment of modulePath: DocumentPath * additionalGlobals: Map<string, NonEmptyList<Declaration>>
@@ -350,7 +350,18 @@ module CheckerEnv =
         | ValueSome _ as r -> r
         | _ -> resolveType1OrReport span n env env'.defaultGlobalEnv.types
 
-    let extend location n t env = { env with nameToDeclaration = Map.add n { scheme = t; declarationKind = DeclarationKind.NoFeatures; location = location } env.nameToDeclaration }
+    let extend location s k n t env = {
+        env with
+            nameToDeclaration =
+                env.nameToDeclaration
+                |> Map.add n {
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationKind = k
+                    declarationScope = s
+                    scheme = t
+                    location = location
+                }
+    }
 
     let extendType name definition env =
         { env with
@@ -750,8 +761,8 @@ module DocumentCheckers =
     module D = Documents
 
     let featureNameToKind = function
-        | "require" -> DeclarationKind.GlobalRequire |> ValueSome
-        | "package" -> DeclarationKind.GlobalPackage |> ValueSome
+        | "require" -> DeclarationFeatures.GlobalRequire |> ValueSome
+        | "package" -> DeclarationFeatures.GlobalPackage |> ValueSome
         | _ -> ValueNone
 
     let inline parseFeatureOfTags (|Parse|) env tags =
@@ -776,8 +787,8 @@ module DocumentCheckers =
         ) ValueNone
         |> ValueOption.map (fun struct(_, k) -> k)
 
-    let declKindOfModifierTags env modifierTags =
-        parseFeatureOfTags featureNameToKind env modifierTags |> ValueOption.defaultValue DeclarationKind.NoFeatures
+    let declFeatureOfModifierTags env modifierTags =
+        parseFeatureOfTags featureNameToKind env modifierTags |> ValueOption.defaultValue DeclarationFeatures.NoFeatures
 
     let reportIfIncludesFeatureTag env modifierTags =
         parseFeatureOfTags (fun _ -> ValueNone) env modifierTags |> ValueOption.defaultValue ()
@@ -785,8 +796,8 @@ module DocumentCheckers =
     let unifyDeclAndReport env (Name({ kind = n; trivia = { span = nameSpan } } )) typeSign newDecl oldDecl =
 
         // `require` や `package` などは警告付きで再宣言可能
-        if oldDecl.declarationKind <> newDecl.declarationKind then
-            let k = DiagnosticKind.RedeclarationOfSpecialGlobalVariable(n, oldDecl.declarationKind, newDecl.declarationKind)
+        if oldDecl.declarationFeatures <> newDecl.declarationFeatures then
+            let k = DiagnosticKind.RedeclarationOfSpecialGlobalVariable(n, oldDecl.declarationFeatures, newDecl.declarationFeatures)
             reportWarn env nameSpan k
 
         // 宣言済みの変数の型と一致しているか
@@ -960,7 +971,7 @@ module DocumentCheckers =
             ValueSome struct(typeSign, t)
 
     let globalTag env modifierTags (Name({ kind = n; trivia = { span = nameSpan } }) as name, typeSign) =
-        let kind = declKindOfModifierTags env modifierTags
+        let features = declFeatureOfModifierTags env modifierTags
         let env' = enterTypeScope env
         let env' = enterTemporaryTypeVarNameScope env'
         let env' = extendTypeEnvFromGenericTags modifierTags env'
@@ -970,7 +981,13 @@ module DocumentCheckers =
         let t = Scheme.generalize 0 t
 
         let l = Some <| Location(env.rare.noUpdate.filePath, nameSpan)
-        let d = { declarationKind = kind; scheme = t; location = l }
+        let d = {
+            declarationFeatures = features
+            declarationKind = IdentifierKind.Variable
+            declarationScope = DefinitionScope.Global
+            scheme = t
+            location = l
+        }
         let g = env.rare.noUpdate.additionalGlobalEnv
 
         let d =

@@ -40,5 +40,13 @@ module NonEmptyList =
             | _ -> List.foldBack folder xs state
         folder x state
 
+    let inline mapFold folder state (NonEmptyList(x, xs)) =
+        let struct(x, state) = folder state x
+        match xs with
+        | [] -> struct(NonEmptyList(x, []), state)
+        | _ ->
+            let xs, state = List.mapFold (fun state x -> let struct(x, state) = folder state x in x, state) state xs
+            NonEmptyList(x, xs), state
+
     let inline forall predicate (NonEmptyList(x, xs)) =
         predicate x && List.forall predicate xs

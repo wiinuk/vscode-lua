@@ -1,16 +1,40 @@
 namespace LuaChecker
 open LuaChecker.Primitives
 
+[<RequireQualifiedAccess>]
+type DefinitionScope =
+    /// global declaration or definition, e.g. `---@global Global …`
+    | Global
+    /// local definition, e.g. `local Local …` `local function Local(…) …`
+    | Local
+    /// e.g. `x.Member`
+    | Member
 
 [<RequireQualifiedAccess>]
-type DeclarationKind =
+type IdentifierKind =
+    /// e.g. `---@class Type`
+    | Type
+    /// e.g. `Variable` `Variable = …` `function Variable(…) …`
+    | Variable
+    /// parameter definition, e.g. `function(Parameter, …) …`
+    | Parameter
+    /// field name, e.g. `x.Field` `{ Field = … }`
+    | Field
+    /// method name, e.g. `x:Method(…)` `function x:Method(…) …`
+    | Method
+
+[<RequireQualifiedAccess>]
+type DeclarationFeatures =
     | NoFeatures
     | GlobalRequire
     | GlobalPackage
 
 type Declaration = {
     scheme: Scheme
-    declarationKind: DeclarationKind
+    declarationFeatures: DeclarationFeatures
+    declarationScope: DefinitionScope
+    /// Variable or Parameter
+    declarationKind: IdentifierKind
     location: Location option
 }
 [<RequireQualifiedAccess>]

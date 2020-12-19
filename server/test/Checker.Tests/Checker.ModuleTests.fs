@@ -343,8 +343,10 @@ let parentModuleGlobal() =
                 "Lib1Counter", NonEmptyList(
                     {
                         scheme = types.number
-                        declarationKind = DeclarationKind.NoFeatures
                         location = Some <| Location(toDocumentPath "lib1", { start = 20; end' = 31 })
+                        declarationFeatures = DeclarationFeatures.NoFeatures
+                        declarationKind = IdentifierKind.Variable
+                        declarationScope = DefinitionScope.Global
                     },
                     []
                 )
@@ -410,12 +412,16 @@ let collisionGlobal() =
                 "Id",
                 {
                     scheme = types.string
-                    declarationKind = DeclarationKind.NoFeatures
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationScope = DefinitionScope.Global
+                    declarationKind = IdentifierKind.Variable
                     location = Some <| Location(toDocumentPath "lib1", { start = 20; end' = 22 })
                 },
                 {
                     scheme = types.number
-                    declarationKind = DeclarationKind.NoFeatures
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationScope = DefinitionScope.Global
+                    declarationKind = IdentifierKind.Variable
                     location = Some <| Location(toDocumentPath "lib2", { start = 20; end' = 22 })
                 },
                 []
