@@ -7,6 +7,7 @@ open LuaChecker.Syntax
 open LuaChecker.Checker.Test.Utils
 open LuaChecker.Primitives
 open LuaChecker.Parser
+open LuaChecker.Test
 open Xunit
 type E = Syntax.ParseError
 type K = Syntax.TokenKind

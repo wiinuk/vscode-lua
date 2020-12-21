@@ -20,10 +20,6 @@ type LiteralKind =
     | String of string
 type Literal = Token<LiteralKind>
 
-type FieldSepKind =
-    | Comma
-    | Semicolon
-
 type FieldSep = Token<FieldSepKind>
 
 type BinaryOpKind =

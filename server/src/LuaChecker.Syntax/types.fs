@@ -32,6 +32,18 @@ module SepBy =
         | [] -> x
         | _ -> List.last xs |> snd
 
+    let cons x sep (SepBy(x1, xs)) = SepBy(x, (sep, x1)::xs)
+    let rev (SepBy(x, xs) as all) =
+        match xs with
+        | [] -> all
+        | _ ->
+
+        let rec aux accX accSepXs = function
+            | [] -> SepBy(accX, accSepXs)
+            | (sep, x)::sepXs ->
+                aux x ((sep, accX)::accSepXs) sepXs
+        aux x [] xs
+
     let toList (SepBy(x, sepXs)) = x::List.map snd sepXs
     let inline fold folder state (SepBy(x, sepXs)) =
         let s = folder state x

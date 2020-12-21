@@ -1,4 +1,5 @@
-﻿module LuaChecker.Text.Json.Parsing.Tests
+module LuaChecker.Text.Json.Parsing.Tests
+open LuaChecker.Test
 open LuaChecker.Text.Json
 open LuaChecker.Text.Json.Serialization.Tests
 open System.Text.Json

@@ -1,5 +1,6 @@
-﻿module LuaChecker.Text.Json.Serialization.Tests
+module LuaChecker.Text.Json.Serialization.Tests
 open FsCheck
+open LuaChecker.Test
 open LuaChecker.Text.Json
 open System.Text.Json
 open Xunit
@@ -10,7 +11,6 @@ let checkConfig = {
         QuietOnSuccess = true
 }
 let check test = Check.One(checkConfig, test)
-let (=?) l r = if not (l = r) then Assert.True(false, sprintf "%A =? %A" l r)
 
 let makeOptions() =
     let options = JsonSerializerOptions()

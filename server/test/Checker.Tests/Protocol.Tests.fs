@@ -5,6 +5,7 @@ open LuaChecker.Checker.Test.Utils
 open LuaChecker.Primitives
 open LuaChecker.Server
 open LuaChecker.Server.Protocol
+open LuaChecker.Test
 open LuaChecker.Text.Json
 open System
 open System.IO

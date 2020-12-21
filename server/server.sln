@@ -33,6 +33,8 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Server.Tests", "test\Server
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "LuaChecker.Syntax", "src\LuaChecker.Syntax\LuaChecker.Syntax.fsproj", "{3391E4E8-23A4-46E2-BFFE-CD088C696062}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "LuaChecker.Test.Helpers", "test\LuaChecker.Test.Helpers\LuaChecker.Test.Helpers.fsproj", "{43C99B80-3F39-441A-A261-E8CE71A4DD04}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -151,6 +153,18 @@ Global
 		{3391E4E8-23A4-46E2-BFFE-CD088C696062}.Release|x64.Build.0 = Release|Any CPU
 		{3391E4E8-23A4-46E2-BFFE-CD088C696062}.Release|x86.ActiveCfg = Release|Any CPU
 		{3391E4E8-23A4-46E2-BFFE-CD088C696062}.Release|x86.Build.0 = Release|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Debug|x64.Build.0 = Debug|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Debug|x86.Build.0 = Debug|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Release|x64.ActiveCfg = Release|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Release|x64.Build.0 = Release|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Release|x86.ActiveCfg = Release|Any CPU
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -165,6 +179,7 @@ Global
 		{ED3A8261-DF9F-421F-B7B0-DAFA192163D6} = {4E1E296F-80F9-4877-9253-D1EE43F6AB72}
 		{822A474D-E6CC-44A1-B527-0039222DCE9C} = {6ABE3D27-26FF-4049-8988-04823950AC96}
 		{3391E4E8-23A4-46E2-BFFE-CD088C696062} = {4E1E296F-80F9-4877-9253-D1EE43F6AB72}
+		{43C99B80-3F39-441A-A261-E8CE71A4DD04} = {6ABE3D27-26FF-4049-8988-04823950AC96}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {5B436325-492F-49F2-9447-2E352AFBED43}

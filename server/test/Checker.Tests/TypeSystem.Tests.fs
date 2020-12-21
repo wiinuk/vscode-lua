@@ -5,6 +5,7 @@ open LuaChecker.Checker.Test.Utils
 open LuaChecker.Checker.Test.TypeExtensions
 open LuaChecker.Checker.Test.Helpers
 open LuaChecker.Syntax
+open LuaChecker.Test
 module T = TypedSyntaxes
 module C = Constraints
 

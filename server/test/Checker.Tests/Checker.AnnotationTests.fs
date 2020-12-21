@@ -5,6 +5,7 @@ open LuaChecker.Checker.Test.Utils
 open LuaChecker.Checker.Test.Helpers
 open LuaChecker.Checker.Test.TypeExtensions
 open LuaChecker.Primitives
+open LuaChecker.Test
 open LuaChecker.TypeSystem
 type private K = LuaChecker.DiagnosticKind
 

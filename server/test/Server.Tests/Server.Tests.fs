@@ -4,6 +4,7 @@ open FsCheck.Xunit
 open LuaChecker
 open LuaChecker.Server.Protocol
 open LuaChecker.Server.Test.Helpers
+open LuaChecker.Test
 open LuaChecker.Text.Json
 open System
 open System.Text

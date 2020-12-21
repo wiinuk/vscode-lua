@@ -5,10 +5,8 @@ open LuaChecker.Primitives
 open LuaChecker.Syntaxes
 open LuaChecker.Syntax
 open System
+module D = DocumentPrinter
 
-
-let (=?) l r = if not (l = r) then failwithf "%A =? %A" l r
-let (<>?) l r = if not (l <> r) then failwithf "%A <>? %A" l r
 
 type private K = Syntax.TokenKind
 module Token =
@@ -279,90 +277,236 @@ type Arbs =
 
     static member TypeSign'() =
         let generator =
+            /// empty
+            let trivia = Gen.fresh Trivia.createEmpty
+            /// empty
+            let reserved = gen {
+                let! trivia = trivia
+                return { trivia = trivia; kind = HEmpty }
+            }
             let span = Arb.generate<Span>
             let fieldKey = Arb.generate<FieldKey Source>
-            let typeSign scale = Gen.scaleSize scale Arb.generate<D.TypeSign>
             let name = Arb.generate<D.Name>
+            let fieldSepKind = Arb.generate<FieldSepKind>
             let positiveInt = Arb.generate<PositiveInt>
-            let nonNegativeInt = Arb.generate<NonNegativeInt>
 
-            let withSpan kind = gen {
+            let withSpan' kind = gen {
                 let! k = kind
                 let! s = span
                 return { kind = k; trivia = s }
             }
-            let leafType = gen {
-                let! name = name
-                return D.NamedType(name, [])
+            let withSpan kind = withSpan' (Gen.constant kind)
+            let fieldSep = gen {
+                let! sep = fieldSepKind
+                let! trivia = trivia
+                return { kind = sep; trivia = trivia }
             }
-            let namedType = gen {
-                let! name = name
-                let! PositiveInt arity = positiveInt
-                let! types = Gen.listOfLength arity (typeSign <| fun s -> s / arity)
-                return D.NamedType(name, types)
+            let wrap t = gen {
+                let! l = reserved
+                let! r = reserved
+                return D.WrappedType(l, t, r)
             }
-            let field = withSpan <| gen {
-                let! k = fieldKey
-                let! t = typeSign <| fun s -> max 0 (s - 1)
-                return D.Field(k, t)
-            }
-            let fields = withSpan <| gen {
-                let! PositiveInt fieldCount = positiveInt
-                let! fields = Gen.listOfLength fieldCount (Gen.scaleSize (fun s -> s / fieldCount) field)
-                return D.Fields(NonEmptyList(List.head fields, List.tail fields))
-            }
-            let interfaceType = gen {
-                let! fields = fields
-                return D.InterfaceType fields
-            }
-            let arrayType = gen {
-                let! t = typeSign <| fun s -> max 0 (s - 1)
-                return D.ArrayType t
-            }
-            let constrainedType = gen {
-                let! t = typeSign <| fun s -> s / 2
-                let! fs = Gen.scaleSize (fun s -> s / 2) fields
-                return D.ConstrainedType(t, fs)
-            }
-            let parameter = withSpan <| gen {
-                let! n = Gen.optionOf name
-                let! t = typeSign <| fun s -> max 0 (s - 1)
-                return D.Parameter(n, t)
-            }
-            let variadicParameter = withSpan <| gen {
-                let! n = Gen.optionOf name
-                let! c = Gen.optionOf <| typeSign (fun s -> s / 2)
-                return D.VariadicParameter(n, c)
-            }
-            let multiType = gen {
-                let! NonNegativeInt parameterCount = nonNegativeInt
-                let! ps = Gen.listOfLength parameterCount (Gen.scaleSize (fun s -> if parameterCount = 0 then 0 else s / parameterCount) parameter)
-                let! v = Gen.optionOf variadicParameter
-                return D.MultiType(ps, v)
-            }
-            let functionType = gen {
-                let! m1 = Gen.scaleSize (fun s -> s / 2) multiType
-                let! s1 = span
-                let! m2 = Gen.scaleSize (fun s -> s / 2) multiType
-                let! s2 = span
-                return D.FunctionType({ kind = m1; trivia = s1 }, { kind = m2; trivia = s2 })
-            }
-            let typeSign' = function
-                | 0 -> leafType
-                | _ ->
+            let rec typeSignNoWrap' size =
+                if size <= 0 then leafType else
+
                 Gen.oneof [
                     leafType
-                    Gen.oneof [
-                        namedType
-                        interfaceType
-                        arrayType
-                        constrainedType
-                        functionType
+                    Gen.frequency [
+                        8, namedType size
+                        8, interfaceType size
+                        8, arrayType size
+                        8, constrainedType size
+                        8, functionType size
+                        8, emptyMultiType size
+                        8, singleMultiType size
+                        8, variadicType size
+                        8, multiType2 size
+                        1, wrappedType size
                     ]
                 ]
-            Gen.sized typeSign'
 
-        let shrink = Arb.Default.Derive().Shrinker
+            and typeSignNoWrap size = gen {
+                let! t = typeSignNoWrap' size
+                let! span = span
+                return { kind = t; trivia = span }
+                }
+            and typeSignOrWrap minPrecedence scale = gen {
+                let! t = typeSignNoWrap scale
+                if DocumentPrinter.typePrecedence t.kind < minPrecedence
+                then return! withSpan' <| wrap t
+                else return t
+                }
+
+            and wrappedType size = gen {
+                let! t = typeSignOrWrap D.Precedence.Max (max 0 (size - 1))
+                return! wrap t
+                }
+            and sepByOfLength length sep x = gen {
+                if length < 1 then invalidArg (nameof length) $"{length} < 1"
+
+                let! x0 = x
+                let! sepXs = Gen.listOfLength (length - 1) (Gen.zip sep x)
+                return SepBy(x0, sepXs)
+                }
+            and leafType = gen {
+                let! name = name
+                return D.NamedType(name, None)
+                }
+            and genericArguments size = gen {
+                match size with
+                | 0 -> return None
+                | _ ->
+
+                let! PositiveInt randomN = positiveInt
+                let arity = max 1 (randomN % (size + 1))
+                let! lt = reserved
+                let! ps = sepByOfLength arity reserved (typeSignOrWrap D.Precedence.ConstrainedType (size / arity))
+                let! comma = Gen.optionOf reserved
+                let! gt = reserved
+                return Some(D.GenericArguments(lt, ps, comma, gt))
+                }
+            and namedType size = gen {
+                let! name = name
+                let! genericArguments = genericArguments (max 0 (size - 1))
+                return D.NamedType(name, genericArguments)
+                }
+            and field size = withSpan' <| gen {
+                let! k = fieldKey
+                let! colon = reserved
+                let! t = typeSignOrWrap D.Precedence.ConstrainedType (max 0 (size - 1))
+                return D.Field(k, colon, t)
+                }
+            and fields size = withSpan' <| gen {
+                let! PositiveInt randomN = positiveInt
+                let fieldCount = max 1 (randomN % (size + 1))
+                let! lcBracket = reserved
+                let! fields = sepByOfLength fieldCount fieldSep (field (size / fieldCount))
+                let! fieldSep = Gen.optionOf fieldSep
+                let! rcBracket = reserved
+                return D.Fields(lcBracket, fields, fieldSep, rcBracket)
+                }
+            and interfaceType size = gen {
+                let! fields = fields size
+                return D.InterfaceType fields
+                }
+            and arrayType size = gen {
+                let! t = typeSignOrWrap D.Precedence.ArrayType (max 0 (size - 1))
+                let! lsBracket = reserved
+                let! rsBracket = reserved
+                return D.ArrayType(t, lsBracket, rsBracket)
+                }
+            and constrainedType size = gen {
+                let! t = typeSignOrWrap D.Precedence.ArrayType (size / 2)
+                let! colon = reserved
+                let! fs = fields (size / 2)
+                return D.ConstrainedType(t, colon, fs)
+                }
+            and parameter size = Gen.oneof [
+                withSpan' <| gen {
+                    let! t = typeSignOrWrap D.Precedence.FunctionType (max 0 (size - 1))
+                    return D.Parameter(None, t)
+                }
+                withSpan' <| gen {
+                    let! n = Gen.zip name reserved
+                    let! t = typeSignOrWrap D.Precedence.ConstrainedType (max 0 (size - 1))
+                    return D.Parameter(Some n, t)
+                    }
+                ]
+            and variadicTypeSign size = gen {
+                let! n = Gen.optionOf name
+                let! dot3 = reserved
+                let! c = Gen.optionOf <| typeSignOrWrap D.Precedence.PrimitiveType (max 0 (size - 1))
+                let! v = withSpan <| D.VariadicTypeSign(n, dot3, c)
+                return v
+                }
+            and variadicType size = gen {
+                let! v = variadicTypeSign size
+                return D.VariadicType v
+                }
+            and emptyMultiType _ = gen {
+                let! l = reserved
+                let! r = reserved
+                return D.EmptyType(l, r)
+                }
+            and singleMultiType size = gen {
+                let! l = reserved
+                let! p = parameter size
+                let! comma = reserved
+                let! r = reserved
+                return D.SingleMultiType(l, p, comma, r)
+                }
+            and parameters1 size = gen {
+                let! PositiveInt parameterCount = positiveInt
+                let! ps = sepByOfLength parameterCount reserved (parameter (size / parameterCount))
+                return D.Parameters ps
+                }
+            and multiType2 size = gen {
+                let! p = parameter (size / 2)
+                let! comma = reserved
+                let! ps = parameters1 (size / 2)
+                return D.MultiType2(p, comma, ps)
+                }
+            and functionType size = gen {
+                let! funToken = reserved
+                let! l = reserved
+                let! m1 = Gen.optionOf (parameters1 (size / 2))
+                let! r = reserved
+                let! colon = reserved
+                let! m2 = typeSignOrWrap D.Precedence.FunctionType (size / 2)
+                return D.FunctionType(funToken, l, m1, r, colon, m2)
+                }
+
+            Gen.sized typeSignNoWrap'
+
+        let rec validTypeSign minPrecedence t =
+            minPrecedence <= DocumentPrinter.typePrecedence t &&
+            match t with
+            | D.EmptyType _ -> true
+            | D.ArrayType(e, _, _) -> validTypeSign D.Precedence.ArrayType e.kind
+            | D.ConstrainedType(t, _, fs) ->
+                validTypeSign D.Precedence.PrimitiveType t.kind &&
+                validFields fs
+
+            | D.FunctionType(_, _, ps, _, _, rt) ->
+                Option.forall validParameters ps &&
+                validTypeSign D.Precedence.FunctionType rt.kind
+
+            | D.InterfaceType fs -> validFields fs
+            | D.MultiType2(p, _, ps) -> validParameter p && validParameters ps
+            | D.NamedType(_, ts) -> Option.forall validGenericArguments ts
+            | D.SingleMultiType(_, p, _, _) -> validParameter p
+            | D.VariadicType { kind = D.VariadicTypeSign(_, _, et) } ->
+                Option.forall (fun t -> validTypeSign D.Precedence.ConstrainedType t.kind) et
+
+            | D.WrappedType(_, t, _) -> validTypeSign D.Precedence.PrimitiveType t.kind
+
+        and validFields { kind = D.Fields(_, fs, _, _) } =
+            fs
+            |> SepBy.toList
+            |> Seq.forall validField
+
+        and validField { kind = D.Field(_, _, t) } =
+            validTypeSign D.Precedence.ConstrainedType t.kind
+
+        and validParameters (D.Parameters ps) =
+            ps
+            |> SepBy.toList
+            |> Seq.forall validParameter
+
+        and validParameter { kind = D.Parameter(_, t) } =
+            validTypeSign D.Precedence.ConstrainedType t.kind
+
+        and validGenericArguments (D.GenericArguments(_, ts, _, _)) =
+            ts
+            |> SepBy.toList
+            |> Seq.forall (fun x -> validTypeSign D.Precedence.ConstrainedType x.kind)
+
+        let shrink = Arb.Default.Derive<D.TypeSign'>().Shrinker
+        let shrink x = seq {
+            for x in shrink x do
+                if validTypeSign D.Precedence.Type x then
+                    x
+        }
         Arb.fromGenShrink(generator, shrink)
 
 let checkConfig = {

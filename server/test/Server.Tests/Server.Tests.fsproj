@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DiffPlex" Version="1.6.3" />
     <PackageReference Include="FsCheck" Version="2.14.3" />
     <PackageReference Include="FsCheck.Xunit" Version="2.14.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.8.0" />
@@ -28,6 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\server\server.fsproj" />
+    <ProjectReference Include="..\LuaChecker.Test.Helpers\LuaChecker.Test.Helpers.fsproj" />
   </ItemGroup>
 
   <Target Name="_GenerateResourcesScheme" BeforeTargets="AfterResolveReferences" Inputs="@(ReferencePath);../../src/server/ResourcesSchemaGen.fsx" Outputs="resources.xsd">

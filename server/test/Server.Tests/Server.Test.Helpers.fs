@@ -15,8 +15,6 @@ open System.Threading
 open Xunit.Abstractions
 
 
-let (=?) l r = if not (l = r) then failwithf "%0A =? %0A" l r
-
 type Async with
     static member ParallelAction(xs: unit Async seq) =
         Async.Parallel xs |> Async.Ignore

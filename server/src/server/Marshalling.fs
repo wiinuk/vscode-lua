@@ -133,8 +133,8 @@ let showFieldKey k =
     |> String.concat ""
 
 let showSpan { start = s; end' = e } = sprintf "(%d, %d)" s e
-let showTagName { Token.kind = kind } =
-    match kind with
+let showTagName { Token.kind = D.Tag(_, { kind = tail }) } =
+    match tail with
     | D.ClassTag _ -> "@class"
     | D.FeatureTag _ -> "@_Feature"
     | D.FieldTag _ -> "@field"

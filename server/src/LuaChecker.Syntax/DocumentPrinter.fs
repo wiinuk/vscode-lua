@@ -21,8 +21,6 @@ type Options = {
     style: DocumentStyle
     lastNewLine: bool
     escape: EscapeLevel
-    fieldSeparator: FieldSepKind
-    lastFieldSeparator: bool
     numberStyle: Printer.NumberStyle
     charEscape: Printer.EscapeLevel
     stringStyle: Printer.StringStyle
@@ -34,8 +32,6 @@ module Options =
         style = LineDocument
         lastNewLine = false
         escape = Control
-        fieldSeparator = Comma
-        lastFieldSeparator = false
         wrapResultType = false
 
         numberStyle = Printer.NumberStyle.Decimal
@@ -74,8 +70,8 @@ let longCommentStart eqCount = seq { "--["; for _ in 1..eqCount do "=" done; "["
 let longCommentEnd eqCount = seq { "]"; for _ in 1..eqCount do "=" done; "]" }
 
 let name (Name { kind = n }) = n
-let fieldSep options =
-    match options.fieldSeparator with
+let fieldSep { kind = sep } =
+    match sep with
     | Comma -> ", "
     | Semicolon -> "; "
 
@@ -84,12 +80,12 @@ type Precedence =
     | Min
     /// p: t, a: t
     | MultiType
-    /// fun(): ()
+    /// T: { x: number }
+    | ConstrainedType
+    /// fun(): a
     | FunctionType
     /// ...E
     | ConstrainedMultiType
-    /// T: { x: number }
-    | ConstrainedType
     /// T[]
     | ArrayType
     ///<summary>table&lt;T, U&gt;</summary>
@@ -97,9 +93,10 @@ type Precedence =
     | Max
 
 module Precedence =
-    let Type = Precedence.FunctionType
+    let Type = Precedence.MultiType
 
-let typePrecedence = function
+let rec typePrecedence = function
+    | WrappedType _ -> Precedence.PrimitiveType
     | FunctionType _ -> Precedence.FunctionType
     | ConstrainedType _ -> Precedence.ConstrainedType
     | ArrayType _ -> Precedence.ArrayType
@@ -109,92 +106,87 @@ let typePrecedence = function
     // "" => "()"
     // "t," => "(t,)"
     // "p: t," => "(p: t,)"
-    | MultiType([], None)
-    | MultiType([_], None) -> Precedence.Min
+    | EmptyType _
+    | SingleMultiType _ -> Precedence.PrimitiveType
     // ...e
     // ...e: { f: t }
-    | MultiType([], Some { kind = VariadicParameter(_, Some _) }) -> Precedence.ConstrainedMultiType
+    | VariadicType { kind = VariadicTypeSign(_, _, Some _) } -> Precedence.ConstrainedMultiType
     // ...
     // T...
-    | MultiType([], Some _) -> Precedence.PrimitiveType
+    | VariadicType { kind = VariadicTypeSign(_, _, None) } -> Precedence.PrimitiveType
     // p1: t1, t2
     // p1: t1, s...e
-    | MultiType _ -> Precedence.MultiType
+    | MultiType2 _ -> Precedence.MultiType
 
 let rec typeSignNoWrap options t = seq {
-    match t.kind with
-    | ConstrainedType(t, c) ->
-        yield! typeSign Precedence.ConstrainedType options t
+    match t with
+    | WrappedType(_, t, _) ->
+        "("; yield! typeSignNoWrap options t.kind; ")"
+
+    | ConstrainedType(t, _, c) ->
+        yield! typeSign Precedence.ConstrainedType options t.kind
         ": "
         yield! constraints options c
 
-    | ArrayType t ->
-        yield! typeSign Precedence.ArrayType options t; "[]"
+    | ArrayType(t, _, _) ->
+        yield! typeSign Precedence.ArrayType options t.kind; "[]"
 
     | NamedType(n, ts) ->
         name n
         match ts with
-        | [] -> ()
-        | t::ts ->
+        | None -> ()
+        | Some(GenericArguments(_, SepBy(t, ts), sep, _)) ->
             "<"
-            yield! typeSign Precedence.FunctionType options t
-            for t in ts do
+            yield! typeSign Precedence.ConstrainedType options t.kind
+            for _, t in ts do
                 ", "
-                yield! typeSign Precedence.FunctionType options t
+                yield! typeSign Precedence.ConstrainedType options t.kind
+            match sep with
+            | Some _ -> ", "
+            | _ -> ()
             ">"
 
     | InterfaceType fs -> yield! fields options fs
-    | FunctionType(m1, m2) ->
-        "fun"
-        yield! parameters0 options m1
-        ": "
-        yield! typeSign Precedence.FunctionType options m2
+    | FunctionType(_, _, m1, _, _, m2) ->
+        "fun("
+        match m1 with
+        | Some m1 -> yield! parameters options m1
+        | _ -> ()
+        "): "
+        yield! typeSign Precedence.FunctionType options m2.kind
 
-    | MultiType([], None) -> ()
-    | MultiType([p], None) -> yield! parameter options p
-    | MultiType([], Some v) -> yield! varParameter options v
-    | MultiType(p::ps, v) ->
-        yield! parameter options p
-        for p in ps do
-            ", "
-            yield! parameter options p
-        match v with
-        | None -> ()
-        | Some v ->
-            ", "
-            yield! varParameter options v
+    | EmptyType _ -> "()"
+    | SingleMultiType(_, p, _, _) -> "("; yield! parameter options p; ",)"
+    | VariadicType v -> yield! varParameter options v
+    | MultiType2(p, _, ps) -> yield! parameter options p; ", "; yield! parameters options ps
     }
 and typeSignWrap options t = seq {
-    "("
-    yield! typeSignNoWrap options t
-    match t.kind with
-    | MultiType([_], None) -> ","
-    | _ -> ()
-    ")"
+    "("; yield! typeSignNoWrap options t; ")"
     }
 and typeSign minNoWrapPrecedence options t =
-    let p = typePrecedence t.kind
+    let p = typePrecedence t
     if p < minNoWrapPrecedence
     then typeSignWrap options t
     else typeSignNoWrap options t
 
 and constraints options c = fields options c
 and fields options fs = seq {
-    let (Fields(NonEmptyList(f, fs))) = fs.kind
+    let (Fields(_, SepBy(f, fs), sep, _)) = fs.kind
     "{ "
     yield! field options f
-    for f in fs do
-        fieldSep options
+    for sep, f in fs do
+        fieldSep sep
         yield! field options f
 
-    if options.lastFieldSeparator then
-        fieldSep options
+    match sep with
+    | None -> ()
+    | Some sep -> fieldSep sep
     " }"
     }
-and field options { kind = Field(k, t) } = seq {
+and field options { kind = Field(k, _, t) } = seq {
     yield! fieldKey options k
     ": "
-    yield! typeSign Precedence.FunctionType options t
+    yield! typeSign Precedence.ConstrainedType options t.kind
     }
 and fieldKey options { kind = k } = seq {
     match k with
@@ -246,13 +238,21 @@ and fieldKey options { kind = k } = seq {
 
             yield! Printer.showStringCore stringStyle longStringEqCount requireEscape x
     }
+and parameters options ps = seq {
+    match ps with
+    | Parameters(SepBy(p, ps)) ->
+        yield! parameter options p
+        for _, p in ps do
+            ", "
+            yield! parameter options p
+    }
 and parameters0 options xs = seq {
     "("; yield! typeSignNoWrap options xs; ")"
     }
-and results options xs = seq {
-    match xs.kind with
-    | MultiType([], None) -> "()"
-    | MultiType _ ->
+and results options { kind = xs } = seq {
+    match xs with
+    | EmptyType _ -> "()"
+    | MultiType2 _ ->
         if options.wrapResultType
         then yield! parameters0 options xs
         else yield! typeSignNoWrap options xs
@@ -262,21 +262,21 @@ and parameter options { kind = Parameter(n, t) } = seq {
     match n with
     | None ->
         match t.kind with
-        | ConstrainedType _ -> yield! typeSignWrap options t
-        | _-> yield! typeSign Precedence.ArrayType options t
-    | Some n ->
+        | ConstrainedType _ -> yield! typeSignWrap options t.kind
+        | _-> yield! typeSign Precedence.FunctionType options t.kind
+    | Some(n, _) ->
         name n
         ": "
-        yield! typeSign Precedence.Type options t
+        yield! typeSign Precedence.ConstrainedType options t.kind
     }
-and varParameter options { kind = VariadicParameter(n, e) } = seq {
+and varParameter options { kind = VariadicTypeSign(n, _, e) } = seq {
     match n with
     | None -> ()
     | Some n -> name n
     "..."
     match e with
     | None -> ()
-    | Some t -> yield! typeSign Precedence.Type options t
+    | Some t -> yield! typeSign Precedence.PrimitiveType options t.kind
     }
 
 let visibility = function
@@ -287,40 +287,46 @@ let visibility = function
 let typeParameter options x = seq {
     match x.kind with
     | TypeParameter(n, None) -> name n
-    | TypeParameter(n, Some c) -> name n; ": "; yield! constraints options c
-    | VariadicTypeParameter(n, None) -> name n; "..."
-    | VariadicTypeParameter(n, Some c) -> name n; "..."; yield! typeSign Precedence.ConstrainedType options c
+    | TypeParameter(n, Some(_, c)) -> name n; ": "; yield! constraints options c
+    | VariadicTypeParameter(n, _, None) -> name n; "..."
+    | VariadicTypeParameter(n, _, Some c) -> name n; "..."; yield! typeSign Precedence.ConstrainedType options c.kind
 }
-let tag options a = seq {
+let tagTail options a = seq {
     match a.kind with
-    | UnknownTag(n, c) -> "@"; name n; " "; yield! comment true options c
-    | TypeTag t -> "@type "; yield! typeSign Precedence.Type options t
-    | GlobalTag(n, t) -> "@global "; name n; " "; yield! typeSign Precedence.Type options t
-    | FeatureTag n -> "@_Feature "; name n;
-    | ClassTag(n, parent) ->
-        "@class "; name n;
+    | UnknownTag(Name { kind = n }, c) -> n; " "; yield! comment true options c
+    | TypeTag(_, t) -> "type "; yield! typeSign Precedence.Type options t.kind
+    | GlobalTag(_, n, t) -> "global "; name n; " "; yield! typeSign Precedence.Type options t.kind
+    | FeatureTag(_, n) -> "_Feature "; name n;
+    | ClassTag(_, n, parent) ->
+        "class "; name n;
         match parent with
-        | Some t -> " : "; yield! typeSign Precedence.Type options t
+        | Some(_, t) -> " : "; yield! typeSign Precedence.Type options t.kind
         | _ -> ()
 
-    | FieldTag(v, n, t) ->
-        "@field "
+    | FieldTag(_, v, n, t) ->
+        "field "
         match v with
-        | Some v -> visibility v; " "
+        | Some v -> visibility v.kind; " "
         | _ -> ()
         yield! fieldKey options n; " ";
-        yield! typeSign Precedence.Type options t
+        yield! typeSign Precedence.Type options t.kind
 
-    | GenericTag(NonEmptyList(p, ps)) ->
-        "@generic "
+    | GenericTag(_, SepBy(p, ps)) ->
+        "generic "
         yield! typeParameter options p
-        for p in ps do
+        for _, p in ps do
             ", "
             yield! typeParameter options p
 }
+let tag options { kind = Tag(_, t) } = seq {
+    "@"; yield! tagTail options t
+}
 /// --- summary tag …
 let documentAsLineComment options { kind = Document(summary, ts) } = seq {
-    "---"; yield! comment false options summary; for a in ts do yield! tag options a
+    "---"
+    yield! comment false options summary
+    for a in ts do
+        yield! tag options a
 }
 /// `--- …` or `--[[ --- … ]]`
 let document options d = seq {
@@ -334,7 +340,7 @@ let document options d = seq {
 
         let (Document(_, tags)) = d.kind
         match List.tryLast tags with
-        | Some { kind = TypeTag { kind = ArrayType _ } } ->
+        | Some { kind = Tag(_, { kind = TypeTag(_, { kind = ArrayType _ }) }) } ->
             // `--[[ ---@type …[]]]` -> `--[[ ---@type …[] ]]`
             " "
 

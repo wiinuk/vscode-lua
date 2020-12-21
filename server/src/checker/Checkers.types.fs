@@ -593,37 +593,69 @@ module Type =
             else
                 buildTypeOfAliasDefinition env name d typeArgs
 
+    let splitLastVarOrReport (env: _ byref) ps = usingByrefAsRef &env (fun env ->
+        let struct(psRev, v) =
+            ps
+            |> List.fold (fun struct(psRev, lastVar) { kind = D.Parameter(_, t) } ->
+                match t.kind with
+                | D.VariadicType v ->
+                    match lastVar with
+                    | Some lastVar -> CheckerEnv.reportError env.contents.env lastVar.trivia K.UnexpectedMultiType
+                    | _ -> ()
+                    psRev, Some v
+
+                | _ -> t::psRev, lastVar
+            ) ([], None)
+
+        List.rev psRev, v
+    )
+
     let rec typeSign (env: _ byref) t =
         let t' = typeSignOrMultiType &env t
         CheckerEnv.reportIfNotValueKind env.env t.trivia t'
 
-    and multiType (env: _ byref) t =
-        let t' = typeSignOrMultiType &env t
-        CheckerEnv.reportIfNotMultiKind env.env t.trivia t'
+    and functionParameters (env: _ byref) (l, ps, r) =
+        let ts, v =
+            match ps with
+            | None -> [], None
+            | Some(D.Parameters ps) -> splitLastVarOrReport &env (SepBy.toList ps)
+
+        parameters &env (Span.merge l.trivia.span r.trivia.span) (ts, v)
 
     and typeSignOrMultiType (env: _ byref) t =
         match t.kind with
+        | D.WrappedType(_, t, _) -> typeSignOrMultiType &env t
         | D.NamedType(name, ts) -> namedType &env (name, ts)
-        | D.ArrayType et -> arrayType &env t.trivia et
+        | D.ArrayType(et, _, _) -> arrayType &env t.trivia et
         | D.InterfaceType fs -> interfaceType &env t.trivia fs
-        | D.FunctionType(m1, m2) -> functionType &env t.trivia m1 m2
-        | D.ConstrainedType(t, c) -> constrainedType &env t c
-        | D.MultiType(ps, v) -> parameters &env t.trivia (ps, v)
+        | D.FunctionType(_, l, m1, r, _, m2) -> functionType &env t.trivia (l, m1, r) m2
+        | D.ConstrainedType(t, _, c) -> constrainedType &env t c
+
+        | D.EmptyType _ -> parameters &env t.trivia ([], None)
+        | D.SingleMultiType(_, { kind = D.Parameter(_, t) }, _, _) -> parameters &env t.trivia ([t], None)
+        | D.VariadicType v -> parameters &env t.trivia ([], Some v)
+        | D.MultiType2(p, _, D.Parameters ps) -> parameters &env t.trivia (splitLastVarOrReport &env (p::SepBy.toList ps))
 
     and parameters (env: _ byref) span (ts, v) = usingByrefAsRef &env (fun env ->
         let last = varParam &env.contents span v
-        List.foldBack (fun { kind = D.Parameter(_, t); trivia = s } m ->
-            let t = typeSign &env.contents t
-            let l = CheckerEnv.sourceLocation env.contents.env s
-            CheckerEnv.types(env.contents.env).cons(t, m) |> Type.makeWithLocation l
+        List.foldBack (fun t m ->
+            let t' = typeSign &env.contents t
+            let l = CheckerEnv.sourceLocation env.contents.env t.trivia
+            CheckerEnv.types(env.contents.env).cons(t', m) |> Type.makeWithLocation l
         ) ts last
         )
 
-    and collectTypeArgs (env: _ byref) acc = function
+    and collectTypeArgs' (env: _ byref) acc = function
         | [] -> List.rev acc
-        | t::ts ->
+        | (_, t)::ts ->
             let t' = typeSignOrMultiType &env t
-            collectTypeArgs &env (struct(t', t.trivia)::acc) ts
+            collectTypeArgs' &env (struct(t', t.trivia)::acc) ts
+
+    and collectTypeArgs (env: _ byref) = function
+        | None -> []
+        | Some(D.GenericArguments(_, SepBy(t, ts), _, _)) ->
+            let t' = typeSignOrMultiType &env t
+            collectTypeArgs' &env [struct(t', t.trivia)] ts
 
     and namedType (env: _ byref) (Name n as name, ts) =
         let nameSpan = n.trivia.span
@@ -632,7 +664,7 @@ module Type =
         | ValueNone, "self", ValueSome d ->
 
             // 型名を発見した
-            let ts = collectTypeArgs &env [] ts
+            let ts = collectTypeArgs &env ts
             buildTypeOfDefinition env.env name d ts
 
         | _ ->
@@ -641,18 +673,18 @@ module Type =
         match n.kind, ts with
 
         // 空型として扱う
-        | "void", [] ->
+        | "void", None ->
             CheckerEnv.types(env.env).empty |> Type.makeWithLocation (CheckerEnv.sourceLocation env.env nameSpan)
 
         // それぞれ違う型変数として扱う
         // table<any,any> => table<?a,?b>
-        | ("_" | "any"), [] ->
+        | ("_" | "any"), None ->
             CheckerEnv.newValueVarType env.env n.kind
             |> Type.makeWithLocation (CheckerEnv.sourceLocation env.env nameSpan)
 
         // 同じ名前は同じ型変数として扱う
         // table<T,T> => table<?a,?a>
-        | TypeVarLikeName true, [] ->
+        | TypeVarLikeName true, None ->
             typeNameAsTypeVar &env name
 
         // 型名が見つからないエラーを報告
@@ -673,9 +705,9 @@ module Type =
         let keyToType = fields &env fs
         InterfaceType keyToType |> Type.makeWithLocation (CheckerEnv.sourceLocation env.env span)
 
-    and fields (env: _ byref) { kind = D.Fields fs } = usingByrefAsRef &env (fun env ->
+    and fields (env: _ byref) { kind = D.Fields(_, fs, _, _) } = usingByrefAsRef &env (fun env ->
         fs
-        |> NonEmptyList.fold (fun keyToType { kind = D.Field({ kind = k; trivia = ks }, t) } ->
+        |> SepBy.fold (fun keyToType { kind = D.Field({ kind = k; trivia = ks }, _, t) } ->
             let t = typeSign &env.contents t
 
             match Map.tryFind k keyToType with
@@ -688,9 +720,9 @@ module Type =
         |> Map.map (fun _ struct(t, _) -> t)
         )
 
-    and functionType (env: _ inref) span m1 m2 =
+    and functionType (env: _ inref) span (l, m1, r) m2 =
         let mutable env = { env with implicitVariadicParameterType = None }
-        let m1 = multiType &env m1
+        let m1 = functionParameters &env (l, m1, r)
         let types = CheckerEnv.types env.env
         let m2 = typeSignOrMultiType &env m2
         let m2 =
@@ -705,7 +737,7 @@ module Type =
         let { system = types } as typeEnv = CheckerEnv.typeEnv env.env
         match v with
         | None -> types.empty |> Type.makeWithLocation (CheckerEnv.sourceLocation env.env span)
-        | Some { kind = D.VariadicParameter(n, c); trivia = span } ->
+        | Some { kind = D.VariadicTypeSign(n, _, c); trivia = span } ->
 
         let m = resolveMultiVar &env span n
 
@@ -772,9 +804,9 @@ module DocumentCheckers =
         | _ ->
 
         tags
-        |> List.fold (fun nearestKind tag ->
-            match tag.kind with
-            | D.FeatureTag(Name({ kind = Parse k as featureName } as name)) ->
+        |> List.fold (fun nearestKind ({ kind = D.Tag(_, tail) } as tag) ->
+            match tail.kind with
+            | D.FeatureTag(_, Name({ kind = Parse k as featureName } as name)) ->
                 match nearestKind, k with
                 | ValueNone, ValueSome k -> ValueSome struct(tag, k)
                 | _, ValueNone ->
@@ -835,7 +867,7 @@ module DocumentCheckers =
     type TypeParameterBinding = {
         nameTokens: D.Name NonEmptyList
         varType: Type
-        constraints: Choice<D.TypeConstraints, D.TypeSign> list
+        constraints: Choice<D.Token * D.TypeConstraints, D.TypeSign> list
     }
     let consOption c cs = match c with None -> cs | Some c -> c::cs
     let collectTypeParameterBindsCore env kind nameToBind (Name { kind = name; trivia = nameTrivia } as nameToken, c) =
@@ -873,9 +905,9 @@ module DocumentCheckers =
 
     let foldTypeParameters folder state tags =
         tags
-        |> List.fold (fun s tag ->
-            match tag.kind with
-            | D.GenericTag ps -> NonEmptyList.fold folder s ps
+        |> List.fold (fun s { kind = D.Tag(_, tail) } ->
+            match tail.kind with
+            | D.GenericTag(_, ps) -> SepBy.fold folder s ps
             | _ -> s
         ) state
 
@@ -884,7 +916,7 @@ module DocumentCheckers =
         |> foldTypeParameters (fun map p ->
             match p.kind with
             | D.TypeParameter(name, c) -> collectTypeParameterBindsCore env types.valueKind map (name, Option.map Choice1Of2 c)
-            | D.VariadicTypeParameter(name, c) -> collectTypeParameterBindsCore env types.multiKind map (name, Option.map Choice2Of2 c)
+            | D.VariadicTypeParameter(name, _, c) -> collectTypeParameterBindsCore env types.multiKind map (name, Option.map Choice2Of2 c)
         ) map
 
     let extendTypeEnvFromBind nameToBind env =
@@ -927,12 +959,12 @@ module DocumentCheckers =
             for c in bind.constraints do
                 let span =
                     match c with
-                    | Choice1Of2 c -> c.trivia
+                    | Choice1Of2(_, c) -> c.trivia
                     | Choice2Of2 e -> e.trivia
 
                 let v' =
                     match c with
-                    | Choice1Of2 c ->
+                    | Choice1Of2(_, c) ->
                         let l = sourceLocation env c.trivia
                         let c' = Constraints.ofConstraintSign env c |> Constraints.makeWithLocation l
                         newValueVarTypeWith env varName c' |> Type.makeWithLocation l
@@ -951,9 +983,9 @@ module DocumentCheckers =
         let mutable modifierTags = []
         let mutable lastTypeTag = ValueNone
         for { kind = D.Document(_, tags) } in ds do
-            for tag in tags do
-                match tag.kind with
-                | D.TypeTag t ->
+            for { kind = D.Tag(_, tail) } as tag in tags do
+                match tail.kind with
+                | D.TypeTag(_, t) ->
                     match lastTypeTag with
                     | ValueSome struct(_, span, _) -> reportInfo env span <| DiagnosticKind.DuplicateTag tag
                     | _ -> ()
@@ -1037,7 +1069,7 @@ module DocumentCheckers =
 
         match parent with
         | None -> ()
-        | Some p ->
+        | Some(_, p) ->
             let parentName =
                 match p.kind with
                 | D.NamedType(Name { kind = k }, _) -> k
@@ -1183,11 +1215,11 @@ module DocumentCheckers =
             )
 
     let processRemainingModifierTags env modifierTags =
-        for tag in modifierTags do
-            match tag.kind with
+        for { kind = D.Tag(_, tail) } as tag in modifierTags do
+            match tail.kind with
 
             // 親構文への注釈
-            | D.FeatureTag(Name { kind = featureName } as name) ->
+            | D.FeatureTag(_, (Name { kind = featureName } as name)) ->
                 reportInfo env (Name.measure name) <| DiagnosticKind.UnrecognizedFeatureName featureName
 
             | D.GenericTag _ ->
@@ -1209,20 +1241,20 @@ module DocumentCheckers =
         let mutable modifierTags = []
         let mutable lastClass = ValueNone
         for { kind = D.Document(_, tags) } in ds do
-            for tag in tags do
-                match tag.kind with
-                | D.GlobalTag(name, typeSign) ->
+            for { kind = D.Tag(_, tail) } as tag in tags do
+                match tail.kind with
+                | D.GlobalTag(_, name, typeSign) ->
                     ValueOption.iter endClass lastClass
                     lastClass <- ValueNone
                     globalTag env modifierTags (name, typeSign)
                     modifierTags <- []
 
-                | D.ClassTag(name, parent) ->
+                | D.ClassTag(_, name, parent) ->
                     ValueOption.iter endClass lastClass
                     lastClass <- ValueSome <| classTag env modifierTags (name, parent)
                     modifierTags <- []
 
-                | D.FieldTag(visibility, name, typeSign) ->
+                | D.FieldTag(_, visibility, name, typeSign) ->
                     lastClass <- fieldTag env modifierTags lastClass tag.trivia (visibility, name, typeSign)
                     modifierTags <- []
 
