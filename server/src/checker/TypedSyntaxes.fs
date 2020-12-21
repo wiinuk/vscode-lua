@@ -6,12 +6,7 @@ module S = LuaChecker.Syntaxes
 module D = LuaChecker.Syntax.Documents
 
 
-type Entity<'T,'S> = {
-    span: Span
-    entity: 'T
-    state: 'S
-}
-type Entity<'T> = Entity<'T, HEmpty>
+type Token<'T> = Token<'T, Span>
 type LeafInfo = {
     externalModulePath: DocumentPath voption
     schemeInstantiation: (Scheme * struct(TypeParameterId * Type) list) voption
@@ -35,10 +30,10 @@ type Var =
 
 type ReservedVar = ReservedVar of trivia: S.Trivia * kind: Syntax.TokenKind * Type * LeafInfo voption
 
-type ParameterList = ParameterList' Entity
+type ParameterList = ParameterList' Token
 type ParameterList' = ParameterList of Var list * varArg: ReservedVar option
 
-type Exp = Exp' Entity
+type Exp = Exp' Token
 type Exp' =
     | Literal of S.Literal * Type * LeafInfo voption
     | VarArg of ReservedVar
@@ -62,23 +57,23 @@ type Exp' =
     | Call of Exp * Exp list
     | CallWithSelf of Exp * Var * Exp list
 
-type Field = Field' Entity
+type Field = Field' Token
 type Field' =
     | Init of Exp
     | MemberInit of Var * Exp
     | IndexInit of Exp * Exp
 
-type FuncBody = FuncBody' Entity
+type FuncBody = FuncBody' LuaChecker.Syntax.Source
 type FuncBody' = FuncBody of ParameterList option * Block
 
-type LastStat = LastStat' Entity
+type LastStat = LastStat' Token
 type LastStat' =
     | Break
     | Return of Exp list
 
 type ElseIf = | ElseIf of condition: Exp * ifTrue: Block
 
-type Stat = Stat' Entity
+type Stat = Stat' Token
 type Stat' =
     | FunctionCall of Exp
     | Assign of Exp NonEmptyList * Exp NonEmptyList
@@ -92,14 +87,15 @@ type Stat' =
     | LocalFunction of Var * FuncBody
     | Local of VarList * value: Exp list
 
-type Block = Block' Entity
+type Block = Block' Token
 type Block' = {
     stats: Stat list
     lastStat: LastStat option
 }
 type ChunkInfo = {
+    semanticTree: Block
     functionType: Scheme
     ancestorModulePaths: DocumentPath Set
     additionalGlobalEnv: Env
 }
-type Chunk = Entity<Block, ChunkInfo>
+type Chunk = Token<ChunkInfo>

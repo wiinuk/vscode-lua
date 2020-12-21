@@ -46,7 +46,7 @@ let publishDiagnostics agent projectAgent path version document diagnostics =
     |> sendNotification agent
         M.``textDocument/publishDiagnostics``
 
-let hoverHitTestAndResponse requestId projectAgent document tree position =
+let hoverHitTestAndResponse requestId projectAgent document { Token.kind = { TypedSyntaxes.semanticTree = tree } } position =
     let index = Document.positionToIndex position document
     let context = {
         root = projectAgent.root
@@ -58,7 +58,7 @@ let hoverHitTestAndResponse requestId projectAgent document tree position =
         renderedText = ""
     }
     let result =
-        if Block.hitTest Marshalling.prettyTokenInfo this index tree.entity then
+        if Block.hitTest Marshalling.prettyTokenInfo this index tree then
             let markdown = { kind = MarkupKind.markdown; value = this.renderedText }
             ValueSome { contents = markdown; range = Undefined }
         else
@@ -80,13 +80,13 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
     let range =
         match rangeOrFull with
         | ValueSome range -> Marshalling.rangeToSpan lineMap range
-        | _ -> tree.span
+        | _ -> tree.trivia
 
     let initialGlobal = project.projectRare.initialGlobal
     let typeEnv = {
         system = initialGlobal.typeSystem
         stringTableTypes =
-            tree.state.additionalGlobalEnv.stringMetaTableIndexType @
+            tree.kind.additionalGlobalEnv.stringMetaTableIndexType @
             initialGlobal.initialGlobalEnv.stringMetaTableIndexType
     }
     let this = {
@@ -96,7 +96,7 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
         lastLine = 0
         lastStartChar = 0
     }
-    Block.iterateRange Marshalling.collectSemanticsTokenData this range tree.entity |> ignore
+    Block.iterateRange Marshalling.collectSemanticsTokenData this range tree.kind.semanticTree |> ignore
     WriteAgent.sendResponse writeAgent id <| Ok {
         resultId = Undefined
         data = buffer.ToArray()

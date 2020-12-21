@@ -120,7 +120,7 @@ let typedHitTest() =
         match checkChunk id source with
         | Some s, [] ->
             let result = ref []
-            if LuaChecker.Block.hitTest visitor result i s.entity then
+            if LuaChecker.Block.hitTest visitor result i s.kind.semanticTree then
                 match !result with
                 | [] -> failwith $"empty result: '{source}' @{i} -> []"
                 | [x] -> ValueSome x
@@ -158,7 +158,7 @@ let tokens source (start, end') =
     let range = { start = start; end' = end' }
     let result = ref []
     let tree = checkChunk id source |> fst |> Option.get
-    if Block.iterateRange visitor result range tree.entity then
+    if Block.iterateRange visitor result range tree.kind.semanticTree then
         match !result with
         | [] -> failwith $"empty result: `{source}` @%A{range} -> []"
         | xs -> List.rev xs

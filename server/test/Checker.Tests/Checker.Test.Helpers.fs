@@ -552,8 +552,8 @@ module Helpers =
         | TypeAbstraction(ps, t) -> TypeAbstraction(ps, functionReturnTypeRec t) |> Type.makeWithEmptyLocation
         | _ -> t
 
-    let chunkReturnType1 t = t.state.functionType |> functionReturnType1Rec |> Scheme.normalize
-    let chunkReturnType t = t.state.functionType |> functionReturnTypeRec |> Scheme.normalize
+    let chunkReturnType1 t = t.kind.functionType |> functionReturnType1Rec |> Scheme.normalize
+    let chunkReturnType t = t.kind.functionType |> functionReturnTypeRec |> Scheme.normalize
 
     let projectActionsToScheme withConfig =
         projectActions withConfig >> List.map (function

@@ -14,18 +14,13 @@ type private R = LuaChecker.IdentifierRepresentation
 
 [<AutoOpen>]
 module private Helpers =
-    let entity span state entity = {
-        T.entity = entity
-        T.span = span
-        T.state = state
-    }
     let suppressDiagnostics suppress env =
         struct(
             env.rare.suppressDiagnostics,
             { env with rare = { env.rare with suppressDiagnostics = suppress } }
         )
     let inline modifyPackagePath env f = { env with rare = { env.rare with packagePath = f env.rare.packagePath } }
-    let withSpan span x = entity span HEmpty x
+    let withSpan span x = { kind = x; trivia = span }
 
     let makeVar s k r n t = T.Var(s, k, r, n, t, ValueNone)
     let literal span t l = struct(withSpan span (T.Literal(l, t, ValueNone)), t)
@@ -321,7 +316,7 @@ module private Helpers =
         | _ -> ()
 
     let trySetSchemeInstantiationInfo scheme tvs instantiated = function
-        | { T.entity = T.Variable(T.Var(k, s, r, n, t, info)) } as e ->
+        | { kind = T.Variable(T.Var(k, s, r, n, t, info)) } as e ->
             let info =
                 match info with
                 | ValueNone -> T.LeafInfo.empty
@@ -330,7 +325,7 @@ module private Helpers =
             let info =
                 ValueSome { info with T.schemeInstantiation = ValueSome(scheme, tvs) }
 
-            struct({ e with T.entity = T.Variable(T.Var(k, s, r, n, t, info)) }, instantiated)
+            struct({ e with kind = T.Variable(T.Var(k, s, r, n, t, info)) }, instantiated)
 
         | e -> struct(e, instantiated)
 
@@ -384,12 +379,11 @@ module private Helpers =
         | _ -> ()
 
     let missingChunk (Types types as env) syntaxSpan functionTypeLocations = {
-        T.entity = {
-            T.entity = { T.stats = []; T.lastStat = None }
-            T.state = HEmpty
-            T.span = syntaxSpan
-        }
-        T.state = {
+        kind = {
+            T.semanticTree = {
+                kind = { T.stats = []; T.lastStat = None }
+                trivia = syntaxSpan
+            }
             T.functionType =
                 types.fn(
                     newMultiVarType env TypeNames.lostByError |@ functionTypeLocations,
@@ -400,7 +394,7 @@ module private Helpers =
             T.ancestorModulePaths = Set.empty
             T.additionalGlobalEnv = Env.empty
         }
-        T.span = syntaxSpan
+        trivia = syntaxSpan
     }
 
     let analyzeModuleFile env span modulePath moduleFile =
@@ -1013,21 +1007,21 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
     | Ok(modulePath, moduleFile) ->
 
     // モジュールを解析してエラー報告
-    let chunk = analyzeModuleFile env nameSpan modulePath moduleFile
+    let { kind = chunk } = analyzeModuleFile env nameSpan modulePath moduleFile
 
     // モジュールのパスとモジュールの先祖のパスを自分の先祖に追加
-    appendAncestorModulePaths env <| Set.add modulePath chunk.state.ancestorModulePaths
+    appendAncestorModulePaths env <| Set.add modulePath chunk.ancestorModulePaths
 
     // 戻り値型を求める
     let resultType =
-        let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.state.functionType
+        let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.functionType
         let typeEnv = typeEnv env
         match t.kind with
         | Type.Function typeEnv (ValueSome(_, r)) -> r
         | _ -> t
 
     // モジュールの追加的グローバル環境を導入する
-    extendGlobalEnvironmentFromParentModule env nameSpan modulePath chunk.state
+    extendGlobalEnvironmentFromParentModule env nameSpan modulePath chunk
 
     Some modulePath, resultType
 
@@ -1154,7 +1148,7 @@ let assign' (Types types as env) state span ({ kind = vars } as vs, { kind = val
     let vars = SepBy.toNonEmptyList vars |> NonEmptyList.map (var env)
     let varsOverflow = newMultiVarType env TypeNames.multiOverflow |@ sourceLocation env valuesSpan
     let varsType =
-        NonEmptyList.foldBack (fun struct({ T.span = varSpan }, varType) lastType ->
+        NonEmptyList.foldBack (fun struct({ trivia = varSpan }, varType) lastType ->
             types.cons(varType, lastType) |@ sourceLocation env varSpan
         ) vars varsOverflow
 
@@ -1462,12 +1456,13 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
 
     let chunkFunctionType = types.fn(env.rare.varArgType, env.rare.returnType) |@ []
     let functionScheme = Scheme.generalizeAndAssign chunkTypeLevel chunkFunctionType
-    let trivia = {
+    let kind = {
+        T.semanticTree = body
         T.functionType = functionScheme
         T.ancestorModulePaths = Local.get ancestorModulePaths
         T.additionalGlobalEnv = Local.get additionalGlobalEnv
     }
-    entity x.trivia.span trivia body, diagnostics :> _ seq, Local.get project
+    withSpan x.trivia.span kind, diagnostics :> _ seq, Local.get project
 
 let chunk' env visitedSources project filePath source x = Local.runNotStruct { new ILocalScope<_> with
     member _.Invoke scope = chunkWithScope scope visitedSources project env filePath source x

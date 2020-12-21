@@ -34,7 +34,7 @@ module private rec IterageRange =
     }
 
     let intersectingWithSpan env x = Span.isIntersecting env.noUpdate.range x
-    let intersecting env x = intersectingWithSpan env x.span
+    let intersecting env x = intersectingWithSpan env x.trivia
 
     let inline option f = function
         | Some x -> f x
@@ -93,7 +93,7 @@ module private rec IterageRange =
     let exp env x =
         intersecting env x &&
 
-        match x.entity with
+        match x.kind with
         | Literal(x, t, trivia) -> literal env x t trivia
         | VarArg x -> varArg env x
         | Function x -> funcBody env x
@@ -136,20 +136,20 @@ module private rec IterageRange =
 
     let parameterList env x =
         intersecting env x &&
-        match x.entity with
+        match x.kind with
         | ParameterList(x1, x2) ->
             list (name env) x1 ||.
             option (reserved env) x2
 
     let funcBody env x =
         intersecting env x &&
-        let { entity = FuncBody(x1, x2) } = x
+        let { kind = FuncBody(x1, x2) } = x
         option (parameterList env) x1 ||.
         block env x2
 
     let field env x =
         intersecting env x &&
-        match x.entity with
+        match x.kind with
         | Init x -> exp env x
         | MemberInit(x1, x2) ->
             name env x1 ||.
@@ -212,7 +212,7 @@ module private rec IterageRange =
     let stat env x =
         intersecting env x &&
 
-        match x.entity with
+        match x.kind with
         | FunctionCall x -> exp env x
         | Assign(x1, x2) -> assignStat env (x1, x2)
         | Do x -> block env x
@@ -228,14 +228,14 @@ module private rec IterageRange =
     let lastStat env x =
         intersecting env x &&
 
-        match x.entity with
+        match x.kind with
         | Break -> false
         | Return x -> list (exp env) x
 
     let block env x =
         intersecting env x && (
-            list (stat env) x.entity.stats ||.
-            option (lastStat env) x.entity.lastStat
+            list (stat env) x.kind.stats ||.
+            option (lastStat env) x.kind.lastStat
         )
 
     let chunk env x = block env x
