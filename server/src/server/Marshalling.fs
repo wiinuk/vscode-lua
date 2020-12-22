@@ -141,7 +141,7 @@ let showTagName { Token.kind = D.Tag(_, { kind = tail }) } =
     | D.GenericTag _ -> "@generic"
     | D.GlobalTag _ -> "@global"
     | D.TypeTag _ -> "@type"
-    | D.UnknownTag(Name n, _) -> "@" + n.kind
+    | D.UnknownTag(D.Annotated(Name n, _), _) -> "@" + n.kind
 
 let showLocation context (Location(path, { start = s; end' = e })) =
     sprintf "%s(%d, %d)" (showRelativePath context path) s e
@@ -698,7 +698,7 @@ let writeVarTokenSemantics this (Var(_, kind, repr, Name { trivia = { span = spa
 
     writeTokenSemantics this tokenType tokenModifiers
 
-let writeTypeTagSemantics this { trivia = span; kind = _syntax: Documents.TypeSign' } t typeEnv =
+let writeTypeTagSemantics this { trivia = span; kind = _syntax: _ Documents.TypeSign' } t typeEnv =
     writeTokenRange this span
     let struct(tokenType, tokenModifiers) = typeSemantics this t [] typeEnv |> ValueOption.defaultValue (T.``type``, M.Empty)
     writeTokenSemantics this tokenType tokenModifiers

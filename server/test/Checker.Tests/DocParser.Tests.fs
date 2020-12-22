@@ -32,8 +32,9 @@ module private Helpers =
 
     module Mapping =
         let source (mapSpan, _) t = { kind = t.kind; trivia = mapSpan t.trivia }
-        let name (_, mapTrivia) t = Name.map mapTrivia t
-        let token (_, mapTrivia) t = { kind = t.kind; trivia = mapTrivia t.trivia }
+        let annotated f (Annotated(t, a)) = Annotated(f t, a)
+        let identifier (_, mapTrivia) t = annotated (Name.map mapTrivia) t
+        let reserved (mapSpan, _) t = annotated (fun t -> { kind = t.kind; trivia = mapSpan t.trivia }) t
         let inline sourced (mapSpan, _) x mapKind = { kind = mapKind x.kind; trivia = mapSpan x.trivia }
         let tuple2 (f1, f2) (x1, x2) = f1 x1, f2 x2
 
@@ -41,55 +42,55 @@ module private Helpers =
         let fieldKey f x = source f x
 
         let rec typeSign f x = sourced f x <| function
-            | WrappedType(l, t, r) -> WrappedType(token f l, typeSign f t, token f r)
+            | WrappedType(l, t, r) -> WrappedType(reserved f l, typeSign f t, reserved f r)
             | InterfaceType fs -> InterfaceType <| fields f fs
-            | ArrayType(t, l, r) -> ArrayType(typeSign f t, token f l, token f r)
-            | ConstrainedType(t, s, c) -> ConstrainedType(typeSign f t, token f s, constraints f c)
+            | ArrayType(t, l, r) -> ArrayType(typeSign f t, reserved f l, reserved f r)
+            | ConstrainedType(t, s, c) -> ConstrainedType(typeSign f t, reserved f s, constraints f c)
             | FunctionType(t, l, m1, r, colon, m2) ->
-                FunctionType(token f t, token f l, Option.map (parameters f) m1, token f r, token f colon, typeSign f m2)
+                FunctionType(reserved f t, reserved f l, Option.map (parameters f) m1, reserved f r, reserved f colon, typeSign f m2)
 
-            | NamedType(n, ts) -> NamedType(name f n, Option.map (genericArguments f) ts)
+            | NamedType(n, ts) -> NamedType(identifier f n, Option.map (genericArguments f) ts)
 
             // multi type
-            | EmptyType(l, r) -> EmptyType(token f l, token f r)
-            | MultiType2(p, c, ps) -> MultiType2(parameter f p, token f c, parameters f ps)
+            | EmptyType(l, r) -> EmptyType(reserved f l, reserved f r)
+            | MultiType2(p, c, ps) -> MultiType2(parameter f p, reserved f c, parameters f ps)
             | VariadicType v -> variadicTypeSign f v |> VariadicType
-            | SingleMultiType(l, t, s, r) -> SingleMultiType(token f l, parameter f t, token f s, token f r)
+            | SingleMultiType(l, t, s, r) -> SingleMultiType(reserved f l, parameter f t, reserved f s, reserved f r)
 
         and variadicTypeSign f x = sourced f x <| fun (VariadicTypeSign(n, dot3, c)) ->
-            VariadicTypeSign(Option.map (name f) n, token f dot3, Option.map (typeSign f) c)
+            VariadicTypeSign(Option.map (identifier f) n, reserved f dot3, Option.map (typeSign f) c)
 
         and genericArguments f (GenericArguments(l, ts, s, r)) =
-            GenericArguments(token f l, SepBy.mapSep (token f) (typeSign f) ts, Option.map (token f) s, token f r)
+            GenericArguments(reserved f l, SepBy.mapSep (reserved f) (typeSign f) ts, Option.map (reserved f) s, reserved f r)
 
-        and parameters f (Parameters ps) = SepBy.mapSep (token f) (parameter f ) ps |> Parameters
+        and parameters f (Parameters ps) = SepBy.mapSep (reserved f) (parameter f ) ps |> Parameters
 
         and constraints f x = fields f x
 
         and fields f x = sourced f x <| fun (Fields(l, fs, s, r)) ->
-            Fields(token f l, SepBy.mapSep (token f) (field f) fs, Option.map (token f) s, token f r)
+            Fields(reserved f l, SepBy.mapSep (reserved f) (field f) fs, Option.map (reserved f) s, reserved f r)
 
         and field f x = sourced f x <| fun (Field(k, c, t)) ->
-            Field(sourced f k id, token f c, typeSign f t)
+            Field(sourced f k id, reserved f c, typeSign f t)
 
         and parameter f x = sourced f x <| fun (Parameter(n, t)) ->
-            Parameter(Option.map (tuple2 (name f, token f)) n, typeSign f t)
+            Parameter(Option.map (tuple2 (identifier f, reserved f)) n, typeSign f t)
 
         let typeParameter f x = sourced f x <| function
-            | TypeParameter(n, c) -> TypeParameter(name f n, Option.map (tuple2 (token f, constraints f)) c)
-            | VariadicTypeParameter(n, dot3, c) -> VariadicTypeParameter(name f n, token f dot3, Option.map (typeSign f) c)
+            | TypeParameter(n, c) -> TypeParameter(identifier f n, Option.map (tuple2 (reserved f, constraints f)) c)
+            | VariadicTypeParameter(n, dot3, c) -> VariadicTypeParameter(identifier f n, reserved f dot3, Option.map (typeSign f) c)
 
         let tagTail f x = sourced f x <| function
-            | UnknownTag(a, c) -> UnknownTag(name f a, comment f c)
-            | TypeTag(a, t) -> TypeTag(token f a, typeSign f t)
-            | GlobalTag(a, n, t) -> GlobalTag(token f a, name f n, typeSign f t)
-            | FeatureTag(a, n) -> FeatureTag(token f a, name f n)
-            | ClassTag(a, n, t) -> ClassTag(token f a, name f n, Option.map (tuple2(token f, typeSign f)) t)
-            | FieldTag(a, v, n, t) -> FieldTag(token f a, Option.map (source f) v, fieldKey f n, typeSign f t)
-            | GenericTag(a, ps) -> GenericTag(token f a, SepBy.mapSep (token f) (typeParameter f) ps)
+            | UnknownTag(a, c) -> UnknownTag(identifier f a, comment f c)
+            | TypeTag(a, t) -> TypeTag(reserved f a, typeSign f t)
+            | GlobalTag(a, n, t) -> GlobalTag(reserved f a, identifier f n, typeSign f t)
+            | FeatureTag(a, n) -> FeatureTag(reserved f a, identifier f n)
+            | ClassTag(a, n, t) -> ClassTag(reserved f a, identifier f n, Option.map (tuple2(reserved f, typeSign f)) t)
+            | FieldTag(a, v, n, t) -> FieldTag(reserved f a, Option.map (source f) v, fieldKey f n, typeSign f t)
+            | GenericTag(a, ps) -> GenericTag(reserved f a, SepBy.mapSep (reserved f) (typeParameter f) ps)
 
         let tag f x = sourced f x <| fun (Tag(at, tail)) ->
-            Tag(token f at, tagTail f tail)
+            Tag(reserved f at, tagTail f tail)
 
         let document f x = sourced f x <| fun (Document(c, xs)) ->
             Document(comment f c, List.map (tag f) xs)
@@ -99,6 +100,9 @@ module private Helpers =
 
     let withEmptyTrivia k = { kind = k; trivia = Trivia.createEmpty() }
     let withEmptySpan k = { kind = k; trivia = Span.empty }
+    let withEmptyAnnotation k = Annotated(k, HEmpty)
+    /// withEmptySpan >> withEmptyAnnotation
+    let withEmpty k = withEmptySpan k |> withEmptyAnnotation
     let insert sep (x, xs) = SepBy(x, [for x in xs -> sep, x])
 
     let comment x = x |> withEmptySpan |> Comment
@@ -107,10 +111,10 @@ module private Helpers =
         trailingNoise = NonNull ""
         options = Options.defaultOptions
     }
-    let name n = n |> withEmptyTrivia |> Name
+    let name n = n |> withEmptyTrivia |> Name |> withEmptyAnnotation
     let document c ans = Document(comment c, ans) |> withEmptySpan
-    let reserved = HEmpty |> withEmptyTrivia
-    let fieldSep = Comma |> withEmptyTrivia
+    let reserved = HEmpty |> withEmpty
+    let fieldSep = Comma |> withEmpty
     let fields = function
         | [] -> failwithf "empty list"
         | x::xs ->
@@ -204,20 +208,14 @@ let [<Fact(DisplayName = "---@a")>] simpleDocComment() =
                         {
                             kind =
                                 Tag(
-                                    {
+                                    Annotated({
                                         kind = HEmpty
-                                        trivia = {
-                                            leadingTriviaLength = 0
-                                            span = { start = 3; end' = 4 }
-                                            trailingTriviaLength = 0
-                                            leadingDocument = None
-                                            trailingDocument = None
-                                        }
-                                    },
+                                        trivia = { start = 3; end' = 4 }
+                                    }, HEmpty),
                                     {
                                         kind =
                                             UnknownTag(
-                                                Name {
+                                                Annotated(Name {
                                                     kind = "a"
                                                     trivia = {
                                                         leadingTriviaLength = 0
@@ -226,20 +224,20 @@ let [<Fact(DisplayName = "---@a")>] simpleDocComment() =
                                                         leadingDocument = None
                                                         trailingDocument = None
                                                     }
-                                                },
+                                                }, HEmpty),
                                                 Comment {
                                                     kind = ""
                                                     trivia = { start = 5; end' = 5 }
                                                 }
                                             )
-                                        trivia = { start = 5; end' = 5 }
+                                        trivia = { start = 4; end' = 5 }
                                     }
                                 )
-                            trivia = { start = 3; end' = 4 }
+                            trivia = { start = 3; end' = 5 }
                         }
                     ]
                 )
-            trivia = { start = 3; end' = 4 }
+            trivia = { start = 3; end' = 5 }
         }
     ]
 
@@ -583,7 +581,7 @@ let [<Fact(DisplayName = "---@type { f: a, }")>] singleInterfaceType() =
         Fields(
             reserved,
             SepBy(Field(FieldKey.String "f" |> withEmptySpan, reserved, type0 "a") |> withEmptySpan, []),
-            Some(Comma |> withEmptyTrivia),
+            Some(Comma |> withEmpty),
             reserved
         )
         |> withEmptySpan
@@ -605,7 +603,7 @@ let [<Fact(DisplayName = "---@type { f: a; }")>] lastFieldSemicolon() =
         Fields(
             reserved,
             SepBy(Field(FieldKey.String "f" |> withEmptySpan, reserved, type0 "a") |> withEmptySpan, []),
-            Some(Semicolon |> withEmptyTrivia),
+            Some(Semicolon |> withEmpty),
             reserved
         )
         |> withEmptySpan

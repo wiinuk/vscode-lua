@@ -15,7 +15,7 @@ type TypedSyntaxVisitor<'This> = {
     var: struct ('This * Var * TypeEnvironment) -> unit
     reserved: struct ('This * ReservedVar * TypeEnvironment) -> unit
     literal: struct ('This * S.Literal * Type * TypeEnvironment * LeafInfo voption) -> unit
-    typeTag: struct ('This * D.TypeSign * Type * TypeEnvironment) -> unit
+    typeTag: struct ('This * HEmpty D.TypeSign * Type * TypeEnvironment) -> unit
 }
 
 module private rec IterageRange =

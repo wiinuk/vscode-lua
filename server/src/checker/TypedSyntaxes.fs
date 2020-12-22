@@ -51,7 +51,7 @@ type Exp' =
     /// `( exp )`
     | Wrap of Exp
     /// `--[[ typeSign ]]( exp )`
-    | TypeReinterpret of typeSign: D.TypeSign * Exp * toType: Type
+    | TypeReinterpret of typeSign: HEmpty D.TypeSign * Exp * toType: Type
 
     // FunctionCall
     | Call of Exp * Exp list

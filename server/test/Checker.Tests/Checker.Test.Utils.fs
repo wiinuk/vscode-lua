@@ -275,18 +275,26 @@ type Arbs =
             | FieldKey.Bool x -> Choice3Of3 x
             )
 
-    static member TypeSign'() =
+    static member TypeSign'<'A>() =
         let generator =
+            let annotation = Arb.generate<'A>
+
             /// empty
             let trivia = Gen.fresh Trivia.createEmpty
             /// empty
+            let span = Gen.constant Span.empty
+            /// empty
             let reserved = gen {
-                let! trivia = trivia
-                return { trivia = trivia; kind = HEmpty }
+                let! annotation = annotation
+                return D.Annotated({ trivia = Span.empty; kind = HEmpty }, annotation)
             }
-            let span = Arb.generate<Span>
             let fieldKey = Arb.generate<FieldKey Source>
-            let name = Arb.generate<D.Name>
+            let name = Arb.generate<HEmpty Syntax.Name>
+            let identifier = gen {
+                let! name = name
+                let! annotation = annotation
+                return D.Annotated(name, annotation)
+            }
             let fieldSepKind = Arb.generate<FieldSepKind>
             let positiveInt = Arb.generate<PositiveInt>
 
@@ -298,8 +306,9 @@ type Arbs =
             let withSpan kind = withSpan' (Gen.constant kind)
             let fieldSep = gen {
                 let! sep = fieldSepKind
-                let! trivia = trivia
-                return { kind = sep; trivia = trivia }
+                let! trivia = span
+                let! annotation = annotation
+                return D.Annotated({ kind = sep; trivia = trivia }, annotation)
             }
             let wrap t = gen {
                 let! l = reserved
@@ -349,8 +358,8 @@ type Arbs =
                 return SepBy(x0, sepXs)
                 }
             and leafType = gen {
-                let! name = name
-                return D.NamedType(name, None)
+                let! n = identifier
+                return D.NamedType(n, None)
                 }
             and genericArguments size = gen {
                 match size with
@@ -366,9 +375,9 @@ type Arbs =
                 return Some(D.GenericArguments(lt, ps, comma, gt))
                 }
             and namedType size = gen {
-                let! name = name
+                let! n = identifier
                 let! genericArguments = genericArguments (max 0 (size - 1))
-                return D.NamedType(name, genericArguments)
+                return D.NamedType(n, genericArguments)
                 }
             and field size = withSpan' <| gen {
                 let! k = fieldKey
@@ -407,13 +416,13 @@ type Arbs =
                     return D.Parameter(None, t)
                 }
                 withSpan' <| gen {
-                    let! n = Gen.zip name reserved
+                    let! n = Gen.zip identifier reserved
                     let! t = typeSignOrWrap D.Precedence.ConstrainedType (max 0 (size - 1))
                     return D.Parameter(Some n, t)
                     }
                 ]
             and variadicTypeSign size = gen {
-                let! n = Gen.optionOf name
+                let! n = Gen.optionOf identifier
                 let! dot3 = reserved
                 let! c = Gen.optionOf <| typeSignOrWrap D.Precedence.PrimitiveType (max 0 (size - 1))
                 let! v = withSpan <| D.VariadicTypeSign(n, dot3, c)
@@ -501,7 +510,7 @@ type Arbs =
             |> SepBy.toList
             |> Seq.forall (fun x -> validTypeSign D.Precedence.ConstrainedType x.kind)
 
-        let shrink = Arb.Default.Derive<D.TypeSign'>().Shrinker
+        let shrink = Arb.Default.Derive<'A D.TypeSign'>().Shrinker
         let shrink x = seq {
             for x in shrink x do
                 if validTypeSign D.Precedence.Type x then

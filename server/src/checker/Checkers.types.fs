@@ -35,7 +35,7 @@ type DiagnosticKind =
     | UnrecognizedFeatureName of featureName: string
     | UnexpectedMultiType
     | RequireMultiType
-    | DuplicateTag of otherTag: Syntax.Documents.Tag
+    | DuplicateTag of otherTag: HEmpty Syntax.Documents.Tag
     | FieldParentTagNotFound
     | GenericTagParentSyntaxNotFound
     | TypeTagParentSyntaxNotFound
@@ -472,7 +472,7 @@ module Type =
         | None -> getImplicitMultiVarType &env span
 
         // 名前付きの複型変数 `M...`
-        | Some(Name({ kind = name; trivia = { span = nameSpan } })) ->
+        | Some(D.Annotated(Name { kind = name; trivia = { span = nameSpan } }, _)) ->
 
         match CheckerEnv.resolveType nameSpan name env.env with
         | ValueSome d ->
@@ -614,13 +614,13 @@ module Type =
         let t' = typeSignOrMultiType &env t
         CheckerEnv.reportIfNotValueKind env.env t.trivia t'
 
-    and functionParameters (env: _ byref) (l, ps, r) =
+    and functionParameters (env: _ byref) (D.Annotated(l, _), ps, D.Annotated(r, _)) =
         let ts, v =
             match ps with
             | None -> [], None
             | Some(D.Parameters ps) -> splitLastVarOrReport &env (SepBy.toList ps)
 
-        parameters &env (Span.merge l.trivia.span r.trivia.span) (ts, v)
+        parameters &env (Span.merge l.trivia r.trivia) (ts, v)
 
     and typeSignOrMultiType (env: _ byref) t =
         match t.kind with
@@ -657,7 +657,7 @@ module Type =
             let t' = typeSignOrMultiType &env t
             collectTypeArgs' &env [struct(t', t.trivia)] ts
 
-    and namedType (env: _ byref) (Name n as name, ts) =
+    and namedType (env: _ byref) (D.Annotated(Name n as name, _), ts) =
         let nameSpan = n.trivia.span
         match CheckerEnv.resolveType nameSpan n.kind env.env, n.kind, env.env.rare.selfType with
         | ValueSome d, _, _
@@ -748,7 +748,7 @@ module Type =
             let c' = typeSign &env c |> MultiElementTypeConstraint |> Constraints.makeWithLocation l
             let n =
                 match n with
-                | Some(Name n) -> n.kind
+                | Some(D.Annotated(Name n, _)) -> n.kind
                 | _ -> CheckerEnv.TypeNames.implicitMultiVar
 
             let m' = CheckerEnv.newMultiVarTypeWith env.env n c' |> Type.makeWithLocation l
@@ -806,7 +806,7 @@ module DocumentCheckers =
         tags
         |> List.fold (fun nearestKind ({ kind = D.Tag(_, tail) } as tag) ->
             match tail.kind with
-            | D.FeatureTag(_, Name({ kind = Parse k as featureName } as name)) ->
+            | D.FeatureTag(_, D.Annotated(Name({ kind = Parse k as featureName } as name), _)) ->
                 match nearestKind, k with
                 | ValueNone, ValueSome k -> ValueSome struct(tag, k)
                 | _, ValueNone ->
@@ -865,12 +865,12 @@ module DocumentCheckers =
     let unifyDecls env name typeSign newType oldDecls = NonEmptyList.forall (unifyDeclAndReport env name typeSign newType) oldDecls
 
     type TypeParameterBinding = {
-        nameTokens: D.Name NonEmptyList
+        nameTokens: HEmpty Syntax.Name NonEmptyList
         varType: Type
-        constraints: Choice<D.Token * D.TypeConstraints, D.TypeSign> list
+        constraints: Choice<HEmpty D.Reserved * HEmpty D.TypeConstraints, HEmpty D.TypeSign> list
     }
     let consOption c cs = match c with None -> cs | Some c -> c::cs
-    let collectTypeParameterBindsCore env kind nameToBind (Name { kind = name; trivia = nameTrivia } as nameToken, c) =
+    let collectTypeParameterBindsCore env kind nameToBind (D.Annotated(Name { kind = name; trivia = nameTrivia } as nameToken, _), c) =
         let bind =
             match Map.tryFind name nameToBind with
             | ValueNone ->
@@ -1003,7 +1003,7 @@ module DocumentCheckers =
             let t = Scheme.generalize env.rare.typeLevel t
             ValueSome struct(typeSign, t)
 
-    let globalTag env modifierTags (Name({ kind = n; trivia = { span = nameSpan } }) as name, typeSign) =
+    let globalTag env modifierTags (D.Annotated(Name({ kind = n; trivia = { span = nameSpan } }) as name, _), typeSign) =
         let features = declFeatureOfModifierTags env modifierTags
         let env' = enterTypeScope env
         let env' = enterTemporaryTypeVarNameScope env'
@@ -1047,7 +1047,7 @@ module DocumentCheckers =
         tempEnv: 'tempEnv
         isStringMetaTableIndex: bool
     }
-    let classTag env modifierTags (Name { kind = n; trivia = nameTrivia } as name, parent) =
+    let classTag env modifierTags (D.Annotated(Name { kind = n; trivia = nameTrivia } as name, _), parent) =
         let isStringMetaTableIndex =
             parseFeatureOfTags (function "stringMetaTableIndex" -> ValueSome true | _ -> ValueNone) env modifierTags
             |> ValueOption.defaultValue false
@@ -1072,7 +1072,7 @@ module DocumentCheckers =
         | Some(_, p) ->
             let parentName =
                 match p.kind with
-                | D.NamedType(Name { kind = k }, _) -> k
+                | D.NamedType(D.Annotated(Name { kind = k }, _), _) -> k
                 | _ -> TypeNames.classParent
 
             let p' = Type.ofTypeSign env p
@@ -1219,7 +1219,7 @@ module DocumentCheckers =
             match tail.kind with
 
             // 親構文への注釈
-            | D.FeatureTag(_, (Name { kind = featureName } as name)) ->
+            | D.FeatureTag(_, (D.Annotated(Name { kind = featureName } as name, _))) ->
                 reportInfo env (Name.measure name) <| DiagnosticKind.UnrecognizedFeatureName featureName
 
             | D.GenericTag _ ->

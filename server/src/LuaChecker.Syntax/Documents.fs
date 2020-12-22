@@ -15,68 +15,72 @@ module Documents =
     open LuaChecker.Syntax
 
 
-    type ParseResult = (struct(Document list * ParseError list))
+    type ParseResult<'A> = (struct('A Document list * ParseError list))
 
-    type Trivia = Trivia<HEmpty>
-    type Token<'T> = Token<'T, Trivia>
-    type Token = Token<HEmpty, Trivia>
-    type Name = HEmpty Name
+    type Token<'T> = Token<'T, HEmpty Trivia>
+    type Token = HEmpty Source
+
+    [<Struct>]
+    type Annotated<'T,'A> = Annotated of target: 'T * annotation: 'A
+    type Reserved<'A> = Annotated<Token,'A>
+    type Identifier<'A> = Annotated<HEmpty Name,'A>
+    type FieldSeparator<'A> = Annotated<FieldSepKind Source,'A>
 
     [<Struct>]
     type Comment = Comment of Source<string>
 
-    type Parameter = Parameter' Source
+    type Parameter<'A> = 'A Parameter' Source
     /// (name ":")? typeSign
-    type Parameter' = Parameter of nameAndColon: (Name * Token) option * TypeSign
+    type Parameter'<'A> = Parameter of nameAndColon: ('A Identifier * 'A Reserved) option * 'A TypeSign
 
-    type VariadicTypeSign = VariadicTypeSign' Source
+    type VariadicTypeSign<'A> = 'A VariadicTypeSign' Source
     /// name? "..." constrainedType?
-    type VariadicTypeSign' = VariadicTypeSign of typeParameterName: Name option * dot3: Token * allElementTypeConstraint: TypeSign option
+    type VariadicTypeSign'<'A> = VariadicTypeSign of typeParameterName: 'A Identifier option * dot3: 'A Reserved * allElementTypeConstraint: 'A TypeSign option
 
-    type Field = Field' Source
-    type Field' = Field of FieldKey Source * colon: Token * TypeSign
+    type Field<'A> = 'A Field' Source
+    type Field'<'A> = Field of FieldKey Source * colon: 'A Reserved * 'A TypeSign
 
-    type Fields = Fields' Source
+    type Fields<'A> = 'A Fields' Source
     /// "{" field (fieldSep field)* fieldSep? "}"
-    type Fields' = Fields of lcBracket: Token * fields: SepBy<Token<FieldSepKind>, Field> * lastFieldSep: Token<FieldSepKind> option * rcBracket: Token
-    type TypeConstraints = Fields
+    type Fields'<'A> = Fields of lcBracket: 'A Reserved * fields: SepBy<'A FieldSeparator, 'A Field> * lastFieldSep: 'A FieldSeparator option * rcBracket: 'A Reserved
+    type TypeConstraints<'A> = 'A Fields
 
     /// parameter ("," parameter)*
-    type Parameters = Parameters of SepBy<Token, Parameter>
+    type Parameters<'A> = Parameters of SepBy<'A Reserved, 'A Parameter>
 
     /// "<" typeSign ("," typeSign)* ","? ">"
-    type GenericArguments = GenericArguments of lt: Token * SepBy<Token, TypeSign> * lastComma: Token option * gt: Token
+    type GenericArguments<'A> = GenericArguments of lt: 'A Reserved * SepBy<'A Reserved, 'A TypeSign> * lastComma: 'A Reserved option * gt: 'A Reserved
 
-    type TypeSign = TypeSign' Source
-    type TypeSign' =
+    type TypeSign<'A> = 'A TypeSign' Source
+    type TypeSign'<'A> =
         /// "(" ")"
-        | EmptyType of lBracket: Token * rBracket: Token
+        | EmptyType of lBracket: 'A Reserved * rBracket: 'A Reserved
 
         ///<summary>`function` `table&lt;number, string&gt;`</summary>
-        | NamedType of name: Name * GenericArguments option
+        | NamedType of name: 'A Identifier * 'A GenericArguments option
 
         /// "(" parameter "," ")"
-        | SingleMultiType of lBracket: Token * Parameter * comma: Token * rBracket: Token
+        | SingleMultiType of lBracket: 'A Reserved * 'A Parameter * comma: 'A Reserved * rBracket: 'A Reserved
 
         /// "(" typeSign ")"
-        | WrappedType of lBracket: Token * TypeSign * rBracket: Token
+        | WrappedType of lBracket: 'A Reserved * 'A TypeSign * rBracket: 'A Reserved
 
         /// `{ name: string, age: number }`
-        | InterfaceType of Fields
+        | InterfaceType of 'A Fields
 
-        | VariadicType of VariadicTypeSign
+        | VariadicType of 'A VariadicTypeSign
 
         /// typeSign "[" "]"
-        | ArrayType of TypeSign * lsBracket: Token * rsBracket: Token
+        | ArrayType of 'A TypeSign * lsBracket: 'A Reserved * rsBracket: 'A Reserved
 
         /// T: { x: number }
-        | ConstrainedType of TypeSign * colon: Token * TypeConstraints
+        | ConstrainedType of 'A TypeSign * colon: 'A Reserved * 'A TypeConstraints
 
         /// `fun()` `fun(x: string, number): ()` `fun(...): ()`
-        | FunctionType of funNameToken: Token * lBracket: Token * Parameters option * rBracket: Token * colon: Token * TypeSign
+        | FunctionType of funNameToken: 'A Reserved * lBracket: 'A Reserved * 'A Parameters option * rBracket: 'A Reserved * colon: 'A Reserved * 'A TypeSign
 
         /// parameter "," parameters
-        | MultiType2 of Parameter * comma: Token * Parameters
+        | MultiType2 of 'A Parameter * comma: 'A Reserved * 'A Parameters
 
     [<RequireQualifiedAccess>]
     type Visibility =
@@ -84,41 +88,41 @@ module Documents =
         | Protected
         | Private
 
-    type TypeParameter = TypeParameter' Source
-    type TypeParameter' =
+    type TypeParameter<'A> = 'A TypeParameter' Source
+    type TypeParameter'<'A> =
         /// name (":" constraints)?
-        | TypeParameter of Name * colonAndConstraints: (Token * TypeConstraints) option
+        | TypeParameter of 'A Identifier * colonAndConstraints: ('A Reserved * 'A TypeConstraints) option
         /// name "..." constrainedType?
-        | VariadicTypeParameter of Name * dot3: Token * TypeSign option
+        | VariadicTypeParameter of 'A Identifier * dot3: 'A Reserved * 'A TypeSign option
 
-    type TagTail = TagTail' Source
-    type TagTail' =
+    type TagTail<'A> = 'A TagTail' Source
+    type TagTail'<'A> =
 
         /// (?<= "@" name) comment
-        | UnknownTag of tagName: Name * Comment
+        | UnknownTag of tagName: 'A Identifier * Comment
 
         /// (?<= "@" "type") type
-        | TypeTag of tagName: Token * TypeSign
+        | TypeTag of tagName: 'A Reserved * 'A TypeSign
 
         /// (?<= "@" "global") name type
-        | GlobalTag of tagName: Token * Name * TypeSign
+        | GlobalTag of tagName: 'A Reserved * 'A Identifier * 'A TypeSign
 
         /// (?<= "@" "_Feature") name
-        | FeatureTag of tagName: Token * Name
+        | FeatureTag of tagName: 'A Reserved * 'A Identifier
 
         /// (?<= "@" "class") name (":" type)
-        | ClassTag of tagName: Token * Name * colonAndType: (Token * TypeSign) option
+        | ClassTag of tagName: 'A Reserved * 'A Identifier * colonAndType: ('A Reserved * 'A TypeSign) option
 
         /// (?<= "@" "field") ("public" | "protected" | "private")? fieldKey type
-        | FieldTag of tagName: Token * Visibility Source option * FieldKey Source * TypeSign
+        | FieldTag of tagName: 'A Reserved * Visibility Source option * FieldKey Source * 'A TypeSign
 
         /// (?<= "@" "generic") typeParameter ("," typeParameter)*
-        | GenericTag of tagName: Token * SepBy<Token, TypeParameter>
+        | GenericTag of tagName: 'A Reserved * SepBy<'A Reserved, 'A TypeParameter>
 
-    type Tag = Tag' Source
+    type Tag<'A> = 'A Tag' Source
     /// "@" name tagElement
-    type Tag' = Tag of at: Token * TagTail
+    type Tag'<'A> = Tag of at: 'A Reserved * 'A TagTail
 
-    type Document = Document' Source
+    type Document<'A> = 'A Document' Source
     /// comment tag*
-    type Document' = Document of summary: Comment * Tag list
+    type Document'<'A> = Document of summary: Comment * 'A Tag list

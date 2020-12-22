@@ -69,8 +69,8 @@ let longCommentStart eqCount = seq { "--["; for _ in 1..eqCount do "=" done; "["
 /// ]]
 let longCommentEnd eqCount = seq { "]"; for _ in 1..eqCount do "=" done; "]" }
 
-let name (Name { kind = n }) = n
-let fieldSep { kind = sep } =
+let name (Annotated(Name { kind = n }, _)) = n
+let fieldSep (Annotated({ kind = sep }, _)) =
     match sep with
     | Comma -> ", "
     | Semicolon -> "; "
@@ -293,7 +293,7 @@ let typeParameter options x = seq {
 }
 let tagTail options a = seq {
     match a.kind with
-    | UnknownTag(Name { kind = n }, c) -> n; " "; yield! comment true options c
+    | UnknownTag(n, c) -> name n; " "; yield! comment true options c
     | TypeTag(_, t) -> "type "; yield! typeSign Precedence.Type options t.kind
     | GlobalTag(_, n, t) -> "global "; name n; " "; yield! typeSign Precedence.Type options t.kind
     | FeatureTag(_, n) -> "_Feature "; name n;
