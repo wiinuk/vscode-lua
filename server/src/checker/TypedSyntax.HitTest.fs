@@ -18,7 +18,7 @@ type TypedSyntaxVisitor<'This> = {
     typeTag: struct ('This * HEmpty D.TypeSign * Type * TypeEnvironment) -> unit
 }
 
-module private rec IterageRange =
+module private rec IterateRange =
     type Name = S.Name
 
     type HitEnvNoUpdate<'This> = {
@@ -241,7 +241,7 @@ module private rec IterageRange =
     let chunk env x = block env x
 
 module Block =
-    open IterageRange
+    open IterateRange
 
     let iterateRange visitor visitorThis range source =
         let env = {
