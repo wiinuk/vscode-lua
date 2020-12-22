@@ -18,8 +18,48 @@ type Token<'T,'Trivia> = {
     trivia: 'Trivia
 }
 
+[<Struct; RequireQualifiedAccess>]
+type SepByEnumerator<'S,'T> = private {
+    mutable state: byte
+    mutable current: 'T
+    mutable list: ('S * 'T) list
+}
+with
+    member e.Current = e.current
+    member e.MoveNext() =
+        match e.state with
+        | 0uy -> e.state <- 1uy; true
+        | 1uy ->
+            match e.list with
+            | (_, x)::xs ->
+                e.current <- x
+                e.list <- xs
+                true
+            | _ ->
+                e.state <- 2uy
+                false
+        | _ ->
+            false
+
+    interface IEnumerator<'T> with
+        member e.Current = e.Current
+        member e.Current = e.Current :> obj
+        member e.MoveNext() = e.MoveNext()
+        member _.Reset() = raise <| NotImplementedException()
+        member _.Dispose() = ()
+
 [<Struct>]
-type SepBy<'S,'T> = | SepBy of 'T * ('S * 'T) list
+type SepBy<'S,'T> = | SepBy of 'T * ('S * 'T) list with
+    member x.GetEnumerator() =
+        let (SepBy(x, xs)) = x
+        {
+            SepByEnumerator.state = 0uy
+            SepByEnumerator.current = x
+            SepByEnumerator.list = xs
+        }
+    interface IEnumerable<'T> with
+        member x.GetEnumerator() = x.GetEnumerator() :> _ IEnumerator
+        member x.GetEnumerator() = x.GetEnumerator() :> Collections.IEnumerator
 
 module SepBy =
     let toNonEmptyList = function
@@ -45,6 +85,7 @@ module SepBy =
         aux x [] xs
 
     let toList (SepBy(x, sepXs)) = x::List.map snd sepXs
+    let toSeq (SepBy _ as xs) = xs :> _ seq
     let inline fold folder state (SepBy(x, sepXs)) =
         let s = folder state x
         match sepXs with

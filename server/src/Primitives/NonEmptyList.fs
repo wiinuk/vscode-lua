@@ -1,8 +1,49 @@
 namespace LuaChecker.Primitives
+open System
+open System.Collections.Generic
 
+
+[<Struct; NoEquality; NoComparison; RequireQualifiedAccess>]
+type NonEmptyListEnumerator<'T> = private {
+    mutable state: byte
+    mutable current: 'T
+    mutable list: 'T list
+}
+with
+    member e.Current = e.current
+    member e.MoveNext() =
+        match e.state with
+        | 0uy -> e.state <- 1uy; true
+        | 1uy ->
+            match e.list with
+            | x::xs ->
+                e.current <- x
+                e.list <- xs
+                true
+            | _ ->
+                e.state <- 2uy
+                false
+        | _ -> false
+
+    interface IEnumerator<'T> with
+        member e.Current = e.Current
+        member e.Current = e.Current :> obj
+        member e.MoveNext() = e.MoveNext()
+        member _.Reset() = raise <| NotImplementedException()
+        member _.Dispose() = ()
 
 [<Struct>]
-type NonEmptyList<'T> = NonEmptyList of 'T * 'T list
+type NonEmptyList<'T> = NonEmptyList of 'T * 'T list with
+    member x.GetEnumerator() =
+        let (NonEmptyList(x, xs)) = x
+        {
+            NonEmptyListEnumerator.state = 0uy
+            NonEmptyListEnumerator.current = x
+            NonEmptyListEnumerator.list = xs
+        }
+    interface IEnumerable<'T> with
+        member x.GetEnumerator() = x.GetEnumerator() :> _ IEnumerator
+        member x.GetEnumerator() = x.GetEnumerator() :> Collections.IEnumerator
 
 module NonEmptyList =
     let head (NonEmptyList(x, _)) = x
@@ -13,6 +54,7 @@ module NonEmptyList =
         | _ -> NonEmptyList(x, List.map f xs)
 
     let toList (NonEmptyList(x, xs)) = x::xs
+    let toSeq (NonEmptyList _ as xs) = xs :> _ seq
     let singleton x = NonEmptyList(x, [])
     let tryOfList = function [] -> ValueNone | x::xs -> ValueSome(NonEmptyList(x, xs))
     let cons head (NonEmptyList(x, xs)) = NonEmptyList(head, x::xs)
