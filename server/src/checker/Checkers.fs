@@ -379,24 +379,20 @@ module private Helpers =
         | _ -> ()
 
     let missingChunk (Types types as env) syntaxSpan functionTypeLocations = {
-        kind = {
-            T.semanticTree = {
-                kind = { T.stats = []; T.lastStat = None }
-                trivia = syntaxSpan, emptyNeighbourTags
-            }
-            T.functionType =
-                types.fn(
-                    newMultiVarType env TypeNames.lostByError |@ functionTypeLocations,
-                    newMultiVarType env TypeNames.lostByError |@ functionTypeLocations
-                ) |@ functionTypeLocations
-                |> Scheme.generalize env.rare.typeLevel
-
-            T.ancestorModulePaths = Set.empty
-            T.additionalGlobalEnv = Env.empty
+        T.semanticTree = {
+            kind = { T.stats = []; T.lastStat = None }
+            trivia = syntaxSpan, emptyNeighbourTags
         }
-        trivia = syntaxSpan
-    }
+        T.functionType =
+            types.fn(
+                newMultiVarType env TypeNames.lostByError |@ functionTypeLocations,
+                newMultiVarType env TypeNames.lostByError |@ functionTypeLocations
+            ) |@ functionTypeLocations
+            |> Scheme.generalize env.rare.typeLevel
 
+        T.ancestorModulePaths = Set.empty
+        T.additionalGlobalEnv = Env.empty
+    }
     let analyzeModuleFile env span modulePath moduleFile =
         match moduleFile.stage with
 
@@ -697,7 +693,13 @@ let wrap env (l, x, _) =
     let struct(x', t) = exp env x
     match DocumentCheckers.findTypeTag env (leadingDocumentSpan l.trivia) (leadingDocuments env l.trivia) with
     | ValueNone -> x', t
-    | ValueSome(tags, t') -> withSpan x.trivia <| T.TypeReinterpret(tags, x'), t'
+    | ValueSome(tags, t') ->
+
+        // 式の手前のタグを含むように span を拡張する
+        let span = Span.merge tags.trivia x.trivia
+
+        T.TypeReinterpret(tags, x') |> withSpan span,
+        t'
 
 let isExplicitStaticKey = function
     | Init _
@@ -1014,7 +1016,7 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
     | Ok(modulePath, moduleFile) ->
 
     // モジュールを解析してエラー報告
-    let { kind = chunk } = analyzeModuleFile env nameSpan modulePath moduleFile
+    let chunk = analyzeModuleFile env nameSpan modulePath moduleFile
 
     // モジュールのパスとモジュールの先祖のパスを自分の先祖に追加
     appendAncestorModulePaths env <| Set.add modulePath chunk.ancestorModulePaths
@@ -1106,6 +1108,10 @@ let stat env state x =
         | LocalFunction(_, functionKeyword, var, body) -> localFunction env state (functionKeyword, var, body)
 
     let trailingTags = checkTrailingGlobalTags env Syntax.stat x
+
+    // 文を囲むタグを含むように span を拡張する
+    let span = Span.merge leadingTags.trivia span
+    let span = Span.merge span trailingTags.trivia
 
     let tags = combineTags leadingTags trailingTags
     let s = s |> withSpan struct(span, tags)
@@ -1390,7 +1396,13 @@ let lastStat env state lastStatAndSemicolon =
             stat, { state with isImplicitReturn = false }
 
     let trailingTags = checkTrailingGlobalTags env Syntax.lastStat lastStatAndSemicolon
-    let x' = x' |> withSpan struct(x.trivia, combineTags leadingTags trailingTags)
+
+    // 文を囲むタグを含むように span を拡張する
+    let span = x.trivia
+    let span = Span.merge leadingTags.trivia span
+    let span = Span.merge span trailingTags.trivia
+
+    let x' = x' |> withSpan struct(span, combineTags leadingTags trailingTags)
     struct(x', state)
 
 let block env state { kind = x; trivia = s } =
@@ -1410,7 +1422,10 @@ let block env state { kind = x; trivia = s } =
             let struct(s, state) = lastStat env state (s, q)
             Some s, state
 
-    let block = withSpan struct(s.span, combineTags leadingTags emptyTags) {
+    // ブロックの手前のタグを含むように span を拡張する
+    let span = Span.merge leadingTags.trivia s.span
+
+    let block = withSpan struct(span, combineTags leadingTags emptyTags) {
         T.stats = stats
         T.lastStat = lastStat
     }
@@ -1473,7 +1488,7 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
         T.ancestorModulePaths = Local.get ancestorModulePaths
         T.additionalGlobalEnv = Local.get additionalGlobalEnv
     }
-    withSpan x.trivia.span kind, diagnostics :> _ seq, Local.get project
+    kind, diagnostics :> _ seq, Local.get project
 
 let chunk' env visitedSources project filePath source x = Local.runNotStruct { new ILocalScope<_> with
     member _.Invoke scope = chunkWithScope scope visitedSources project env filePath source x

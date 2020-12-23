@@ -46,7 +46,7 @@ let publishDiagnostics agent projectAgent path version document diagnostics =
     |> sendNotification agent
         M.``textDocument/publishDiagnostics``
 
-let hoverHitTestAndResponse requestId projectAgent document { Token.kind = { TypedSyntaxes.semanticTree = tree } } position =
+let hoverHitTestAndResponse requestId projectAgent document { TypedSyntaxes.semanticTree = tree } position =
     let index = Document.positionToIndex position document
     let context = {
         root = projectAgent.root
@@ -80,13 +80,15 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
     let range =
         match rangeOrFull with
         | ValueSome range -> Marshalling.rangeToSpan lineMap range
-        | _ -> tree.trivia
+        | _ ->
+            let struct(span, _) = tree.semanticTree.trivia
+            span
 
     let initialGlobal = project.projectRare.initialGlobal
     let typeEnv = {
         system = initialGlobal.typeSystem
         stringTableTypes =
-            tree.kind.additionalGlobalEnv.stringMetaTableIndexType @
+            tree.additionalGlobalEnv.stringMetaTableIndexType @
             initialGlobal.initialGlobalEnv.stringMetaTableIndexType
     }
     let mutable this = {
@@ -96,7 +98,7 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
         lastLine = 0
         lastStartChar = 0
     }
-    Block.iterateRange &this range tree.kind.semanticTree |> ignore
+    Block.iterateRange &this range tree.semanticTree |> ignore
     WriteAgent.sendResponse writeAgent id <| Ok {
         resultId = Undefined
         data = buffer.ToArray()

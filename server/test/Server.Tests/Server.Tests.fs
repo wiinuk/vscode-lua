@@ -301,24 +301,11 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     }
     [<Fact>]
     member _.semanticTokenFull() = async {
-        let! r = serverActions id [
-            "local x = 10" &> ("file:///main.lua", 1)
-            waitUntilHasDiagnosticsOf "file:///main.lua"
-            Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
-            waitUntilExists 5.<_> <| function
-                | SemanticTokensFullResponse _ -> true
-                | _ -> false
-        ]
-        r =? [
-            publishDiagnostics "file:///main.lua" 1 []
-            SemanticTokensFullResponse <| ValueSome {
-                resultId = Undefined
-                data = [|
-                    0; 6; 1; int T.number; int M.Empty;
-                    0; 4; 2; int T.number; int M.Empty;
-                |]
-            }
-        ]
+        let! r = semanticTokenFullResponseData "local x = 10"
+        r =? [|
+            0; 6; 1; int T.number; int M.Empty;
+            0; 4; 2; int T.number; int M.Empty;
+        |]
     }
     [<Fact>]
     member _.semanticTokenRange() = async {
@@ -349,48 +336,32 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     }
     [<Fact>]
     member _.semanticTokenFunctionAndInterface() = async {
-        let! r = serverActions id [
-            "local function localFunction(table) return table.field end" &> ("file:///main.lua", 1)
-            waitUntilHasDiagnosticsOf "file:///main.lua"
-            Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
-            waitUntilExists 5.<_> <| function
-                | SemanticTokensFullResponse _ -> true
-                | _ -> false
-        ]
-        r =? [
-            publishDiagnostics "file:///main.lua" 1 []
-            SemanticTokensFullResponse <| ValueSome {
-                resultId = Undefined
-                data = [|
-                    0; 15; 13; int T.``function``; int M.Empty;
-                    0; 14; 5; int T.parameter; int M.definition;
-                    0; 14; 5; int T.parameter; int M.Empty;
-                    0; 6; 5; int T.property; int M.Empty;
-                |]
-            }
-        ]
+        let! r = semanticTokenFullResponseData "local function localFunction(table) return table.field end"
+        r =? [|
+            0; 15; 13; int T.``function``; int M.Empty;
+            0; 14; 5; int T.parameter; int M.definition;
+            0; 14; 5; int T.parameter; int M.Empty;
+            0; 6; 5; int T.property; int M.Empty;
+        |]
     }
     [<Fact>]
     member _.semanticTokenTypeTag() = async {
-        let! r = serverActions id [
-            "local x = --[[---@type string]](10)" &> ("file:///main.lua", 1)
-            waitUntilHasDiagnosticsOf "file:///main.lua"
-            Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
-            waitUntilExists 5.<_> <| function
-                | SemanticTokensFullResponse _ -> true
-                | _ -> false
-        ]
-        r =? [
-            publishDiagnostics "file:///main.lua" 1 []
-            SemanticTokensFullResponse <| ValueSome {
-                resultId = Undefined
-                data = [|
-                    0; 6; 1; int T.string; int M.readonly;
-                    0; 11; 1; int T.keyword; int M.Empty;
-                    0; 1; 4; int T.keyword; int M.Empty;
-                    0; 5; 6; int T.``type``; int M.Empty;
-                    0; 9; 2; int T.number; int M.Empty;
-                |]
-            }
-        ]
+        let! r = semanticTokenFullResponseData "local x = --[[---@type string]](10)"
+        r =? [|
+            0; 6; 1; int T.string; int M.Empty;
+            0; 11; 1; int T.keyword; int M.Empty;
+            0; 1; 4; int T.keyword; int M.Empty;
+            0; 5; 6; int T.``type``; int M.Empty;
+            0; 9; 2; int T.number; int M.Empty;
+        |]
+    }
+    [<Fact>]
+    member _.semanticTokenGlobalTag() = async {
+        let! r = semanticTokenFullResponseData "---@global myNumber number"
+        r =? [|
+            0; 3; 1; int T.keyword; int M.Empty;
+            0; 1; 6; int T.keyword; int M.Empty;
+            0; 7; 8; int T.number; int M.Empty;
+            0; 9; 6; int T.``type``; int M.Empty;
+        |]
     }

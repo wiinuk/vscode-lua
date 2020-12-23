@@ -571,6 +571,13 @@ let writeReservedTokenSemantics (this: _ byref) (ReservedVar(trivia = { span = s
         | _ -> T.operator, M.``static``
     writeTokenSemantics &this tokenType tokenModifiers
 
+let leafFlagModifiersSemantics leafFlags =
+    let m = M.Empty
+    let m = if leafFlags &&& L.Definition = L.Definition then m ||| M.definition else m
+    let m = if leafFlags &&& L.Definition = L.Declaration then m ||| M.declaration else m
+    let m = if leafFlags &&& L.Definition = L.Modification then m ||| M.modification else m
+    m
+
 let leafFlagSemantics defaultType leafFlags =
     let t =
         match L._TypeMask &&& leafFlags with
@@ -583,11 +590,7 @@ let leafFlagSemantics defaultType leafFlags =
         | L.Variable -> T.variable
         | _ -> defaultType
 
-    let m = M.Empty
-    let m = if leafFlags &&& L.Definition = L.Definition then m ||| M.definition else m
-    let m = if leafFlags &&& L.Definition = L.Declaration then m ||| M.declaration else m
-    let m = if leafFlags &&& L.Definition = L.Modification then m ||| M.modification else m
-
+    let m = leafFlagModifiersSemantics leafFlags
     struct(t, m)
 
 let writeDocumentReservedSemantics (this: _ byref) (D.Annotated(x, leaf)) =
@@ -617,15 +620,15 @@ let namedTypeSemantics (this: _ byref) typeConstant = function
 
     // `boolean` `nil`
     if typeConstant = types.booleanConstant || typeConstant = types.nilConstant then
-        ValueSome(T.``struct``, M.readonly)
+        ValueSome(T.``struct``, M.Empty)
 
     // `number`
     elif typeConstant = types.numberConstant then
-        ValueSome(T.number, M.readonly)
+        ValueSome(T.number, M.Empty)
 
     // `string`
     elif typeConstant = types.stringConstant then
-        ValueSome(T.string, M.readonly)
+        ValueSome(T.string, M.Empty)
 
     // `table<…,…>`
     elif typeConstant = types.tableConstant then
@@ -738,7 +741,7 @@ let leafTypeSemantics (this: _ byref) leaf =
 let writeLeafSemantics (this: _ byref) defaultType leaf =
     let struct(tokenType, tokenModifiers) =
         match leafTypeSemantics &this leaf with
-        | ValueSome r -> r
+        | ValueSome(r, m) -> r, m ||| leafFlagModifiersSemantics leaf.leafFlags
         | _ -> leafFlagSemantics defaultType leaf.leafFlags
 
     writeTokenSemantics &this tokenType tokenModifiers

@@ -123,7 +123,7 @@ let typedHitTest() =
         | Some s, [] ->
             let result = ref []
             let mutable visitor = polyVisitor <| visitor result
-            if LuaChecker.Block.hitTest &visitor i s.kind.semanticTree then
+            if LuaChecker.Block.hitTest &visitor i s.semanticTree then
                 match !result with
                 | [] -> failwith $"empty result: '{source}' @{i} -> []"
                 | [x] -> ValueSome x
@@ -163,7 +163,7 @@ let tokens source (start, end') =
     let result = ref []
     let tree = checkChunk id source |> fst |> Option.get
     let mutable visitor = polyVisitor <| visitor result
-    if Block.iterateRange &visitor range tree.kind.semanticTree then
+    if Block.iterateRange &visitor range tree.semanticTree then
         match !result with
         | [] -> failwith $"empty result: `{source}` @%A{range} -> []"
         | xs -> List.rev xs

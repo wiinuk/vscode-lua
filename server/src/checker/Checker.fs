@@ -127,7 +127,7 @@ let updateDescendants file project =
         match sourceFile.stage with
         | BeforeParse _ -> project, descendants
         | AnalysisComplete(s, _) ->
-            if not <| Set.contains file s.typedTree.kind.ancestorModulePaths then project, descendants else
+            if not <| Set.contains file s.typedTree.ancestorModulePaths then project, descendants else
 
             // sourceFile が file を参照していた
             let sourceFile = {
@@ -174,7 +174,7 @@ let removeSourceFile file project =
 
 let isAncestor old young project =
     match Project.tryFind young project with
-    | ValueSome { stage = AnalysisComplete(check, _) } -> Set.contains old check.typedTree.kind.ancestorModulePaths
+    | ValueSome { stage = AnalysisComplete(check, _) } -> Set.contains old check.typedTree.ancestorModulePaths
     | _ -> false
 
 let addInitialGlobalModules project globalModulePaths =
@@ -186,7 +186,7 @@ let addInitialGlobalModules project globalModulePaths =
                 with _ -> System.DateTime.MinValue
 
             let chunk, _, project, _ = parseAndCheckCached project globalModulePath (InFs(globalModulePath, lastWriteTime))
-            project, Env.merge NonEmptyList.append NonEmptyList.append globalEnv chunk.kind.additionalGlobalEnv
+            project, Env.merge NonEmptyList.append NonEmptyList.append globalEnv chunk.additionalGlobalEnv
 
         ) (project, project.projectRare.initialGlobal.initialGlobalEnv)
 

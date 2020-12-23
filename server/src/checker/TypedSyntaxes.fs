@@ -95,10 +95,9 @@ type Block' = {
     stats: Stat list
     lastStat: LastStat option
 }
-type ChunkInfo = {
+type Chunk = {
     semanticTree: Block
     functionType: Scheme
     ancestorModulePaths: DocumentPath Set
     additionalGlobalEnv: Env
 }
-type Chunk = ChunkInfo Token

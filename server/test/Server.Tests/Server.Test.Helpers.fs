@@ -576,3 +576,17 @@ type TestsFixture() =
     interface IDisposable with
         member _.Dispose() =
             outputLogger |> Option.iter (Logger.remove Log.logger)
+
+let semanticTokenFullResponseData source = async {
+    let! r = serverActions id [
+        source &> ("file:///main.lua", 1)
+        waitUntilHasDiagnosticsOf "file:///main.lua"
+        Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
+        waitUntilExists 5.<_> <| function
+            | SemanticTokensFullResponse _ -> true
+            | _ -> false
+    ]
+    match List.last r with
+    | SemanticTokensFullResponse(ValueSome { data = data }) -> return data
+    | _ -> return failwith $"%A{r}"
+}
