@@ -417,6 +417,12 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     member _.semanticTokenFeatureTag() = async {
         let! r = semanticTokenFullResponseData "---@_Feature require\n---@global myRequire any"
         r =? [|
-            -1
+            0; 3; 1; int T.keyword; int M.Empty;
+            0; 1; 8; int T.keyword; int M.Empty;
+            0; 9; 7; int T.keyword; int M.Empty;
+            1; 3; 1; int T.keyword; int M.Empty;
+            0; 1; 6; int T.keyword; int M.Empty;
+            0; 7; 9; int T.variable; int M.Empty;
+            0; 10; 3; int T.keyword; int M.Empty;
         |]
     }

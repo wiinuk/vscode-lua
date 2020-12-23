@@ -548,6 +548,14 @@ module private Constraints =
 
 [<AutoOpen>]
 module private Helpers =
+    [<Struct>]
+    type Converting<'F,'T> =
+        | Pending of pending: 'F
+        | Accepted of accepted: 'T
+
+    let toPendingValues xs = xs |> List.map Pending
+    let chooseConvertedValues xs = xs |> List.choose (function Accepted x -> Some x | _ -> None)
+
     let reportParseErrors env span es =
         for e in es do
             reportInfo env span <| DiagnosticKind.ParseError e
@@ -559,31 +567,55 @@ module private Helpers =
 
     let inline parseFeatureOfTags (|Parse|) env tags =
         match tags with
-        | [] -> ValueNone
+        | [] -> struct([], ValueNone)
         | _ ->
 
-        tags
-        |> List.fold (fun nearestKind ({ kind = D.Tag(_, tail) } as tag) ->
-            match tail.kind with
-            | D.FeatureTag(_, D.Annotated(Name({ kind = Parse k as featureName } as name), _)) ->
-                match nearestKind, k with
-                | ValueNone, ValueSome k -> ValueSome struct(tag, k)
-                | _, ValueNone ->
-                    reportInfo env name.trivia.span <| DiagnosticKind.UnrecognizedFeatureName featureName
-                    nearestKind
+        let struct(tagsRev, firstFeatureTag) =
+            tags
+            |> List.fold (fun struct(tagsRev, firstFeatureTag) ({ kind = D.Tag(at, tail) } as tag) ->
+                match tail.kind with
+                | D.FeatureTag(feature, (D.Annotated(Name({ kind = Parse k as featureName } as name), _) as featureNameToken)) ->
+                    match firstFeatureTag, k with
 
-                | ValueSome struct(nearestTag, _), ValueSome _ ->
-                    reportInfo env tag.trivia <| DiagnosticKind.DuplicateTag("@_Feature", nearestTag.trivia)
-                    nearestKind
-            | _ -> nearestKind
-        ) ValueNone
-        |> ValueOption.map (fun struct(_, k) -> k)
+                    // 最初の有効な特徴タグを発見した
+                    | ValueNone, ValueSome k ->
+
+                        // タグに意味付け
+                        let tag =
+                            D.Tag(
+                                at |> withKeywordSemantics,
+                                D.FeatureTag(
+                                    feature |> withKeywordSemantics,
+                                    featureNameToken |> withKeywordSemantics
+                                )
+                                |> Token.make tail.trivia
+                            )
+                            |> Token.make tag.trivia
+
+                        Accepted tag::tagsRev, ValueSome struct(tag, k)
+
+                    // 特徴タグの名前が無効だった
+                    | _, ValueNone ->
+                        reportInfo env name.trivia.span <| DiagnosticKind.UnrecognizedFeatureName featureName
+                        tagsRev, firstFeatureTag
+
+                    // 複数の特徴タグが付いていた
+                    | ValueSome(firstTag, _), ValueSome _ ->
+                        reportInfo env tag.trivia <| DiagnosticKind.DuplicateTag("@_Feature", firstTag.trivia)
+                        tagsRev, firstFeatureTag
+
+                // 他のタグ
+                | _ -> Pending tag::tagsRev, firstFeatureTag
+            ) ([], ValueNone)
+
+        let r = firstFeatureTag |> ValueOption.map (fun struct(_, r) -> r)
+        List.rev tagsRev, r
 
     let declFeatureOfModifierTags env modifierTags =
-        parseFeatureOfTags featureNameToKind env modifierTags |> ValueOption.defaultValue DeclarationFeatures.NoFeatures
+        parseFeatureOfTags featureNameToKind env modifierTags
 
     let reportIfIncludesFeatureTag env modifierTags =
-        parseFeatureOfTags (fun _ -> ValueNone) env modifierTags |> ValueOption.defaultValue ()
+        parseFeatureOfTags (fun _ -> ValueNone) env modifierTags
 
     let unifyDeclAndReport env (Name({ kind = n; trivia = { span = nameSpan } } )) span newDecl oldDecl =
 
@@ -664,9 +696,9 @@ module private Helpers =
 
     let foldTypeParameters folder state tags =
         tags
-        |> List.fold (fun s { kind = D.Tag(_, tail) } ->
-            match tail.kind with
-            | D.GenericTag(_, ps) -> SepBy.fold folder s ps
+        |> List.fold (fun s tag ->
+            match tag with
+            | Pending { kind = D.Tag(_, { kind = D.GenericTag(_, ps) } ) } -> SepBy.fold folder s ps
             | _ -> s
         ) state
 
@@ -761,7 +793,7 @@ module private Helpers =
         let nameToBind = foldTypeParameters (collectTypeParameterBindsCore env) Map.empty <| List.rev modifierTags
 
         // 型引数注釈がなかったので終わり
-        if Map.isEmpty nameToBind then env, [] else
+        if Map.isEmpty nameToBind then env, modifierTags else
 
         // 制約なしの型変数で型環境を拡張する
         // typeEnv = typeEnv @ ["p", ?p'; "n", ?n']
@@ -773,7 +805,10 @@ module private Helpers =
         // unify ?p (?p'': { y: ?n })
         let tags =
             modifierTags
-            |> List.choose (fun tag ->
+            |> List.map (function
+                | Accepted _ as tag -> tag
+                | Pending tag ->
+
                 let (D.Tag(at, tail)) = tag.kind
 
                 match tail.kind with
@@ -783,16 +818,18 @@ module private Helpers =
 
                     D.Tag(at, genericTag)
                     |> Token.make tag.trivia
-                    |> Some
+                    |> Accepted
 
-                | _ -> None
+                | _ -> Pending tag
             )
         env, tags
 
     let globalTag env modifierTags (at, ``global``, identifier, typeSign, tailSpan, tagSpan) =
         let (D.Annotated(Name({ kind = n; trivia = { span = nameSpan } }) as name, _)) = identifier
 
-        let features = declFeatureOfModifierTags env modifierTags
+        let struct(modifierTags, features) = declFeatureOfModifierTags env modifierTags
+        let features = features |> ValueOption.defaultValue DeclarationFeatures.NoFeatures
+
         let env' = enterTypeScope env
         let env' = enterTemporaryTypeVarNameScope env'
         let struct(env', modifierTags) = extendTypeEnvFromGenericTags modifierTags env'
@@ -843,7 +880,7 @@ module private Helpers =
             )
             |> Token.make tagSpan
 
-        modifierTags @ [globalTag]
+        chooseConvertedValues modifierTags @ [globalTag]
 
     type BuildingType<'A,'typeName,'tempType,'fields,'tempEnv,'fieldSignsRev> = {
         typeName: 'typeName
@@ -857,9 +894,11 @@ module private Helpers =
     let classTag env modifierTags (at, ``class``, identifier, parent, tagTailSpan, tagSpan) =
         let (D.Annotated(Name { kind = n; trivia = nameTrivia } as name, _)) = identifier
 
-        let isStringMetaTableIndex =
-            parseFeatureOfTags (function "stringMetaTableIndex" -> ValueSome true | _ -> ValueNone) env modifierTags
-            |> ValueOption.defaultValue false
+        let struct(modifierTags, isStringMetaTableIndex) =
+            modifierTags
+            |> parseFeatureOfTags (function "stringMetaTableIndex" -> ValueSome true | _ -> ValueNone) env
+
+        let isStringMetaTableIndex = isStringMetaTableIndex |> ValueOption.defaultValue false
 
         // 自動型変数のためのスコープの開始
         let env = enterTemporaryTypeVarNameScope env
@@ -927,7 +966,7 @@ module private Helpers =
             tempEnv = env
             isStringMetaTableIndex = isStringMetaTableIndex
 
-            tagsRev = classTag::List.rev modifierTags
+            tagsRev = classTag::List.rev (chooseConvertedValues modifierTags)
         }
 
     let fieldTag env modifierTags lastClass (at, field, visibility, identifier, typeSign, tailSpan, tagSpan) =
@@ -935,7 +974,7 @@ module private Helpers =
         | ValueNone -> reportInfo env tagSpan DiagnosticKind.FieldParentTagNotFound; ValueNone
         | ValueSome({ tempEnv = tempEnv } as lastClass) ->
 
-        reportIfIncludesFeatureTag tempEnv modifierTags
+        let struct(modifierTags, (ValueNone | ValueSome())) = reportIfIncludesFeatureTag tempEnv modifierTags
 
         // TODO: 現在 visibility は警告なしに無視されている
         let _ = visibility
@@ -1005,7 +1044,7 @@ module private Helpers =
         ValueSome {
             lastClass with
                 fields = Map.add key.kind key.trivia lastClass.fields
-                tagsRev = fieldSign::List.revAppend modifierTags lastClass.tagsRev
+                tagsRev = fieldSign::List.revAppend (chooseConvertedValues modifierTags) lastClass.tagsRev
         }
 
     /// `type … (a: C) … . a` で C がインターフェース制約で C の中に a がないとき、`type … . C` に変換する
@@ -1107,7 +1146,7 @@ let findTypeTag env span struct(ds, es) =
     match lastTypeTag with
     | ValueSome(modifierTags, ({ kind = D.Tag(at, ({ kind = D.TypeTag(``type``, typeSign) } as typeTagTail)) } as typeTag)) ->
         let env' = enterTypeScope env
-        let struct(env', modifierTags) = extendTypeEnvFromGenericTags modifierTags env'
+        let struct(env', modifierTags) = extendTypeEnvFromGenericTags (toPendingValues modifierTags) env'
         let struct(t, typeSign) = Type.ofTypeSign env' typeSign
         let t = Scheme.generalize env.rare.typeLevel t
 
@@ -1124,6 +1163,8 @@ let findTypeTag env span struct(ds, es) =
                 typeTagTail
             )
             |> Token.make typeTag.trivia
+
+        let modifierTags = chooseConvertedValues modifierTags
 
         let span =
             match modifierTags with
