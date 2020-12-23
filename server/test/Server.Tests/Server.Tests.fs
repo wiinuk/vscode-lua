@@ -370,3 +370,27 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             }
         ]
     }
+    [<Fact>]
+    member _.semanticTokenTypeTag() = async {
+        let! r = serverActions id [
+            "local x = --[[---@type string]](10)" &> ("file:///main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///main.lua"
+            Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
+            waitUntilExists 5.<_> <| function
+                | SemanticTokensFullResponse _ -> true
+                | _ -> false
+        ]
+        r =? [
+            publishDiagnostics "file:///main.lua" 1 []
+            SemanticTokensFullResponse <| ValueSome {
+                resultId = Undefined
+                data = [|
+                    0; 6; 1; int T.string; int M.readonly;
+                    0; 11; 1; int T.keyword; int M.Empty;
+                    0; 1; 4; int T.keyword; int M.Empty;
+                    0; 5; 6; int T.``type``; int M.Empty;
+                    0; 9; 2; int T.number; int M.Empty;
+                |]
+            }
+        ]
+    }
