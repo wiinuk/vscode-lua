@@ -10,6 +10,8 @@ open LuaChecker.TypeSystem
 open LuaChecker.TypedSyntaxes
 open System
 module S = LuaChecker.Syntaxes
+module D = LuaChecker.Syntax.Documents
+type private L = LuaChecker.LeafFlags
 
 
 type MarshallingContext = {
@@ -569,6 +571,30 @@ let writeReservedTokenSemantics (this: _ byref) (ReservedVar(trivia = { span = s
         | _ -> T.operator, M.``static``
     writeTokenSemantics &this tokenType tokenModifiers
 
+let leafFlagSemantics defaultType leafFlags =
+    let t =
+        match L._TypeMask &&& leafFlags with
+        | L.Keyword -> T.keyword
+        | L.Operator -> T.operator
+        | L.TypeParameter -> T.typeParameter
+        | L.Parameter -> T.parameter
+        | L.Type -> T.``type``
+        | L.Field -> T.property
+        | L.Variable -> T.variable
+        | _ -> defaultType
+
+    let m = M.Empty
+    let m = if leafFlags &&& L.Definition = L.Definition then m ||| M.definition else m
+    let m = if leafFlags &&& L.Definition = L.Declaration then m ||| M.declaration else m
+    let m = if leafFlags &&& L.Definition = L.Modification then m ||| M.modification else m
+
+    struct(t, m)
+
+let writeDocumentReservedSemantics (this: _ byref) (D.Annotated(x, leaf)) =
+    writeTokenRange &this x.trivia
+    let struct(tokenType, tokenModifiers) = leafFlagSemantics T.operator leaf.leafFlags
+    writeTokenSemantics &this tokenType tokenModifiers
+
 let writeLiteralTokenSemantics (this: _ byref) { trivia = { Syntaxes.Trivia.span = span }; kind = kind } _type _typeEnv leafInfo =
     writeTokenRange &this span
     let struct(tokenType, tokenModifiers) =
@@ -680,6 +706,43 @@ let rec typeSemantics (this: _ byref) { Token.kind = type' } typeParameters type
     // `type(t) -> …`
     | TypeAbstraction(ps, t) -> typeSemantics &this t (ps @ typeParameters) typeEnv
 
+let resolveLeafType leaf =
+    let leaf = leaf.leafRare
+    match leaf.declaration with
+    | ValueSome d -> ValueSome d.scheme
+    | _ ->
+
+    match leaf.typeDefinition with
+    | ValueSome d ->
+        match d.typeKind with
+        | TypeDefinitionKind.System _ -> ValueNone
+        | TypeDefinitionKind.Alias t
+        | TypeDefinitionKind.Variable(_, t) -> ValueSome t
+
+    | _ ->
+
+    leaf.type'
+
+let leafTypeSemantics (this: _ byref) leaf =
+    match resolveLeafType leaf with
+    | ValueSome type' ->
+
+        // TODO: 型環境を取得する
+        let typeEnv = { TypeEnvironment.typeLevel = 0; TypeEnvironment.typeParameterOwners = [] }
+
+        match typeSemantics &this type' [] typeEnv with
+        | ValueSome((T.``function`` | T.number | T.string), _) as r -> r
+        | _ -> ValueNone
+    | _ -> ValueNone
+
+let writeLeafSemantics (this: _ byref) defaultType leaf =
+    let struct(tokenType, tokenModifiers) =
+        match leafTypeSemantics &this leaf with
+        | ValueSome r -> r
+        | _ -> leafFlagSemantics defaultType leaf.leafFlags
+
+    writeTokenSemantics &this tokenType tokenModifiers
+
 let writeVarTokenSemantics (this: _ byref) (Var(_, kind, repr, Name { trivia = { span = span } }, type', _)) typeEnv =
     writeTokenRange &this span
     let struct(tokenType, tokenModifiers) =
@@ -704,15 +767,22 @@ let writeVarTokenSemantics (this: _ byref) (Var(_, kind, repr, Name { trivia = {
 
     writeTokenSemantics &this tokenType tokenModifiers
 
+let writeDocumentIdentifierSemantics (this: _ byref) (D.Annotated(Name t, leaf)) =
+    writeTokenRange &this t.trivia.span
+    writeLeafSemantics &this T.typeParameter leaf
+
+let writeDocumentFieldIdentifierSemantics (this: _ byref) (D.Annotated(key, leaf): LeafSemantics D.FieldIdentifier) =
+    writeTokenRange &this key.trivia
+    writeLeafSemantics &this T.property leaf
+
 type CollectSemanticsVisitor with
     interface ITypedSyntaxVisitor with
         member v.Reserved(reserved, typeEnv) = writeReservedTokenSemantics &v reserved typeEnv
         member v.Literal(literal, type', typeEnv, leafInfo) = writeLiteralTokenSemantics &v literal type' typeEnv leafInfo
         member v.Var(var, typeEnv) = writeVarTokenSemantics &v var typeEnv
 
-        // TODO:
-        member _.DocumentFieldIdentifier _ = ()
-        member _.DocumentFieldSeparator _ = ()
-        member _.DocumentFieldVisibility _ = ()
-        member _.DocumentIdentifier _ = ()
-        member _.DocumentReserved _ = ()
+        member v.DocumentReserved x = writeDocumentReservedSemantics &v x
+        member v.DocumentFieldSeparator x = writeDocumentReservedSemantics &v x
+        member v.DocumentFieldVisibility x = writeDocumentReservedSemantics &v x
+        member v.DocumentIdentifier x = writeDocumentIdentifierSemantics &v x
+        member v.DocumentFieldIdentifier x = writeDocumentFieldIdentifierSemantics &v x
