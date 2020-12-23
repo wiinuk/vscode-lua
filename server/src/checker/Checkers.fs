@@ -431,6 +431,8 @@ module private Helpers =
         | [], [] -> emptyNeighbourTags
         | _ -> leadingTags, trainlingTags
 
+    let statSpan { trivia = struct(s, _) } = s
+
 let literalType (Types types) x location = types.literal(x, location)
 
 let binaryExpType (Types types & TypeCache typeCache as env) (e1, t1) op (e2, t2) =
@@ -1424,6 +1426,9 @@ let block env state { kind = x; trivia = s } =
 
     // ブロックの手前のタグを含むように span を拡張する
     let span = Span.merge leadingTags.trivia s.span
+    // 内部の文のタグを含むように span を再計測する
+    let span = Span.merge span (Span.list statSpan stats)
+    let span = Span.merge span (Span.option statSpan lastStat)
 
     let block = withSpan struct(span, combineTags leadingTags emptyTags) {
         T.stats = stats

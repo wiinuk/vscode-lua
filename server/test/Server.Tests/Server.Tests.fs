@@ -389,3 +389,27 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             0; 6; 1; int T.operator; int M.Empty;
         |]
     }
+    [<Fact>]
+    member _.semanticTokenBeforeStatement() = async {
+        let! r = semanticTokenFullResponseData "---@global x number\nlocal a = 0"
+        r =? [|
+            0; 3; 1; int T.keyword; int M.Empty;
+            0; 1; 6; int T.keyword; int M.Empty;
+            0; 7; 1; int T.number; int M.Empty;
+            0; 2; 6; int T.``type``; int M.Empty;
+            1; 6; 1; int T.number; int M.Empty;
+            0; 4; 1; int T.number; int M.Empty;
+        |]
+    }
+    [<Fact>]
+    member _.semanticTokenAfterStatement() = async {
+        let! r = semanticTokenFullResponseData "local a = 0\n---@global x number"
+        r =? [|
+            0; 6; 1; int T.number; int M.Empty;
+            0; 4; 1; int T.number; int M.Empty;
+            1; 3; 1; int T.keyword; int M.Empty;
+            0; 1; 6; int T.keyword; int M.Empty;
+            0; 7; 1; int T.number; int M.Empty;
+            0; 2; 6; int T.``type``; int M.Empty;
+        |]
+    }

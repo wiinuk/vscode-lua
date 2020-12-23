@@ -116,7 +116,7 @@ module Span =
         match isEmpty x1, isEmpty x2 with
         | true, _ -> x2
         | _, true -> x1
-        | _ -> { start = x1.start; end' = x2.end' }
+        | _ -> { start = min x1.start x2.start; end' = max x1.end' x2.end' }
 
     let inline sepBy measure xs = merge (measure (SepBy.head xs)) (measure (SepBy.last xs))
     let inline list measure = function
