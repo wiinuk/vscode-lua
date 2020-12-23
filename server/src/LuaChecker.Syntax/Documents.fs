@@ -25,6 +25,8 @@ module Documents =
     type Reserved<'A> = Annotated<Token,'A>
     type Identifier<'A> = Annotated<HEmpty Name,'A>
     type FieldSeparator<'A> = Annotated<FieldSepKind Source,'A>
+    type FieldIdentifier<'A> = Annotated<FieldKey Source,'A>
+    type FieldVisibility<'A> = Annotated<Visibility Source,'A>
 
     [<Struct>]
     type Comment = Comment of Source<string>
@@ -38,7 +40,7 @@ module Documents =
     type VariadicTypeSign'<'A> = VariadicTypeSign of typeParameterName: 'A Identifier option * dot3: 'A Reserved * allElementTypeConstraint: 'A TypeSign option
 
     type Field<'A> = 'A Field' Source
-    type Field'<'A> = Field of FieldKey Source * colon: 'A Reserved * 'A TypeSign
+    type Field'<'A> = Field of 'A FieldIdentifier * colon: 'A Reserved * 'A TypeSign
 
     type Fields<'A> = 'A Fields' Source
     /// "{" field (fieldSep field)* fieldSep? "}"
@@ -114,7 +116,7 @@ module Documents =
         | ClassTag of tagName: 'A Reserved * 'A Identifier * colonAndType: ('A Reserved * 'A TypeSign) option
 
         /// (?<= "@" "field") ("public" | "protected" | "private")? fieldKey type
-        | FieldTag of tagName: 'A Reserved * Visibility Source option * FieldKey Source * 'A TypeSign
+        | FieldTag of tagName: 'A Reserved * 'A FieldVisibility option * 'A FieldIdentifier * 'A TypeSign
 
         /// (?<= "@" "generic") typeParameter ("," typeParameter)*
         | GenericTag of tagName: 'A Reserved * SepBy<'A Reserved, 'A TypeParameter>

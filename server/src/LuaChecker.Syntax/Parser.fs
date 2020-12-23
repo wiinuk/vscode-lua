@@ -754,13 +754,13 @@ module DocumentParser =
             match Scanner.readPick (function K.Number x -> ValueSome x | _ -> ValueNone) s with
             | ValueSome(x, t1) ->
                 let sign = if k = K.Sub then -1. else 1.
-                FieldKey.Number(x * sign) |> withSpan2 s0 t1.span |> Ok
+                FieldKey.Number(x * sign) |> withSpan2 s0 t1.span |> withEmptyAnnotation |> Ok
 
             | _ ->
                 Error E.RequireAnyFieldKey
         | _ ->
             match Scanner.readPick (function FieldKey x -> x) s with
-            | ValueSome(k, t) -> k |> withTrivia t.span |> Ok
+            | ValueSome(k, t) -> k |> withTrivia t.span |> withEmptyAnnotation |> Ok
             | _ -> Error E.RequireAnyFieldKey
 
     let rec primitiveType s =
@@ -872,7 +872,7 @@ module DocumentParser =
     /// fieldKey ":" constrainedType
     and fieldSign s =
         pipe3 (fieldKey, colon, constrainedType) (fun (k, c, t) ->
-            Field(k, c, t) |> withSpan2 k.trivia t.trivia
+            Field(k, c, t) |> withSpan2 (Measure.annotated k) t.trivia
         ) s
 
     /// "{" field (fieldSep field)* fieldSep? "}"
@@ -1011,6 +1011,7 @@ module DocumentParser =
             Scanner.skip s
             v
             |> withTrivia span
+            |> withEmptyAnnotation
             |> Some
             |> Ok
 

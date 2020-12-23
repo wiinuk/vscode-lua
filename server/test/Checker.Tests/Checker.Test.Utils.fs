@@ -288,13 +288,15 @@ type Arbs =
                 let! annotation = annotation
                 return D.Annotated({ trivia = Span.empty; kind = HEmpty }, annotation)
             }
-            let fieldKey = Arb.generate<FieldKey Source>
-            let name = Arb.generate<HEmpty Syntax.Name>
-            let identifier = gen {
-                let! name = name
+            let annotated x = gen {
+                let! x = x
                 let! annotation = annotation
-                return D.Annotated(name, annotation)
+                return D.Annotated(x, annotation)
             }
+            let fieldKey = Arb.generate<FieldKey Source>
+            let fieldIdentifier = annotated fieldKey
+            let name = Arb.generate<HEmpty Syntax.Name>
+            let identifier = annotated name
             let fieldSepKind = Arb.generate<FieldSepKind>
             let positiveInt = Arb.generate<PositiveInt>
 
@@ -380,7 +382,7 @@ type Arbs =
                 return D.NamedType(n, genericArguments)
                 }
             and field size = withSpan' <| gen {
-                let! k = fieldKey
+                let! k = fieldIdentifier
                 let! colon = reserved
                 let! t = typeSignOrWrap D.Precedence.ConstrainedType (max 0 (size - 1))
                 return D.Field(k, colon, t)

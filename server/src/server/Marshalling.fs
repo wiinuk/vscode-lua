@@ -129,7 +129,7 @@ let showSeverity (Messages m) = function
     | Severity.Warning -> m.Warning
 
 let showFieldKey k =
-    DocumentPrinter.fieldKey DocumentPrinter.Options.defaultOptions { kind = k; trivia = Span.empty }
+    DocumentPrinter.fieldKey DocumentPrinter.Options.defaultOptions (D.Annotated({ kind = k; trivia = Span.empty }, HEmpty))
     |> String.concat ""
 
 let showSpan { start = s; end' = e } = sprintf "(%d, %d)" s e
@@ -197,7 +197,7 @@ let rec showDiagnosticKind (Messages m & context) = function
     | K.ExternalModuleError(x1, x2) -> String.Format(m.ExternalModuleError, showPath x1, showDiagnostic context x1 x2)
     | K.RecursiveModuleReference x1 -> String.Format(m.RecursiveModuleReference, showPath x1)
     | K.DuplicateFieldKey(k, otherFieldSpan) -> String.Format(m.DuplicateFieldKey, showFieldKey k, showSpan otherFieldSpan)
-    | K.DuplicateTag otherTag -> String.Format(m.DuplicateTag, showTagName otherTag)
+    | K.DuplicateTag(otherTagName, otherTagSpan) -> String.Format(m.DuplicateTag, otherTagName, otherTagSpan)
     | K.FieldParentTagNotFound -> m.FieldParentTagNotFound
     | K.GenericTagParentSyntaxNotFound -> m.GenericTagParentSyntaxNotFound
     | K.GlobalNameCollision(n, d1, d2, ds) ->
@@ -311,8 +311,8 @@ let marshalDiagnosticKindToRelatedInformation (Messages m as context) path docum
             showTypeDefSummary
             context
 
-    | K.DuplicateTag otherTag ->
-        match tryFindLocation context.documents path otherTag.trivia with
+    | K.DuplicateTag(_, otherTagSpan) ->
+        match tryFindLocation context.documents path otherTagSpan with
         | ValueSome location -> Defined [| { location = location; message = m.OtherTagLocation } |]
         | _ -> Undefined
 
@@ -437,20 +437,16 @@ let renderLiteral context t info =
     renderSimpleType &b t
     b.ToString()
 
-let renderTypeTag t =
-    use mutable b = ZString.CreateStringBuilder()
-    renderSimpleType &b t
-    b.ToString()
-
 type PrettyThis = {
     marshallingContext: MarshallingContext
     mutable renderedText: string
 }
 let prettyTokenInfo = {
-    var = fun struct(s, x, _) -> s.renderedText <- renderVar s.marshallingContext x
-    reserved = fun struct(s, x, _) -> s.renderedText <- renderReserved s.marshallingContext x
-    literal = fun struct(s, _, t, _, i) -> s.renderedText <- renderLiteral s.marshallingContext t i
-    typeTag = fun struct(s, _, t, _) -> s.renderedText <- renderTypeTag t
+    TypedSyntaxVisitor.noop with
+        var = fun struct(s, x, _) -> s.renderedText <- renderVar s.marshallingContext x
+        reserved = fun struct(s, x, _) -> s.renderedText <- renderReserved s.marshallingContext x
+        literal = fun struct(s, _, t, _, i) -> s.renderedText <- renderLiteral s.marshallingContext t i
+        // TODO:
 }
 
 (*
@@ -698,14 +694,10 @@ let writeVarTokenSemantics this (Var(_, kind, repr, Name { trivia = { span = spa
 
     writeTokenSemantics this tokenType tokenModifiers
 
-let writeTypeTagSemantics this { trivia = span; kind = _syntax: _ Documents.TypeSign' } t typeEnv =
-    writeTokenRange this span
-    let struct(tokenType, tokenModifiers) = typeSemantics this t [] typeEnv |> ValueOption.defaultValue (T.``type``, M.Empty)
-    writeTokenSemantics this tokenType tokenModifiers
-
 let collectSemanticsTokenData = {
-    reserved = fun struct(this, reserved, typeEnv) -> writeReservedTokenSemantics this reserved typeEnv
-    literal = fun struct(this, literal, type', typeEnv, leafInfo) -> writeLiteralTokenSemantics this literal type' typeEnv leafInfo
-    var = fun struct(this, var, typeEnv) -> writeVarTokenSemantics this var typeEnv
-    typeTag = fun struct(this, syntax, type', typeEnv) -> writeTypeTagSemantics this syntax type' typeEnv
+    TypedSyntaxVisitor.noop with
+        reserved = fun struct(this, reserved, typeEnv) -> writeReservedTokenSemantics this reserved typeEnv
+        literal = fun struct(this, literal, type', typeEnv, leafInfo) -> writeLiteralTokenSemantics this literal type' typeEnv leafInfo
+        var = fun struct(this, var, typeEnv) -> writeVarTokenSemantics this var typeEnv
+        // TODO:
 }

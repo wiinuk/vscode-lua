@@ -881,3 +881,10 @@ let typeVarInMultiConstraint() =
                 types.multi1 types.number
             )
     ]
+
+[<Fact>]
+let typeParameterAnnotation() =
+    chunkResult
+        (fun x -> { x with projectConfig = { x.projectConfig with initialGlobalModulePaths = [] } })
+        "---@global f fun(...): ()"
+    =? multi []

@@ -93,11 +93,12 @@ module SepBy =
         | _ -> List.fold (fun s (_, x) -> folder s x) s sepXs
 
     let inline mapSep sepMapping mapping (SepBy(x, sepXs)) =
+        let x = mapping x
         let sepXs =
             match sepXs with
             | [] -> []
             | _ -> List.map (fun (sep, x) -> sepMapping sep, mapping x) sepXs
-        SepBy(mapping x, sepXs)
+        SepBy(x, sepXs)
 
     let inline map mapping x = mapSep (fun x -> x) mapping x
     let inline appendToResizeArray (SepBy(x, sepXs)) (buffer: _ ResizeArray) =

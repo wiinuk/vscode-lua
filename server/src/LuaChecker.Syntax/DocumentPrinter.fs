@@ -188,7 +188,7 @@ and field options { kind = Field(k, _, t) } = seq {
     ": "
     yield! typeSign Precedence.ConstrainedType options t.kind
     }
-and fieldKey options { kind = k } = seq {
+and fieldKey options (Annotated({ kind = k }, _)) = seq {
     match k with
     | FieldKey.Bool true -> "true"
     | FieldKey.Bool false -> "false"
@@ -306,7 +306,7 @@ let tagTail options a = seq {
     | FieldTag(_, v, n, t) ->
         "field "
         match v with
-        | Some v -> visibility v.kind; " "
+        | Some(Annotated(v, _)) -> visibility v.kind; " "
         | _ -> ()
         yield! fieldKey options n; " ";
         yield! typeSign Precedence.Type options t.kind

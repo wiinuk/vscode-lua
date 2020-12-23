@@ -7,6 +7,9 @@ module D = LuaChecker.Syntax.Documents
 
 
 type Token<'T> = Token<'T, Span>
+type Tags = LeafSemantics D.Tag list Token
+type NeighbourTags = Tags * Tags
+
 type LeafInfo = {
     externalModulePath: DocumentPath voption
     schemeInstantiation: (Scheme * struct(TypeParameterId * Type) list) voption
@@ -51,7 +54,7 @@ type Exp' =
     /// `( exp )`
     | Wrap of Exp
     /// `--[[ typeSign ]]( exp )`
-    | TypeReinterpret of typeSign: HEmpty D.TypeSign * Exp * toType: Type
+    | TypeReinterpret of tags: Tags * Exp
 
     // FunctionCall
     | Call of Exp * Exp list
@@ -66,14 +69,14 @@ type Field' =
 type FuncBody = FuncBody' LuaChecker.Syntax.Source
 type FuncBody' = FuncBody of ParameterList option * Block
 
-type LastStat = LastStat' Token
+type LastStat = Token<LastStat', struct(Span * NeighbourTags)>
 type LastStat' =
     | Break
     | Return of Exp list
 
 type ElseIf = | ElseIf of condition: Exp * ifTrue: Block
 
-type Stat = Stat' Token
+type Stat = Token<Stat', struct(Span * NeighbourTags)>
 type Stat' =
     | FunctionCall of Exp
     | Assign of Exp NonEmptyList * Exp NonEmptyList
@@ -87,7 +90,7 @@ type Stat' =
     | LocalFunction of Var * FuncBody
     | Local of VarList * value: Exp list
 
-type Block = Block' Token
+type Block = Token<Block', struct(Span * NeighbourTags)>
 type Block' = {
     stats: Stat list
     lastStat: LastStat option
@@ -98,4 +101,4 @@ type ChunkInfo = {
     ancestorModulePaths: DocumentPath Set
     additionalGlobalEnv: Env
 }
-type Chunk = Token<ChunkInfo>
+type Chunk = ChunkInfo Token

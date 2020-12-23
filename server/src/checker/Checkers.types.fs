@@ -35,7 +35,7 @@ type DiagnosticKind =
     | UnrecognizedFeatureName of featureName: string
     | UnexpectedMultiType
     | RequireMultiType
-    | DuplicateTag of otherTag: HEmpty Syntax.Documents.Tag
+    | DuplicateTag of otherTagName: string * otherTagSpan: Span
     | FieldParentTagNotFound
     | GenericTagParentSyntaxNotFound
     | TypeTagParentSyntaxNotFound

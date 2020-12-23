@@ -71,7 +71,7 @@ module private Helpers =
             Fields(reserved f l, SepBy.mapSep (reserved f) (field f) fs, Option.map (reserved f) s, reserved f r)
 
         and field f x = sourced f x <| fun (Field(k, c, t)) ->
-            Field(sourced f k id, reserved f c, typeSign f t)
+            Field(annotated (fieldKey f) k, reserved f c, typeSign f t)
 
         and parameter f x = sourced f x <| fun (Parameter(n, t)) ->
             Parameter(Option.map (tuple2 (identifier f, reserved f)) n, typeSign f t)
@@ -86,7 +86,7 @@ module private Helpers =
             | GlobalTag(a, n, t) -> GlobalTag(reserved f a, identifier f n, typeSign f t)
             | FeatureTag(a, n) -> FeatureTag(reserved f a, identifier f n)
             | ClassTag(a, n, t) -> ClassTag(reserved f a, identifier f n, Option.map (tuple2(reserved f, typeSign f)) t)
-            | FieldTag(a, v, n, t) -> FieldTag(reserved f a, Option.map (source f) v, fieldKey f n, typeSign f t)
+            | FieldTag(a, v, n, t) -> FieldTag(reserved f a, Option.map (annotated (source f)) v, annotated (fieldKey f) n, typeSign f t)
             | GenericTag(a, ps) -> GenericTag(reserved f a, SepBy.mapSep (reserved f) (typeParameter f) ps)
 
         let tag f x = sourced f x <| fun (Tag(at, tail)) ->
@@ -122,7 +122,7 @@ module private Helpers =
         let fs =
             insert fieldSep (x, xs)
             |> SepBy.map (fun (k, t) ->
-                Field(withEmptySpan k, reserved, t)
+                Field(k |> withEmpty, reserved, t)
                 |> withEmptySpan
             )
         Fields(reserved, fs, None, reserved)
@@ -414,7 +414,7 @@ let [<Fact(DisplayName = "--[[---@field --[=[]=] a]]")>] longStringInNegativeEqC
             FieldTag(
                 reserved,
                 None,
-                FieldKey.String "" |> withEmptySpan,
+                FieldKey.String "" |> withEmpty,
                 type0 "a"
             )
             |> withEmptySpan
@@ -486,8 +486,8 @@ let [<Fact(DisplayName = "---@field public x a")>] visibility() =
         document "" [
             FieldTag(
                 reserved,
-                Visibility.Public |> withEmptySpan |> Some,
-                FieldKey.String "x" |> withEmptySpan,
+                Visibility.Public |> withEmpty |> Some,
+                FieldKey.String "x" |> withEmpty,
                 type0 "a"
             )
             |> withEmptySpan
@@ -580,7 +580,7 @@ let [<Fact(DisplayName = "---@type { f: a, }")>] singleInterfaceType() =
     InterfaceType(
         Fields(
             reserved,
-            SepBy(Field(FieldKey.String "f" |> withEmptySpan, reserved, type0 "a") |> withEmptySpan, []),
+            SepBy(Field(FieldKey.String "f" |> withEmpty, reserved, type0 "a") |> withEmptySpan, []),
             Some(Comma |> withEmpty),
             reserved
         )
@@ -602,7 +602,7 @@ let [<Fact(DisplayName = "---@type { f: a; }")>] lastFieldSemicolon() =
     InterfaceType(
         Fields(
             reserved,
-            SepBy(Field(FieldKey.String "f" |> withEmptySpan, reserved, type0 "a") |> withEmptySpan, []),
+            SepBy(Field(FieldKey.String "f" |> withEmpty, reserved, type0 "a") |> withEmptySpan, []),
             Some(Semicolon |> withEmpty),
             reserved
         )

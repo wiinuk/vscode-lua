@@ -110,11 +110,11 @@ let typedHitTest() =
 
     let push this x = this := x::!this
     let visitor = {
-        var = fun struct(this, T.Var(name = Name n; varType = t; leaf = l), e) ->
-            push this (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
-        reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> push this (k, s.span, getNormalizedType t l e)
-        literal = fun struct(this, x, t, _, _) -> push this (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
-        typeTag = fun struct(this, s, t, _) -> push this (TokenKind.Unknown, s.trivia, Scheme.normalize t)
+        TypedSyntaxVisitor.withDefaultOperation (fun _ -> failwith "") with
+            var = fun struct(this, T.Var(name = Name n; varType = t; leaf = l), e) ->
+                push this (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
+            reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> push this (k, s.span, getNormalizedType t l e)
+            literal = fun struct(this, x, t, _, _) -> push this (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
     }
     let test i source =
         match checkChunk id source with
@@ -149,10 +149,10 @@ let tokens source (start, end') =
     let push this x = this := x::!this
     let tuple x = x.start, x.end'
     let visitor = {
-        var = fun struct(this, T.Var(name = Name n), _) -> push this (TokenKind.Name n.kind, tuple n.trivia.span)
-        reserved = fun struct(this, T.ReservedVar(trivia = s; kind = k), _) -> push this (k, tuple s.span)
-        literal = fun struct(this, x, _, _, _) -> push this (TokenKind.ofLiteralKind x.kind, tuple x.trivia.span)
-        typeTag = fun struct(this, s, _, _) -> push this (TokenKind.Unknown, tuple s.trivia)
+        TypedSyntaxVisitor.withDefaultOperation (fun _ -> failwith "") with
+            var = fun struct(this, T.Var(name = Name n), _) -> push this (TokenKind.Name n.kind, tuple n.trivia.span)
+            reserved = fun struct(this, T.ReservedVar(trivia = s; kind = k), _) -> push this (k, tuple s.span)
+            literal = fun struct(this, x, _, _, _) -> push this (TokenKind.ofLiteralKind x.kind, tuple x.trivia.span)
     }
 
     let range = { start = start; end' = end' }

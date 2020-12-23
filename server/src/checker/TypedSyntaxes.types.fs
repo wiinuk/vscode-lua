@@ -102,3 +102,45 @@ module Env =
 
         let stringMetaTableIndexType = child.stringMetaTableIndexType @ parent.stringMetaTableIndexType
         { types = types; names = names; stringMetaTableIndexType = stringMetaTableIndexType }
+
+type LeafSemanticsRare = {
+    type': Type voption
+    typeDefinition: TypeDefinition voption
+    declaration: Declaration voption
+}
+module LeafSemanticsRare =
+    let empty = {
+        type' = ValueNone
+        typeDefinition = ValueNone
+        declaration = ValueNone
+    }
+
+[<System.Flags>]
+type LeafFlags =
+    | Empty             = 0b0000_0000uy
+    | Keyword           = 0b0000_0001uy
+    | Operator          = 0b0000_0010uy
+    | TypeParameter     = 0b0000_0011uy
+    | Parameter         = 0b0000_0100uy
+    | Type              = 0b0000_0101uy
+    | Field             = 0b0000_0110uy
+    | Variable          = 0b0000_0111uy
+
+    | Definition        = 0b0001_0000uy
+    | Declaration       = 0b0010_0000uy
+    | Global            = 0b0100_0000uy
+    | Modification      = 0b1000_0000uy
+    
+    | _TypeMask         = 0b0000_1111uy
+    | _ModifiersMask    = 0b1111_0000uy
+
+[<Struct>]
+type LeafSemantics = {
+    leafFlags: LeafFlags
+    leafRare: LeafSemanticsRare
+}
+module LeafSemantics =
+    let empty = {
+        leafFlags = LeafFlags.Empty
+        leafRare = LeafSemanticsRare.empty
+    }

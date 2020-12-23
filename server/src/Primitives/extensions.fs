@@ -1,4 +1,4 @@
-﻿namespace LuaChecker
+namespace LuaChecker
 open System.Collections.Concurrent
 
 module Array =
@@ -41,3 +41,10 @@ module VOption =
 
 module Option =
     let unbox = function Some x -> ValueSome x | _ -> ValueNone
+
+module List =
+    let rec revAppend rs xs =
+        match rs with
+        | [] -> xs
+        | r::rs -> revAppend rs (r::xs)
+
