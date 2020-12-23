@@ -6,9 +6,9 @@ open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
 open System.Collections.Immutable
-open type Marshalling.CollectSemanticsThis
+open type Marshalling.CollectSemanticsVisitor
 open type Marshalling.MarshallingContext
-open type Marshalling.PrettyThis
+open type Marshalling.PrettyTokenVisitor
 open type ProjectAgent
 open type BackgroundAgent
 open type TypedSyntaxes.Chunk
@@ -53,12 +53,12 @@ let hoverHitTestAndResponse requestId projectAgent document { Token.kind = { Typ
         resources = projectAgent.resources
         documents = projectAgent.documents
     }
-    let this = {
+    let mutable this = {
         marshallingContext = context
         renderedText = ""
     }
     let result =
-        if Block.hitTest Marshalling.prettyTokenInfo this index tree then
+        if Block.hitTest &this index tree then
             let markdown = { kind = MarkupKind.markdown; value = this.renderedText }
             ValueSome { contents = markdown; range = Undefined }
         else
@@ -89,14 +89,14 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
             tree.kind.additionalGlobalEnv.stringMetaTableIndexType @
             initialGlobal.initialGlobalEnv.stringMetaTableIndexType
     }
-    let this = {
+    let mutable this = {
         buffer = buffer
         lineMap = lineMap
         typeSystemEnv = typeEnv
         lastLine = 0
         lastStartChar = 0
     }
-    Block.iterateRange Marshalling.collectSemanticsTokenData this range tree.kind.semanticTree |> ignore
+    Block.iterateRange &this range tree.kind.semanticTree |> ignore
     WriteAgent.sendResponse writeAgent id <| Ok {
         resultId = Undefined
         data = buffer.ToArray()

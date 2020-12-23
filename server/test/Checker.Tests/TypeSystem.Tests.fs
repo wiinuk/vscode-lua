@@ -109,18 +109,21 @@ let typedHitTest() =
     let getNormalizedType t _ _ = normalize () t
 
     let push this x = this := x::!this
-    let visitor = {
-        TypedSyntaxVisitor.withDefaultOperation (fun _ -> failwith "") with
-            var = fun struct(this, T.Var(name = Name n; varType = t; leaf = l), e) ->
-                push this (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
-            reserved = fun struct(this, T.ReservedVar(s, k, t, l), e) -> push this (k, s.span, getNormalizedType t l e)
-            literal = fun struct(this, x, t, _, _) -> push this (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
+    let visitor state = { new TypedSyntaxVisitorBase() with
+        override _.Visit() = failwith ""
+
+        override _.Var(T.Var(name = Name n; varType = t; leaf = l), e) =
+            push state (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
+        override _.Reserved(T.ReservedVar(s, k, t, l), e) = push state (k, s.span, getNormalizedType t l e)
+        override _.Literal(x, t, _, _) = push state (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
     }
+
     let test i source =
         match checkChunk id source with
         | Some s, [] ->
             let result = ref []
-            if LuaChecker.Block.hitTest visitor result i s.kind.semanticTree then
+            let mutable visitor = polyVisitor <| visitor result
+            if LuaChecker.Block.hitTest &visitor i s.kind.semanticTree then
                 match !result with
                 | [] -> failwith $"empty result: '{source}' @{i} -> []"
                 | [x] -> ValueSome x
@@ -148,17 +151,19 @@ let typedHitTest() =
 let tokens source (start, end') =
     let push this x = this := x::!this
     let tuple x = x.start, x.end'
-    let visitor = {
-        TypedSyntaxVisitor.withDefaultOperation (fun _ -> failwith "") with
-            var = fun struct(this, T.Var(name = Name n), _) -> push this (TokenKind.Name n.kind, tuple n.trivia.span)
-            reserved = fun struct(this, T.ReservedVar(trivia = s; kind = k), _) -> push this (k, tuple s.span)
-            literal = fun struct(this, x, _, _, _) -> push this (TokenKind.ofLiteralKind x.kind, tuple x.trivia.span)
+    let visitor state = { new TypedSyntaxVisitorBase() with
+        override _.Visit() = failwith ""
+
+        override _.Var(T.Var(name = Name n), _) = push state (TokenKind.Name n.kind, tuple n.trivia.span)
+        override _.Reserved(T.ReservedVar(trivia = s; kind = k), _) = push state (k, tuple s.span)
+        override _.Literal(x, _, _, _) = push state (TokenKind.ofLiteralKind x.kind, tuple x.trivia.span)
     }
 
     let range = { start = start; end' = end' }
     let result = ref []
     let tree = checkChunk id source |> fst |> Option.get
-    if Block.iterateRange visitor result range tree.kind.semanticTree then
+    let mutable visitor = polyVisitor <| visitor result
+    if Block.iterateRange &visitor range tree.kind.semanticTree then
         match !result with
         | [] -> failwith $"empty result: `{source}` @%A{range} -> []"
         | xs -> List.rev xs

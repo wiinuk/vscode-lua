@@ -11,88 +11,36 @@ type TypeEnvironment = {
     typeParameterOwners: Var list
     typeLevel: int
 }
-type TypedSyntaxVisitor<'This> = {
-    var: struct ('This * Var * TypeEnvironment) -> unit
-    reserved: struct ('This * ReservedVar * TypeEnvironment) -> unit
-    literal: struct ('This * S.Literal * Type * TypeEnvironment * LeafInfo voption) -> unit
+type ITypedSyntaxVisitor =
+    abstract Var: Var * TypeEnvironment -> unit
+    abstract Reserved: ReservedVar * TypeEnvironment -> unit
+    abstract Literal: S.Literal * Type * TypeEnvironment * LeafInfo voption -> unit
 
-    documentReserved: struct ('This * LeafSemantics D.Reserved) -> unit
-    documentIdentifier: struct ('This * LeafSemantics D.Identifier) -> unit
-    documentFieldSeparator: struct ('This * LeafSemantics D.FieldSeparator) -> unit
-    documentFieldIdentifier: struct ('This * LeafSemantics D.FieldIdentifier) -> unit
-    documentFieldVisibility: struct ('This * LeafSemantics D.FieldVisibility) -> unit
-}
-module TypedSyntaxVisitor =
-    let withDefaultOperation defaultOperation = {
-        var = fun struct(this, _, _) -> defaultOperation this
-        reserved = fun struct(this, _, _) -> defaultOperation this
-        literal = fun struct(this, _, _, _, _) -> defaultOperation this
-
-        documentReserved = fun struct (this, _) -> defaultOperation this
-        documentIdentifier = fun struct (this, _ ) -> defaultOperation this
-        documentFieldSeparator = fun struct (this, _) -> defaultOperation this
-        documentFieldIdentifier = fun struct (this, _) -> defaultOperation this
-        documentFieldVisibility = fun struct (this, _) -> defaultOperation this
-    }
-    let noop = {
-        var = ignore
-        reserved = ignore
-        literal = ignore
-
-        documentReserved = ignore
-        documentIdentifier = ignore
-        documentFieldSeparator = ignore
-        documentFieldIdentifier = ignore
-        documentFieldVisibility = ignore
-    }
+    abstract DocumentReserved: LeafSemantics D.Reserved -> unit
+    abstract DocumentIdentifier: LeafSemantics D.Identifier -> unit
+    abstract DocumentFieldSeparator: LeafSemantics D.FieldSeparator -> unit
+    abstract DocumentFieldIdentifier: LeafSemantics D.FieldIdentifier -> unit
+    abstract DocumentFieldVisibility: LeafSemantics D.FieldVisibility -> unit
 
 module private rec IterateRange =
     open DocumentIterators
     type Name = S.Name
 
-    type HitEnvNoUpdate<'This> = {
-        visitor: TypedSyntaxVisitor<'This>
-        visitorThis: 'This
-        range: Span
-    }
     [<Struct>]
-    type HitEnv<'This> = {
+    type HitEnv = {
         typeParameterOwners: Var list
         typeLevel: int
-        noUpdate: HitEnvNoUpdate<'This>
+        range: Span
     }
 
-    let intersectingWithSpan env x = Span.isIntersecting env.noUpdate.range x
-    let intersecting env x = intersectingWithSpan env x.trivia
-
-    let inline option f = function
-        | Some x -> f x
-        | _ -> false
+    let intersectingWithSpan (env: _ inref) x = Span.isIntersecting env.range x
+    let intersecting (env: _ inref) x = intersectingWithSpan &env x.trivia
 
     /// `( || )` の正格バージョン
     /// `x ||. y` = `let _x = x in let _y = y in _x || _y`
     let (||.) x y = x || y
 
-    let inline tuple2 f1 f2 (x1, x2) =
-        f1 x1 ||. f2 x2
-
-    let inline list f xs =
-        let mutable result = false
-        for x in (xs: _ list) do result <- result ||. f x
-        result
-
-    let inline nonEmptyList find (NonEmptyList(x, xs)) =
-        find x ||.
-        list find xs
-
-    let inline sepBy findSep find (SepBy(x, xs)) =
-        let mutable result = find x
-        for sep, x in (xs: _ list) do result <- result ||. findSep sep ||. find x
-        result
-
-    let nameList env xs = nonEmptyList (name env) xs
-
-    let envToTypeEnv env = {
+    let envToTypeEnv (env: _ inref) = {
         typeParameterOwners = env.typeParameterOwners
         typeLevel = env.typeLevel
     }
@@ -106,397 +54,500 @@ module private rec IterateRange =
         | [] -> { env with HitEnv.typeLevel = env.typeLevel + 1 }
         | _ -> { env with typeLevel = env.typeLevel + 1; typeParameterOwners = x1::env.typeParameterOwners }
 
-    let name env (Var(name = Name.Name x) as v) =
-        intersectingWithSpan env x.trivia.span && (
-            env.noUpdate.visitor.var(env.noUpdate.visitorThis, v, envToTypeEnv env)
+    let name (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (Var(name = Name.Name x) as v) =
+        intersectingWithSpan &env x.trivia.span && (
+            visitor.Var(v, envToTypeEnv &env)
             true
         )
 
-    let reserved env (ReservedVar(trivia = x) as v) =
-        intersectingWithSpan env x.span && (
-            env.noUpdate.visitor.reserved(env.noUpdate.visitorThis, v, envToTypeEnv env)
+    let reserved (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (ReservedVar(trivia = x) as v) =
+        intersectingWithSpan &env x.span && (
+            visitor.Reserved(v, envToTypeEnv &env)
             true
         )
 
-    let literal env x t trivia =
-        env.noUpdate.visitor.literal(env.noUpdate.visitorThis, x, t, envToTypeEnv env, trivia)
+    let literal (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) x t trivia =
+        visitor.Literal(x, t, envToTypeEnv &env, trivia)
         true
 
-    let varArg env x =
-        env.noUpdate.visitor.reserved(env.noUpdate.visitorThis, x, envToTypeEnv env)
+    let nameList (v: _ byref) (env: _ inref) xs =
+        let mutable result = false
+        for x in (xs: _ list) do result <- result ||. name &v &env x
+        result
+
+    let nameList1 (v: _ byref) (env: _ inref) (NonEmptyList(x, xs)) =
+        name &v &env x ||. nameList &v &env xs
+
+    let varArg (v: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) x =
+        v.Reserved(x, envToTypeEnv &env)
         true
 
-    let expList env xs = nonEmptyList (exp env) xs
-    let exp env x =
-        intersecting env x &&
+    let expList (v: _ byref) (env: _ inref) xs =
+        let mutable result = false
+        for x in xs do result <- result ||. exp &v &env x
+        result
+
+    let expList1 (v: _ byref) (env: _ inref) (NonEmptyList(x, xs)) =
+        exp &v &env x ||. expList &v &env xs
+
+    let exp (v: _ byref) (env: _ inref) x =
+        intersecting &env x &&
 
         match x.kind with
-        | Literal(x, t, trivia) -> literal env x t trivia
-        | VarArg x -> varArg env x
-        | Function x -> funcBody env x
-        | NewTable x -> list (field env) x
+        | Literal(x, t, trivia) -> literal &v &env x t trivia
+        | VarArg x -> varArg &v &env x
+        | Function x -> funcBody &v &env x
+        | NewTable x ->
+            let mutable result = false
+            for x in x do result <- result ||. field &v &env x
+            result
+
         | Binary(x1, x2, x3) ->
-            exp env x1 ||.
-            reserved env x2 ||.
-            exp env x3
+            exp &v &env x1 ||.
+            reserved &v &env x2 ||.
+            exp &v &env x3
 
         | Unary(x1, x2) ->
-            reserved env x1 ||.
-            exp env x2
+            reserved &v &env x1 ||.
+            exp &v &env x2
 
-        | Wrap x -> exp env x
+        | Wrap x -> exp &v &env x
         | TypeReinterpret(x1, x2) ->
-            tags env x1 ||.
-            exp env x2
+            tags &v &env x1 ||.
+            exp &v &env x2
 
-        | Variable x -> name env x
+        | Variable x -> name &v &env x
 
         | Index(x1, x2) ->
-            exp env x1 ||.
-            exp env x2
+            exp &v &env x1 ||.
+            exp &v &env x2
 
         | Member(x1, x2) ->
-            exp env x1 ||.
-            name env x2
+            exp &v &env x1 ||.
+            name &v &env x2
 
         | Call(x1, x2) ->
-            exp env x1 ||.
-            list (exp env) x2
+            exp &v &env x1 ||.
+            expList &v &env x2
 
         | CallWithSelf(x1, x2, x3) ->
-            exp env x1 ||.
-            name env x2 ||.
-            list (exp env) x3
+            exp &v &env x1 ||.
+            name &v &env x2 ||.
+            expList &v &env x3
 
-    let parameterList env x =
-        intersecting env x &&
+    let parameterList (v: _ byref) (env: _ inref) x =
+        intersecting &env x &&
         match x.kind with
         | ParameterList(x1, x2) ->
-            list (name env) x1 ||.
-            option (reserved env) x2
+            nameList &v &env x1 ||.
+            (
+                match x2 with
+                | Some x2 -> reserved &v &env x2
+                | _ -> false
+            )
 
-    let funcBody env x =
-        intersecting env x &&
+    let funcBody (v: _ byref) (env: _ inref) x =
+        intersecting &env x &&
         let { kind = FuncBody(x1, x2) } = x
-        option (parameterList env) x1 ||.
-        block env x2
+        (
+            match x1 with
+            | Some x -> parameterList &v &env x
+            | _ -> false
+        ) ||.
+        block &v &env x2
 
-    let field env x =
-        intersecting env x &&
+    let field (v: _ byref) (env: _ inref) x =
+        intersecting &env x &&
         match x.kind with
-        | Init x -> exp env x
+        | Init x -> exp &v &env x
         | MemberInit(x1, x2) ->
-            name env x1 ||.
-            exp env x2
+            name &v &env x1 ||.
+            exp &v &env x2
 
         | IndexInit(x1, x2) ->
-            exp env x1 ||.
-            exp env x2
+            exp &v &env x1 ||.
+            exp &v &env x2
 
-    let elseIfClause env (ElseIf(x1, x2)) =
-        exp env x1 ||.
-        block env x2
+    let elseIfClause (v: _ byref) (env: _ inref) (ElseIf(x1, x2)) =
+        exp &v &env x1 ||.
+        block &v &env x2
 
-    let elseClause env x = block env x
+    let elseClause (v: _ byref) (env: _ inref) x = block &v &env x
 
-    let assignStat env (x1, x2) =
-        nonEmptyList (exp env) x1 ||.
-        expList env x2
+    let assignStat (v: _ byref) (env: _ inref) (x1, x2) =
+        expList1 &v &env x1 ||.
+        expList1 &v &env x2
 
-    let whileStat env (x1, x2) =
-        exp env x1 ||. block env x2
+    let whileStat (v: _ byref) (env: _ inref) (x1, x2) =
+        exp &v &env x1 ||. block &v &env x2
 
-    let repeatUntilStat env (x1, x2) =
-        block env x1 ||.
-        exp env x2
+    let repeatUntilStat (v: _ byref) (env: _ inref) (x1, x2) =
+        block &v &env x1 ||.
+        exp &v &env x2
 
-    let ifStat env (x1, x2, x3, x4) =
-        exp env x1 ||.
-        block env x2 ||.
-        list (elseIfClause env) x3 ||.
-        option (elseClause env) x4
+    let ifStat (v: _ byref) (env: _ inref) (x1, x2, x3, x4) =
+        exp &v &env x1 ||.
+        block &v &env x2 ||.
+        (
+            let mutable result = false
+            for x in x3 do result <- result ||. elseIfClause &v &env x
+            result
+        ) ||.
+        match x4 with
+        | Some x -> elseClause &v &env x
+        | _ -> false
 
-    let forStat env (x1, x2, x3, x4, x5) =
-        name env x1 ||.
-        exp env x2 ||.
-        exp env x3 ||.
-        option (exp env) x4 ||.
-        block env x5
+    let forStat (v: _ byref) (env: _ inref) (x1, x2, x3, x4, x5) =
+        name &v &env x1 ||.
+        exp &v &env x2 ||.
+        exp &v &env x3 ||.
+        (
+            match x4 with
+            | Some x -> exp &v &env x
+            | _ -> false
+        ) ||.
+        block &v &env x5
 
-    let forInStat env (x1, x2, x3) =
-        nameList env x1 ||.
-        expList env x2 ||.
-        block env x3
+    let forInStat (v: _ byref) (env: _ inref) (x1, x2, x3) =
+        nameList1 &v &env x1 ||.
+        expList1 &v &env x2 ||.
+        block &v &env x3
 
-    let functionDeclStat env (x1, x2, x3, x4) =
-        name env x1 ||.
-        list (name env) x2 ||.
-        option (name env) x3 ||.
-        funcBody env x4
+    let functionDeclStat (v: _ byref) (env: _ inref) (x1, x2, x3, x4) =
+        name &v &env x1 ||.
+        nameList &v &env x2 ||.
+        (
+            match x3 with
+            | Some x -> name &v &env x
+            | _ -> false
+        ) ||.
+        funcBody &v &env x4
 
-    let localFunctionStat env (x1, x2) =
-        name env x1 ||. (
-            intersecting env x2 &&
-            funcBody (extendByTypeParameterOwner env x1) x2
+    let localFunctionStat (v: _ byref) (env: _ inref) (x1, x2) =
+        name &v &env x1 ||. (
+            intersecting &env x2 &&
+            let env = extendByTypeParameterOwner env x1
+            funcBody &v &env x2
         )
 
-    let localStat env (x1, x2) =
-        nameList env x1 ||. list (exp env) x2
+    let localStat (v: _ byref) (env: _ inref) (x1, x2) =
+        nameList1 &v &env x1 ||. expList &v &env x2
 
-    let stat env x =
+    let stat (v: _ byref) (env: _ inref) x =
         let struct(span, (leadingTags, trailingTags)) = x.trivia
-        tags env leadingTags ||.
+        tags &v &env leadingTags ||.
         (
-            intersectingWithSpan env span &&
+            intersectingWithSpan &env span &&
 
             match x.kind with
-            | FunctionCall x -> exp env x
-            | Assign(x1, x2) -> assignStat env (x1, x2)
-            | Do x -> block env x
-            | While(x1, x2) -> whileStat env (x1, x2)
-            | RepeatUntil(x1, x2) -> repeatUntilStat env (x1, x2)
-            | If(x1, x2, x3, x4) -> ifStat env (x1, x2, x3, x4)
-            | For(x1, x2, x3, x4, x5) -> forStat env (x1, x2, x3, x4, x5)
-            | ForIn(x1, x2, x3) -> forInStat env (x1, x2, x3)
-            | FunctionDecl(x1, x2, x3, x4) -> functionDeclStat env (x1, x2, x3, x4)
-            | LocalFunction(x1, x2) -> localFunctionStat env (x1, x2)
-            | Local(x1, x2) -> localStat env (x1, x2)
+            | FunctionCall x -> exp &v &env x
+            | Assign(x1, x2) -> assignStat &v &env (x1, x2)
+            | Do x -> block &v &env x
+            | While(x1, x2) -> whileStat &v &env (x1, x2)
+            | RepeatUntil(x1, x2) -> repeatUntilStat &v &env (x1, x2)
+            | If(x1, x2, x3, x4) -> ifStat &v &env (x1, x2, x3, x4)
+            | For(x1, x2, x3, x4, x5) -> forStat &v &env (x1, x2, x3, x4, x5)
+            | ForIn(x1, x2, x3) -> forInStat &v &env (x1, x2, x3)
+            | FunctionDecl(x1, x2, x3, x4) -> functionDeclStat &v &env (x1, x2, x3, x4)
+            | LocalFunction(x1, x2) -> localFunctionStat &v &env (x1, x2)
+            | Local(x1, x2) -> localStat &v &env (x1, x2)
         ) ||.
-        tags env trailingTags
+        tags &v &env trailingTags
 
-    let lastStat env x =
+    let lastStat (v: _ byref) (env: _ inref) x =
         let struct(span, (leadingTags, trailingTags)) = x.trivia
-        tags env leadingTags ||.
+        tags &v &env leadingTags ||.
         (
-            intersectingWithSpan env span &&
+            intersectingWithSpan &env span &&
 
             match x.kind with
             | Break -> false
-            | Return x -> list (exp env) x
+            | Return x -> expList &v &env x
         ) ||.
-        tags env trailingTags
+        tags &v &env trailingTags
 
-    let block env x =
+    let block (v: _ byref) (env: _ inref) x =
         let struct(span, (leadingTags, trailingTags)) = x.trivia
-        tags env leadingTags ||.
+        tags &v &env leadingTags ||.
         (
-            intersectingWithSpan env span && (
-                list (stat env) x.kind.stats ||.
-                option (lastStat env) x.kind.lastStat
+            intersectingWithSpan &env span && (
+                (
+                    let mutable result = false
+                    for x in x.kind.stats do result <- result ||. stat &v &env x
+                    result
+                ) ||.
+                match x.kind.lastStat with
+                | Some x -> lastStat &v &env x
+                | _ -> false
             )
         ) ||.
-        tags env trailingTags
+        tags &v &env trailingTags
 
-    let chunk env x = block env x
+    let chunk (v: _ byref) (env: _ inref) x = block &v &env x
 
     module DocumentIterators =
         open IterateRange
 
-        let reserved env (D.Annotated(k, _) as x) =
-            intersecting env k && (
-                env.noUpdate.visitor.documentReserved(env.noUpdate.visitorThis, x)
+        let reserved (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (D.Annotated(k, _) as x) =
+            intersecting &env k && (
+                visitor.DocumentReserved x
                 true
             )
-        let identifier env (D.Annotated(Syntax.Name k, _) as x) =
-            intersectingWithSpan env k.trivia.span && (
-                env.noUpdate.visitor.documentIdentifier(env.noUpdate.visitorThis, x)
+        let identifier (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (D.Annotated(Syntax.Name k, _) as x) =
+            intersectingWithSpan &env k.trivia.span && (
+                visitor.DocumentIdentifier x
                 true
             )
-        let fieldVisibility env (D.Annotated(k, _) as x) =
-            intersecting env k && (
-                env.noUpdate.visitor.documentFieldVisibility(env.noUpdate.visitorThis, x)
+        let fieldVisibility (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (D.Annotated(k, _) as x) =
+            intersecting &env k && (
+                visitor.DocumentFieldVisibility x
                 true
             )
-        let fieldIdentifier env (D.Annotated(k, _) as x) =
-            intersecting env k && (
-                env.noUpdate.visitor.documentFieldIdentifier(env.noUpdate.visitorThis, x)
+        let fieldIdentifier (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (D.Annotated(k, _) as x) =
+            intersecting &env k && (
+                visitor.DocumentFieldIdentifier x
                 true
             )
-        let fieldSeparator env (D.Annotated(k, _) as x) =
-            intersecting env k && (
-                env.noUpdate.visitor.documentFieldSeparator(env.noUpdate.visitorThis, x)
+        let fieldSeparator (visitor: 'V byref when 'V :> ITypedSyntaxVisitor and 'V : struct) (env: _ inref) (D.Annotated(k, _) as x) =
+            intersecting &env k && (
+                visitor.DocumentFieldSeparator x
                 true
             )
 
-        let tags env x =
-            intersecting env x &&
-            list (tag env) x.kind
+        let tags (v: _ byref) (env: _ inref) x =
+            intersecting &env x && (
+                let mutable result = false
+                for x in x.kind do result <- result ||. tag &v &env x
+                result
+            )
 
-        let tag env x =
-            intersecting env x &&
+        let tag (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
             let (D.Tag(x1, x2)) = x.kind
-            reserved env x1 ||.
-            tagTail env x2
+            reserved &v &env x1 ||.
+            tagTail &v &env x2
 
-        let tagTail env x =
-            intersecting env x &&
+        let tagTail (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
             match x.kind with
-            | D.GlobalTag(x1, x2, x3) -> globalTag env (x1, x2, x3)
-            | D.ClassTag(x1, x2, x3) -> classTag env (x1, x2, x3)
-            | D.TypeTag(x1, x2) -> typeTag env (x1, x2)
-            | D.FeatureTag(x1, x2) -> featureTag env (x1, x2)
-            | D.FieldTag(x1, x2, x3, x4) -> fieldTag env (x1, x2, x3, x4)
-            | D.GenericTag(x1, x2) -> genericTag env (x1, x2)
-            | D.UnknownTag(x1, x2) -> unknownTag env (x1, x2)
+            | D.GlobalTag(x1, x2, x3) -> globalTag &v &env (x1, x2, x3)
+            | D.ClassTag(x1, x2, x3) -> classTag &v &env (x1, x2, x3)
+            | D.TypeTag(x1, x2) -> typeTag &v &env (x1, x2)
+            | D.FeatureTag(x1, x2) -> featureTag &v &env (x1, x2)
+            | D.FieldTag(x1, x2, x3, x4) -> fieldTag &v &env (x1, x2, x3, x4)
+            | D.GenericTag(x1, x2) -> genericTag &v &env (x1, x2)
+            | D.UnknownTag(x1, x2) -> unknownTag &v &env (x1, x2)
 
-        let globalTag env (x1, x2, x3) =
-            reserved env x1 ||.
-            identifier env x2 ||.
-            typeSign env x3
+        let globalTag (v: _ byref) (env: _ inref) (x1, x2, x3) =
+            reserved &v &env x1 ||.
+            identifier &v &env x2 ||.
+            typeSign &v &env x3
 
-        let classTag env (x1, x2, x3) =
-            reserved env x1 ||.
-            identifier env x2 ||.
-            option (tuple2 (reserved env) (typeSign env)) x3
+        let classTag (v: _ byref) (env: _ inref) (x1, x2, x3) =
+            reserved &v &env x1 ||.
+            identifier &v &env x2 ||.
+            match x3 with
+            | Some(x1, x2) -> reserved &v &env x1 ||. typeSign &v &env x2
+            | _ -> false
 
-        let typeTag env (x1, x2) =
-            reserved env x1 ||.
-            typeSign env x2
+        let typeTag (v: _ byref) (env: _ inref) (x1, x2) =
+            reserved &v &env x1 ||.
+            typeSign &v &env x2
 
-        let featureTag env (x1, x2) =
-            reserved env x1 ||.
-            identifier env x2
+        let featureTag (v: _ byref) (env: _ inref) (x1, x2) =
+            reserved &v &env x1 ||.
+            identifier &v &env x2
 
-        let fieldTag env (x1, x2, x3, x4) =
-            reserved env x1 ||.
-            option (fieldVisibility env) x2 ||.
-            fieldIdentifier env x3 ||.
-            typeSign env x4
+        let fieldTag (v: _ byref) (env: _ inref) (x1, x2, x3, x4) =
+            reserved &v &env x1 ||.
+            (
+                match x2 with
+                | Some x -> fieldVisibility &v &env x
+                | _ -> false
+            ) ||.
+            fieldIdentifier &v &env x3 ||.
+            typeSign &v &env x4
 
-        let genericTag env (x1, x2) =
-            reserved env x1 ||.
-            sepBy (reserved env) (typeParameter env) x2
+        let genericTag (v: _ byref) (env: _ inref) (x1, x2) =
+            reserved &v &env x1 ||.
 
-        let unknownTag env (x1, _) =
-            identifier env x1
+            let (SepBy(x, xs)) = x2
+            let mutable result = typeParameter &v &env x
+            for sep, x in xs do result <- result ||. reserved &v &env sep ||. typeParameter &v &env x
+            result
+
+        let unknownTag (v: _ byref) (env: _ inref) (x1, _) =
+            identifier &v &env x1
             // TODO:
 
-        let typeParameter env x =
-            intersecting env x &&
+        let typeParameter (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
 
             match x.kind with
             | D.TypeParameter(x1, x2) ->
-                identifier env x1 ||.
-                option (tuple2 (reserved env) (typeConstraints env)) x2
+                identifier &v &env x1 ||.
+                match x2 with
+                | Some(x1, x2) ->
+                    reserved &v &env x1 ||.
+                    typeConstraints &v &env x2
+
+                | _ -> false
 
             | D.VariadicTypeParameter(x1, x2, x3) ->
-                identifier env x1 ||.
-                reserved env x2 ||.
-                option (typeSign env) x3
+                identifier &v &env x1 ||.
+                reserved &v &env x2 ||.
+                match x3 with
+                | Some x -> typeSign &v &env x
+                | _ -> false
 
-        let typeConstraints env x = fields env x
-        let fields env x =
-            intersecting env x &&
+        let typeConstraints (v: _ byref) (env: _ inref) x = fields &v &env x
+        let fields (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
 
             let (D.Fields(x1, x2, x3, x4)) = x.kind
-            reserved env x1 ||.
-            sepBy (fieldSeparator env) (field env) x2 ||.
-            option (fieldSeparator env) x3 ||.
-            reserved env x4
+            reserved &v &env x1 ||.
+            (
+                let (SepBy(x, xs)) = x2
+                let mutable result = field &v &env x
+                for sep, x in xs do result <- result ||. fieldSeparator &v &env sep ||. field &v &env x
+                result
+            ) ||.
+            (
+                match x3 with
+                | Some x -> fieldSeparator &v &env x
+                | _ -> false
+            ) ||.
+            reserved &v &env x4
 
-        let field env x =
-            intersecting env x &&
+        let field (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
 
             let (D.Field(x1, x2, x3)) = x.kind
-            fieldIdentifier env x1 ||.
-            reserved env x2 ||.
-            typeSign env x3
+            fieldIdentifier &v &env x1 ||.
+            reserved &v &env x2 ||.
+            typeSign &v &env x3
 
-        let typeSign env x =
-            intersecting env x &&
+        let typeSign (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
 
             match x.kind with
-            | D.EmptyType(x1, x2) -> emptyType env (x1, x2)
-            | D.SingleMultiType(x1, x2, x3, x4) -> singleMultiType env (x1, x2, x3, x4)
-            | D.ArrayType(x1, x2, x3) -> arrayType env (x1, x2, x3)
-            | D.NamedType(x1, x2) -> namedType env (x1, x2)
-            | D.VariadicType x1 -> variadicType env x1
-            | D.ConstrainedType(x1, x2, x3) -> constrainedType env (x1, x2, x3)
-            | D.FunctionType(x1, x2, x3, x4, x5, x6) -> functionType env (x1, x2, x3, x4, x5, x6) 
-            | D.InterfaceType x1 -> fields env x1
-            | D.MultiType2(x1, x2, x3) -> multiType2 env (x1, x2, x3)
-            | D.WrappedType(x1, x2, x3) -> wrappedType env (x1, x2, x3)
+            | D.EmptyType(x1, x2) -> emptyType &v &env (x1, x2)
+            | D.SingleMultiType(x1, x2, x3, x4) -> singleMultiType &v &env (x1, x2, x3, x4)
+            | D.ArrayType(x1, x2, x3) -> arrayType &v &env (x1, x2, x3)
+            | D.NamedType(x1, x2) -> namedType &v &env (x1, x2)
+            | D.VariadicType x1 -> variadicType &v &env x1
+            | D.ConstrainedType(x1, x2, x3) -> constrainedType &v &env (x1, x2, x3)
+            | D.FunctionType(x1, x2, x3, x4, x5, x6) -> functionType &v &env (x1, x2, x3, x4, x5, x6) 
+            | D.InterfaceType x1 -> fields &v &env x1
+            | D.MultiType2(x1, x2, x3) -> multiType2 &v &env (x1, x2, x3)
+            | D.WrappedType(x1, x2, x3) -> wrappedType &v &env (x1, x2, x3)
 
-        let emptyType env (x1, x2) =
-            reserved env x1 ||.
-            reserved env x2
+        let emptyType (v: _ byref) (env: _ inref) (x1, x2) =
+            reserved &v &env x1 ||.
+            reserved &v &env x2
 
-        let singleMultiType env (x1, x2, x3, x4) =
-            reserved env x1 ||.
-            parameter env x2 ||.
-            reserved env x3 ||.
-            reserved env x4
+        let singleMultiType (v: _ byref) (env: _ inref) (x1, x2, x3, x4) =
+            reserved &v &env x1 ||.
+            parameter &v &env x2 ||.
+            reserved &v &env x3 ||.
+            reserved &v &env x4
 
-        let arrayType env (x1, x2, x3) =
-            typeSign env x1 ||.
-            reserved env x2 ||.
-            reserved env x3
+        let arrayType (v: _ byref) (env: _ inref) (x1, x2, x3) =
+            typeSign &v &env x1 ||.
+            reserved &v &env x2 ||.
+            reserved &v &env x3
 
-        let namedType env (x1, x2) =
-            identifier env x1 ||
-            option (genericArguments env) x2
+        let namedType (v: _ byref) (env: _ inref) (x1, x2) =
+            identifier &v &env x1 ||
+            match x2 with
+            | Some x -> genericArguments &v &env x
+            | _ -> false
 
-        let variadicType env x =
-            intersecting env x &&
+        let variadicType (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
 
             let (D.VariadicTypeSign(x1, x2, x3)) = x.kind
-            option (identifier env) x1 ||.
-            reserved env x2 ||.
-            option (typeSign env) x3
+            (
+                match x1 with
+                | Some x -> identifier &v &env x
+                | _ -> false
+            ) ||.
+            reserved &v &env x2 ||.
+            (
+                match x3 with
+                | Some x -> typeSign &v &env x
+                | _ -> false
+            )
 
-        let constrainedType env (x1, x2, x3) =
-            typeSign env x1 ||.
-            reserved env x2 ||.
-            typeConstraints env x3
+        let constrainedType (v: _ byref) (env: _ inref) (x1, x2, x3) =
+            typeSign &v &env x1 ||.
+            reserved &v &env x2 ||.
+            typeConstraints &v &env x3
 
-        let functionType env (x1, x2, x3, x4, x5, x6) =
-            reserved env x1 ||.
-            reserved env x2 ||.
-            option (parameters env) x3 ||.
-            reserved env x4 ||.
-            reserved env x5 ||.
-            typeSign env x6
+        let functionType (v: _ byref) (env: _ inref) (x1, x2, x3, x4, x5, x6) =
+            reserved &v &env x1 ||.
+            reserved &v &env x2 ||.
+            (
+                match x3 with
+                | Some x -> parameters &v &env x
+                | _ -> false
+            ) ||.
+            reserved &v &env x4 ||.
+            reserved &v &env x5 ||.
+            typeSign &v &env x6
 
-        let wrappedType env (x1, x2, x3) =
-            reserved env x1 ||.
-            typeSign env x2 ||.
-            reserved env x3
+        let wrappedType (v: _ byref) (env: _ inref) (x1, x2, x3) =
+            reserved &v &env x1 ||.
+            typeSign &v &env x2 ||.
+            reserved &v &env x3
 
-        let multiType2 env (x1, x2, x3) =
-            parameter env x1 ||.
-            reserved env x2 ||.
-            parameters env x3
+        let multiType2 (v: _ byref) (env: _ inref) (x1, x2, x3) =
+            parameter &v &env x1 ||.
+            reserved &v &env x2 ||.
+            parameters &v &env x3
 
-        let genericArguments env (D.GenericArguments(x1, x2, x3, x4)) =
-            reserved env x1 ||.
-            sepBy (reserved env) (typeSign env) x2 ||.
-            option (reserved env) x3 ||.
-            reserved env x4
+        let genericArguments (v: _ byref) (env: _ inref) (D.GenericArguments(x1, x2, x3, x4)) =
+            reserved &v &env x1 ||.
+            (
+                let (SepBy(x, xs)) = x2
+                let mutable result = typeSign &v &env x
+                for sep, x in xs do result <- result ||. reserved &v &env sep ||. typeSign &v &env x
+                result
+            ) ||.
+            (
+                match x3 with
+                | Some x -> reserved &v &env x
+                | _ -> false
+            ) ||.
+            reserved &v &env x4
 
-        let parameter env x =
-            intersecting env x &&
+        let parameter (v: _ byref) (env: _ inref) x =
+            intersecting &env x &&
 
             let (D.Parameter(x1, x2)) = x.kind
-            option (tuple2 (identifier env) (reserved env)) x1 ||.
-            typeSign env x2
+            (
+                match x1 with
+                | Some(x1, x2) -> identifier &v &env x1 ||. reserved &v &env x2
+                | _ -> false
+            ) ||.
+            typeSign &v &env x2
 
-        let parameters env (D.Parameters x1) =
-            sepBy (reserved env) (parameter env) x1
+        let parameters (v: _ byref) (env: _ inref) (D.Parameters x1) =
+            let (SepBy(x, xs)) = x1
+            let mutable result = parameter &v &env x
+            for sep, x in xs do result <- result ||. reserved &v &env sep ||. parameter &v &env x
+            result
 
 module Block =
     open IterateRange
 
-    let iterateRange visitor visitorThis range source =
+    let iterateRange (visitor: _ byref) range source =
         let env = {
-            noUpdate = {
-                visitor = visitor
-                visitorThis = visitorThis
-                range = range
-            }
+            range = range
             typeParameterOwners = []
             typeLevel = 0
         }
-        chunk env source
+        chunk &visitor &env source
 
-    let hitTest visitor visitorThis position source =
-        iterateRange visitor visitorThis { start = position; end' = position + 1 } source
+    let hitTest (visitor: _ byref) position source =
+        iterateRange &visitor { start = position; end' = position + 1 } source

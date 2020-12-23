@@ -1,4 +1,5 @@
 module LuaChecker.Server.Marshalling
+#nowarn "0069"
 open Cysharp.Text
 open LuaChecker
 open LuaChecker.Server.Protocol
@@ -437,17 +438,23 @@ let renderLiteral context t info =
     renderSimpleType &b t
     b.ToString()
 
-type PrettyThis = {
+[<Struct>]
+type PrettyTokenVisitor = {
     marshallingContext: MarshallingContext
     mutable renderedText: string
 }
-let prettyTokenInfo = {
-    TypedSyntaxVisitor.noop with
-        var = fun struct(s, x, _) -> s.renderedText <- renderVar s.marshallingContext x
-        reserved = fun struct(s, x, _) -> s.renderedText <- renderReserved s.marshallingContext x
-        literal = fun struct(s, _, t, _, i) -> s.renderedText <- renderLiteral s.marshallingContext t i
+with
+    interface ITypedSyntaxVisitor with
+        member v.Var(x, _) = v.renderedText <- renderVar v.marshallingContext x
+        member v.Reserved(x, _) = v.renderedText <- renderReserved v.marshallingContext x
+        member v.Literal(_, t, _, i) = v.renderedText <- renderLiteral v.marshallingContext t i
+
         // TODO:
-}
+        member _.DocumentFieldIdentifier _ = ()
+        member _.DocumentFieldSeparator _ = ()
+        member _.DocumentFieldVisibility _ = ()
+        member _.DocumentIdentifier _ = ()
+        member _.DocumentReserved _ = ()
 
 (*
 let xs = [
@@ -523,18 +530,21 @@ let semanticTokenModifiersLegend = [
             n
 ]
 
-type CollectSemanticsThis = {
+[<Struct>]
+type CollectSemanticsVisitor = {
     buffer: int ResizeArray
     lineMap: LineMap
     typeSystemEnv: TypeEnv
     mutable lastLine: int
     mutable lastStartChar: int
 }
+with
+    interface ITypedSyntaxVisitor
 
 type private T = KnownSemanticTokenTypes
 type private M = KnownSemanticTokenModifiers
 
-let writeTokenRange this { start = start; end' = end' } =
+let writeTokenRange (this: _ byref) { start = start; end' = end' } =
     let (Position(line, startChar)) = LineMap.findPosition start this.lineMap
     let lastLine = this.lastLine
     let lastStartChar = this.lastStartChar
@@ -546,21 +556,21 @@ let writeTokenRange this { start = start; end' = end' } =
     this.lastLine <- line
     this.lastStartChar <- startChar
 
-let private writeTokenSemantics this tokenType tokenModifiers =
+let private writeTokenSemantics (this: _ inref) tokenType tokenModifiers =
     this.buffer.Add(int<KnownSemanticTokenTypes> tokenType)
     this.buffer.Add(int<KnownSemanticTokenModifiers> tokenModifiers)
 
 /// `...` `+` `#` …
-let writeReservedTokenSemantics this (ReservedVar(trivia = { span = span }; kind = kind)) _typeEnv =
-    writeTokenRange this span
+let writeReservedTokenSemantics (this: _ byref) (ReservedVar(trivia = { span = span }; kind = kind)) _typeEnv =
+    writeTokenRange &this span
     let struct(tokenType, tokenModifiers) =
         match kind with
         | TokenKind.Dot3 -> T.parameter, M.readonly
         | _ -> T.operator, M.``static``
-    writeTokenSemantics this tokenType tokenModifiers
+    writeTokenSemantics &this tokenType tokenModifiers
 
-let writeLiteralTokenSemantics this { trivia = { Syntaxes.Trivia.span = span }; kind = kind } _type _typeEnv leafInfo =
-    writeTokenRange this span
+let writeLiteralTokenSemantics (this: _ byref) { trivia = { Syntaxes.Trivia.span = span }; kind = kind } _type _typeEnv leafInfo =
+    writeTokenRange &this span
     let struct(tokenType, tokenModifiers) =
         match kind with
         | S.Number _ -> T.number, M.Empty
@@ -569,9 +579,9 @@ let writeLiteralTokenSemantics this { trivia = { Syntaxes.Trivia.span = span }; 
             | ValueSome { externalModulePath = ValueSome _ } -> T.``namespace``, M.Empty
             | _ -> T.string, M.Empty
         | _ -> T.keyword, M.Empty
-    writeTokenSemantics this tokenType tokenModifiers
+    writeTokenSemantics &this tokenType tokenModifiers
 
-let namedTypeSemantics this typeConstant = function
+let namedTypeSemantics (this: _ byref) typeConstant = function
 
     // `fun(…): (…)`
     | Type.Function this.typeSystemEnv (ValueSome _) -> ValueSome struct(T.``function``, M.Empty)
@@ -642,11 +652,11 @@ let resolveTypeParameterConstraints typeEnv id =
     )
     |> Option.unbox
 
-let rec typeSemantics this { Token.kind = type' } typeParameters typeEnv =
+let rec typeSemantics (this: _ byref) { Token.kind = type' } typeParameters typeEnv =
     match type' with
 
     // `fun(…) -> (…)` `nil` `table<…,…>`
-    | NamedType(typeConstant, _) as t -> namedTypeSemantics this typeConstant t
+    | NamedType(typeConstant, _) as t -> namedTypeSemantics &this typeConstant t
 
     // `{ x: …, … }`
     | InterfaceType _ -> ValueSome(T.``class``, M.Empty)
@@ -665,15 +675,15 @@ let rec typeSemantics this { Token.kind = type' } typeParameters typeEnv =
     | VarType v ->
         match v.target with
         | LuaChecker.Var(_, c) -> constraintsSemantics c
-        | Assigned t -> typeSemantics this t typeParameters typeEnv
+        | Assigned t -> typeSemantics &this t typeParameters typeEnv
 
     // `type(t) -> …`
-    | TypeAbstraction(ps, t) -> typeSemantics this t (ps @ typeParameters) typeEnv
+    | TypeAbstraction(ps, t) -> typeSemantics &this t (ps @ typeParameters) typeEnv
 
-let writeVarTokenSemantics this (Var(_, kind, repr, Name { trivia = { span = span } }, type', _)) typeEnv =
-    writeTokenRange this span
+let writeVarTokenSemantics (this: _ byref) (Var(_, kind, repr, Name { trivia = { span = span } }, type', _)) typeEnv =
+    writeTokenRange &this span
     let struct(tokenType, tokenModifiers) =
-        match typeSemantics this type' [] typeEnv with
+        match typeSemantics &this type' [] typeEnv with
         | ValueSome(((T.``function`` | T.number | T.string), _) as s) -> s
         | _ ->
 
@@ -692,12 +702,17 @@ let writeVarTokenSemantics this (Var(_, kind, repr, Name { trivia = { span = spa
 
         t, m
 
-    writeTokenSemantics this tokenType tokenModifiers
+    writeTokenSemantics &this tokenType tokenModifiers
 
-let collectSemanticsTokenData = {
-    TypedSyntaxVisitor.noop with
-        reserved = fun struct(this, reserved, typeEnv) -> writeReservedTokenSemantics this reserved typeEnv
-        literal = fun struct(this, literal, type', typeEnv, leafInfo) -> writeLiteralTokenSemantics this literal type' typeEnv leafInfo
-        var = fun struct(this, var, typeEnv) -> writeVarTokenSemantics this var typeEnv
+type CollectSemanticsVisitor with
+    interface ITypedSyntaxVisitor with
+        member v.Reserved(reserved, typeEnv) = writeReservedTokenSemantics &v reserved typeEnv
+        member v.Literal(literal, type', typeEnv, leafInfo) = writeLiteralTokenSemantics &v literal type' typeEnv leafInfo
+        member v.Var(var, typeEnv) = writeVarTokenSemantics &v var typeEnv
+
         // TODO:
-}
+        member _.DocumentFieldIdentifier _ = ()
+        member _.DocumentFieldSeparator _ = ()
+        member _.DocumentFieldVisibility _ = ()
+        member _.DocumentIdentifier _ = ()
+        member _.DocumentReserved _ = ()
