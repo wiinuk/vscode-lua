@@ -413,3 +413,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             0; 2; 6; int T.``type``; int M.Empty;
         |]
     }
+    [<Fact>]
+    member _.semanticTokenFeatureTag() = async {
+        let! r = semanticTokenFullResponseData "---@_Feature require\n---@global myRequire any"
+        r =? [|
+            -1
+        |]
+    }
