@@ -458,7 +458,7 @@ module private rec IterateRange =
             reserved &v &env x3
 
         let namedType (v: _ byref) (env: _ inref) (x1, x2) =
-            identifier &v &env x1 ||
+            identifier &v &env x1 ||.
             match x2 with
             | Some x -> genericArguments &v &env x
             | _ -> false

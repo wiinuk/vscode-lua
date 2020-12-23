@@ -365,3 +365,27 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             0; 9; 6; int T.``type``; int M.Empty;
         |]
     }
+    [<Fact>]
+    member _.semanticTokenGenericType() = async {
+        let! r = semanticTokenFullResponseData "---@global myTable table<string, number>"
+        r =? [|
+            // @
+            0; 3; 1; int T.keyword; int M.Empty;
+            // global
+            0; 1; 6; int T.keyword; int M.Empty;
+            // myTable
+            0; 7; 7; int T.variable; int M.Empty;
+            // table
+            0; 8; 5; int  T.``type``; int M.Empty;
+            // <
+            0; 5; 1; int T.operator; int M.Empty;
+            // string
+            0; 1; 6; int T.``type``; int M.Empty;
+            // ,
+            0; 6; 1; int T.operator; int M.Empty;
+            // number
+            0; 2; 6; int T.``type``; int M.Empty;
+            // >
+            0; 6; 1; int T.operator; int M.Empty;
+        |]
+    }
