@@ -6,6 +6,7 @@
     <Compile Include="TypedSyntaxes.types.fs" />
     <Compile Include="TypedSyntaxes.fs" />
     <Compile Include="Checkers.types.fs" />
+    <Compile Include="DocumentCheckers.fs" />
     <Compile Include="Project.fs" />
     <Compile Include="Checkers.fs" />
     <Compile Include="TypedSyntax.HitTest.fs" />

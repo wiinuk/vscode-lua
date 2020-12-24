@@ -6,6 +6,7 @@ open LuaChecker.Checker.Test.Utils
 open LuaChecker.Checker.Test.TypeExtensions
 open LuaChecker.Checker.Test.Helpers
 open LuaChecker.Primitives
+open LuaChecker.Test
 type private K = LuaChecker.DiagnosticKind
 
 
@@ -343,8 +344,11 @@ let parentModuleGlobal() =
                 "Lib1Counter", NonEmptyList(
                     {
                         scheme = types.number
-                        declarationKind = DeclarationKind.NoFeatures
                         location = Some <| Location(toDocumentPath "lib1", { start = 20; end' = 31 })
+                        declarationFeatures = DeclarationFeatures.NoFeatures
+                        declarationScope = IdentifierScope.Global
+                        declarationKind = IdentifierKind.Variable
+                        declarationRepresentation = IdentifierRepresentation.Declaration
                     },
                     []
                 )
@@ -410,13 +414,19 @@ let collisionGlobal() =
                 "Id",
                 {
                     scheme = types.string
-                    declarationKind = DeclarationKind.NoFeatures
                     location = Some <| Location(toDocumentPath "lib1", { start = 20; end' = 22 })
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationScope = IdentifierScope.Global
+                    declarationKind = IdentifierKind.Variable
+                    declarationRepresentation = IdentifierRepresentation.Declaration
                 },
                 {
                     scheme = types.number
-                    declarationKind = DeclarationKind.NoFeatures
                     location = Some <| Location(toDocumentPath "lib2", { start = 20; end' = 22 })
+                    declarationFeatures = DeclarationFeatures.NoFeatures
+                    declarationScope = IdentifierScope.Global
+                    declarationKind = IdentifierKind.Variable
+                    declarationRepresentation = IdentifierRepresentation.Declaration
                 },
                 []
             )

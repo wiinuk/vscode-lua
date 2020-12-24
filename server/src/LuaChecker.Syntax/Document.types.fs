@@ -1,9 +1,4 @@
-﻿namespace LuaChecker.Syntax
+namespace LuaChecker.Syntax
+open LuaChecker
 open LuaChecker.Syntax.Documents
 
-
-module MultiType =
-    let empty = MultiType([], None)
-
-module VariadicParameter =
-    let empty = VariadicParameter(None, None)

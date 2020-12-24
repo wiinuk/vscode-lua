@@ -3,10 +3,10 @@ open LuaChecker.Primitives
 open LuaChecker.Syntax
 
 
-type Trivia = Trivia<Documents.ParseResult>
+type Trivia = Trivia<HEmpty Documents.ParseResult>
 type Token<'T> = Token<'T, Trivia>
 type Token = Token<HEmpty, Trivia>
-type Name = Documents.ParseResult Name
+type Name = HEmpty Documents.ParseResult Name
 type SeparateBy<'S,'T> = Source<SepBy<'S,'T>>
 
 [<Struct>]
@@ -19,10 +19,6 @@ type LiteralKind =
     | Number of double
     | String of string
 type Literal = Token<LiteralKind>
-
-type FieldSepKind =
-    | Comma
-    | Semicolon
 
 type FieldSep = Token<FieldSepKind>
 

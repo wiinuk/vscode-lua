@@ -60,6 +60,8 @@ type Methods =
     | ``workspace/executeCommand`` = 52uy
     | ``workspace/symbol`` = 53uy
     | ``workspace/workspaceFolders`` = 54uy
+    | ``textDocument/semanticTokens/full`` = 55uy
+    | ``textDocument/semanticTokens/range`` = 56uy
 
 type JsonRpcVersion =
     | ``2.0`` = 2uy
@@ -250,10 +252,25 @@ type TextDocumentSyncOptions = {
     save: SaveOptions OptionalField
     change: TextDocumentSyncKind
 }
+
 [<Struct>]
+type SemanticTokensFullOptions = {
+    delta: bool OptionalField
+}
+[<Struct>]
+type SemanticTokensLegend = {
+    tokenTypes: string array
+    tokenModifiers: string array
+}
+type SemanticTokensOptions = {
+    legend: SemanticTokensLegend
+    range: boolean OptionalField // | {}
+    full: SemanticTokensFullOptions OptionalField // | boolean
+}
 type ServerCapabilities = {
     hoverProvider: bool
     textDocumentSync: TextDocumentSyncOptions
+    semanticTokensProvider: SemanticTokensOptions OptionalField
 }
 [<Struct>]
 type InitializeResult = {
@@ -307,6 +324,21 @@ type RegistrationParams = {
     registrations: Registration array
 }
 
+[<Struct; RequireQualifiedAccess>]
+type SemanticTokensParams = {
+    textDocument: TextDocumentIdentifier
+}
+[<RequireQualifiedAccess>]
+type SemanticTokensRangeParams = {
+    textDocument: TextDocumentIdentifier
+    range: Range
+}
+[<Struct>]
+type SemanticTokens = {
+    resultId: string OptionalField
+    data: int32 array
+}
+type SemanticTokensResponse = SemanticTokens voption
 [<Sealed>]
 type JsonRegistrationParser(options) =
     inherit JsonElementParser<Registration>()

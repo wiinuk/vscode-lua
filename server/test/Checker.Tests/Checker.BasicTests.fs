@@ -4,6 +4,7 @@ open LuaChecker.TypeSystem
 open LuaChecker.Checker.Test.Utils
 open LuaChecker.Checker.Test.Helpers
 open LuaChecker.Checker.Test.TypeExtensions
+open LuaChecker.Test
 open Xunit
 module C = Constraints
 module S = Syntaxes

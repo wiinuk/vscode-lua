@@ -18,8 +18,48 @@ type Token<'T,'Trivia> = {
     trivia: 'Trivia
 }
 
+[<Struct; RequireQualifiedAccess>]
+type SepByEnumerator<'S,'T> = private {
+    mutable state: byte
+    mutable current: 'T
+    mutable list: ('S * 'T) list
+}
+with
+    member e.Current = e.current
+    member e.MoveNext() =
+        match e.state with
+        | 0uy -> e.state <- 1uy; true
+        | 1uy ->
+            match e.list with
+            | (_, x)::xs ->
+                e.current <- x
+                e.list <- xs
+                true
+            | _ ->
+                e.state <- 2uy
+                false
+        | _ ->
+            false
+
+    interface IEnumerator<'T> with
+        member e.Current = e.Current
+        member e.Current = e.Current :> obj
+        member e.MoveNext() = e.MoveNext()
+        member _.Reset() = raise <| NotImplementedException()
+        member _.Dispose() = ()
+
 [<Struct>]
-type SepBy<'S,'T> = | SepBy of 'T * ('S * 'T) list
+type SepBy<'S,'T> = | SepBy of 'T * ('S * 'T) list with
+    member x.GetEnumerator() =
+        let (SepBy(x, xs)) = x
+        {
+            SepByEnumerator.state = 0uy
+            SepByEnumerator.current = x
+            SepByEnumerator.list = xs
+        }
+    interface IEnumerable<'T> with
+        member x.GetEnumerator() = x.GetEnumerator() :> _ IEnumerator
+        member x.GetEnumerator() = x.GetEnumerator() :> Collections.IEnumerator
 
 module SepBy =
     let toNonEmptyList = function
@@ -32,7 +72,20 @@ module SepBy =
         | [] -> x
         | _ -> List.last xs |> snd
 
+    let cons x sep (SepBy(x1, xs)) = SepBy(x, (sep, x1)::xs)
+    let rev (SepBy(x, xs) as all) =
+        match xs with
+        | [] -> all
+        | _ ->
+
+        let rec aux accX accSepXs = function
+            | [] -> SepBy(accX, accSepXs)
+            | (sep, x)::sepXs ->
+                aux x ((sep, accX)::accSepXs) sepXs
+        aux x [] xs
+
     let toList (SepBy(x, sepXs)) = x::List.map snd sepXs
+    let toSeq (SepBy _ as xs) = xs :> _ seq
     let inline fold folder state (SepBy(x, sepXs)) =
         let s = folder state x
         match sepXs with
@@ -40,11 +93,12 @@ module SepBy =
         | _ -> List.fold (fun s (_, x) -> folder s x) s sepXs
 
     let inline mapSep sepMapping mapping (SepBy(x, sepXs)) =
+        let x = mapping x
         let sepXs =
             match sepXs with
             | [] -> []
             | _ -> List.map (fun (sep, x) -> sepMapping sep, mapping x) sepXs
-        SepBy(mapping x, sepXs)
+        SepBy(x, sepXs)
 
     let inline map mapping x = mapSep (fun x -> x) mapping x
     let inline appendToResizeArray (SepBy(x, sepXs)) (buffer: _ ResizeArray) =
@@ -62,7 +116,7 @@ module Span =
         match isEmpty x1, isEmpty x2 with
         | true, _ -> x2
         | _, true -> x1
-        | _ -> { start = x1.start; end' = x2.end' }
+        | _ -> { start = min x1.start x2.start; end' = max x1.end' x2.end' }
 
     let inline sepBy measure xs = merge (measure (SepBy.head xs)) (measure (SepBy.last xs))
     let inline list measure = function
@@ -78,6 +132,7 @@ module Span =
         | Some x -> measure x
 
     let inRange i x = x.start <= i && i < x.end'
+    let isIntersecting x1 x2 = inRange x1.start x2 || inRange x2.start x1
 
 /// absolute/normalized uri
 [<Struct>]

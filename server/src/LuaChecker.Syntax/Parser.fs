@@ -569,22 +569,73 @@ and sourceFile s =
 module private DocumentParserHelpers =
     open System
     open LuaChecker.ParserCombinator
+    open LuaChecker.Syntax.Documents
+
+    module Annotated =
+        let inline measure f (Annotated(x, _)) = f x
+
+    module Measure =
+        let annotated (Annotated({ trivia = x }, _)) = x
+        let identifier (Annotated(Name { trivia = { span = x } }, _)) = x
+
+        let parameters (Parameters ps) =
+            Span.sepBy Source.measure ps
+
+    module Fields =
+        open Measure
+        let measure (Fields(l, _, _, r)) = Span.merge (annotated l) (annotated r)
+
+    module TypeSign =
+        open Measure
+        let measure = function
+            | EmptyType(l, r) -> Span.merge (annotated l) (annotated r)
+            | ArrayType(l, _, r) -> Span.merge l.trivia (annotated r)
+            | ConstrainedType(l, _, r) -> Span.merge l.trivia r.trivia
+            | FunctionType(l, _, _, _, _, r) -> Span.merge (annotated l) r.trivia
+            | InterfaceType x -> x.trivia
+            | MultiType2(l, _, r) -> Span.merge l.trivia (parameters r)
+            | NamedType(l, None) -> identifier l
+            | NamedType(l, Some(GenericArguments(_, _, _, r))) -> Span.merge (identifier l) (annotated r)
+            | SingleMultiType(l, _, _, r) -> Span.merge (annotated l) (annotated r)
+            | VariadicType { trivia = t } -> t
+            | WrappedType(l, _, r) -> Span.merge (annotated l) (annotated r)
+
+    module Parameter =
+        let measure (Parameter(l, r)) =
+            match l with
+            | Some(l, _) -> Span.merge (Measure.identifier l) r.trivia
+            | _ -> r.trivia
+
+    module TagTail =
+        let measure = function
+            | TypeTag(l, r) -> Span.merge (Measure.annotated l) r.trivia
+            | GlobalTag(l, _, r) -> Span.merge (Measure.annotated l) r.trivia
+            | FeatureTag(l, r) -> Span.merge (Measure.annotated l) (Measure.identifier r)
+            | ClassTag(l, r, None) -> Span.merge (Measure.annotated l) (Measure.identifier r)
+            | ClassTag(l, _, Some(_, r)) -> Span.merge (Measure.annotated l) r.trivia
+            | FieldTag(l, _, _, r) -> Span.merge (Measure.annotated l) r.trivia
+            | GenericTag(l, r) -> Span.merge (Measure.annotated l) (Span.sepBy Source.measure r)
+            | UnknownTag(l, Comment r) -> Span.merge (Measure.identifier l) r.trivia
+
+    let withTrivia trivia k = { kind = k; trivia = trivia }
+    let inline withMeasuredTrivia measure k = { kind = k; trivia = measure k }
+    let withEmptyAnnotation target = Annotated(target, HEmpty)
 
     let token kind s =
-        match Scanner.readToken kind s with
-        | ValueSome t -> Ok { kind = HEmpty; trivia = t }
+        match Scanner.readTokenSpan kind s with
+        | ValueSome t -> Ok(withEmptyAnnotation { kind = HEmpty; trivia = t })
         | _ -> Error <| Errors.findRequireToken kind
 
     let colon s = token K.Colon s
 
     let fieldSep s =
-        match Scanner.readPick (function FieldSepKind(ValueSome k) -> ValueSome k | _ -> ValueNone) s with
-        | ValueSome(k, t) -> Ok { kind = k; trivia = t }
+        match Scanner.tokenKind s with
+        | FieldSepKind(ValueSome k) -> { kind = k; trivia = Scanner.unsafeReadSpan s } |> withEmptyAnnotation |> Ok
         | _ -> Error E.RequireFieldSep
 
     let name s =
         match Scanner.readPick (function K.Name x -> ValueSome x | _ -> ValueNone) s with
-        | ValueSome(x, t) -> Ok <| Name { kind = x; trivia = t }
+        | ValueSome(x, t) -> Name { kind = x; trivia = t } |> withEmptyAnnotation |> Ok
         | _ -> Error E.RequireName
 
     let inline sepBy sep p s = sepBy sep p s |> mapResult (fun struct(x, xs) -> SepBy(x, xs))
@@ -670,10 +721,6 @@ module DocumentParser =
     open DocumentParserHelpers
     open type LuaChecker.Syntax.Name<HEmpty voption>
 
-    // TODO: Trivia オブジェクトを生成しないようにする
-    let tokenSpan k s = token k s |> mapResult (fun x -> x.trivia.span)
-    let withTrivia trivia k = { kind = k; trivia = trivia }
-
     let comments0 (s: _ Scanner.Scanner) =
         if s.currentTokenStructure.hasValue then
             s.position <- s.currentTokenStructure._span.start
@@ -707,39 +754,25 @@ module DocumentParser =
             match Scanner.readPick (function K.Number x -> ValueSome x | _ -> ValueNone) s with
             | ValueSome(x, t1) ->
                 let sign = if k = K.Sub then -1. else 1.
-                FieldKey.Number(x * sign) |> withSpan2 s0 t1.span |> Ok
+                FieldKey.Number(x * sign) |> withSpan2 s0 t1.span |> withEmptyAnnotation |> Ok
 
             | _ ->
                 Error E.RequireAnyFieldKey
         | _ ->
             match Scanner.readPick (function FieldKey x -> x) s with
-            | ValueSome(k, t) -> k |> withTrivia t.span |> Ok
+            | ValueSome(k, t) -> k |> withTrivia t.span |> withEmptyAnnotation |> Ok
             | _ -> Error E.RequireAnyFieldKey
-
-    /// name? "..."
-    let varParamHead s =
-        match Scanner.readTokenSpan K.Dot3 s with
-        | ValueSome span -> Ok struct(None, span)
-        | _ -> attempt (pipe2 (name, tokenSpan K.Dot3) (fun (Name name as n, d) -> struct(Some n, Span.merge name.trivia.span d))) s
-
-    let makeConstrainedMultiType (struct(n, headSpan), et) =
-        let span = Span.merge headSpan et.trivia
-        let v = VariadicParameter(n, Some et) |> withTrivia span |> Some
-        MultiType([], v) |> withTrivia span
 
     let rec primitiveType s =
         match Scanner.tokenKind s with
         | K.Name n ->
-            let t = Scanner.unsafeReadTrivia s
-            let n' = n |> withTrivia t |> Name
+            let n' = n |> withTrivia (Scanner.unsafeReadTrivia s) |> Syntax.Name |> withEmptyAnnotation
 
             match Scanner.tokenKind s with
             // name "<" …
             | K.Lt -> genericTypeTail n' s
-            // "fun" "(" …
-            | K.LBracket when n = "fun" -> functionTypeTail n' s
             // name "..." …
-            | K.Dot3 -> varParameterTail (Some n') s |> mapResult (fun v -> MultiType([], Some v) |> withTrivia v.trivia)
+            | K.Dot3 -> varParameterTail (Some n') s |> mapResult (fun v -> VariadicType v |> withTrivia v.trivia)
             // name
             | _ -> namedType n'
 
@@ -755,33 +788,35 @@ module DocumentParser =
                 multiType1 s
 
         // "..." …
-        | K.Dot3 -> varParameterTail None s |> mapResult (fun v -> MultiType([], Some v) |> withTrivia v.trivia)
+        | K.Dot3 -> varParameterTail None s |> mapResult (fun v -> VariadicType v |> withTrivia v.trivia)
 
         | _ -> Error E.RequireAnyTypeSign
 
-    /// name? "..." constrainedType?
+    /// name? "..." primitiveType?
     and varParameterTail n s =
-        let span = Scanner.unsafeReadSpan s
-        let span = Span.merge (Span.option Name.measure n) span
+        let dot3 = withTrivia (Scanner.unsafeReadSpan s) HEmpty |> withEmptyAnnotation
 
-        option constrainedType s
+        option primitiveType s
         |> mapResult (fun et ->
-            VariadicParameter(n, et)
+            let span = Span.merge (Span.option (Annotated.measure Name.measure) n) (Annotated.measure Source.measure dot3)
+            VariadicTypeSign(n, dot3, et)
             |> withSpan2 span (Span.option Source.measure et)
         )
 
     /// "(" parameter "," ")"
     and multiType1 s =
-        pipe4 (tokenSpan K.LBracket, parameter, tokenSpan K.Comma, tokenSpan K.RBracket) (fun (l, p, _, r) ->
-            MultiType([p], None) |> withSpan2 l r
+        pipe4 (token K.LBracket, parameter, token K.Comma, token K.RBracket) (fun (l, t, c, r) ->
+            SingleMultiType(l, t, c, r)
+            |> withMeasuredTrivia TypeSign.measure
         ) s
 
+    /// name ":" constrainedType | "..." constrainedType? | constrainedType
     and parameter s =
         match Scanner.tokenKind s with
         | K.Name n ->
             let s' = Scanner.getState s
             let nt = Scanner.unsafeReadTrivia s
-            let n = n |> withTrivia nt
+            let n = n |> withTrivia nt |> Syntax.Name |> withEmptyAnnotation
 
             match Scanner.tokenKind s with
             // name ":" …
@@ -794,22 +829,22 @@ module DocumentParser =
 
         | _ -> namelessParameter s
 
-    and namedType n = NamedType(n, []) |> withTrivia (Name.measure n) |> Ok
+    and namedType n = NamedType(n, None) |> withMeasuredTrivia TypeSign.measure |> Ok
 
-    /// "<" functionType ("," functionType)* ">"
+    /// "<" constrainedType ("," constrainedType)* ","? ">"
     and genericTypeTail n s =
-        pipe3 (tokenSpan K.Lt, sepBy (tokenSpan K.Comma) functionType, tokenSpan K.Gt) (fun (_, ts, gt) ->
-            NamedType(n, SepBy.toList ts)
-            |> withSpan2 (Name.measure n) gt
+        pipe4 (token K.Lt, sepBy (token K.Comma) constrainedType, option (token K.Comma), token K.Gt) (fun (lt, ts, s, gt) ->
+            NamedType(n, Some(GenericArguments(lt, ts, s, gt)))
+            |> withMeasuredTrivia TypeSign.measure
         ) s
 
-    /// ":" functionType
+    /// ":" constrainedType
     and namedParameterTail n s =
-        Scanner.skip s
-        functionType s
+        let colon = HEmpty |> withTrivia (Scanner.unsafeReadSpan s) |> withEmptyAnnotation
+        constrainedType s
         |> mapResult (fun t ->
-            Parameter(Some(Name n), t)
-            |> withSpan2 n.trivia.span t.trivia
+            Parameter(Some(n, colon), t)
+            |> withMeasuredTrivia Parameter.measure
         )
 
     /// functionType
@@ -819,85 +854,32 @@ module DocumentParser =
             Parameter(None, t) |> withTrivia t.trivia
         )
 
-    and parameterOrVarParameter s =
-        match Scanner.tokenKind s with
-        | K.Name n ->
-            let s' = Scanner.getState s
-            let nt = Scanner.unsafeReadTrivia s
-            let n = n |> withTrivia nt
+    /// parameter ("," parameter)*
+    and parameters1 s = sepBy (token K.Comma) parameter s |> mapResult Parameters
 
-            match Scanner.tokenKind s with
-            // name ":" …
-            | K.Colon -> namedParameterTail n s |> mapResult Choice1Of2
-            // name "..." …
-            | K.Dot3 -> varParameterTail (Some(Name n)) s |> mapResult Choice2Of2
-            // name …
-            | _ ->
-                Scanner.setState &s' s
-                namelessParameter s |> mapResult Choice1Of2
-
-        // "..." …
-        | K.Dot3 -> varParameterTail None s |> mapResult Choice2Of2
-
-        | _ -> namelessParameter s |> mapResult Choice1Of2
-
-    /// ("," parameter)* ("," varParameter)?
-    and parameters1Tail acc span s =
-        match Scanner.readTokenSpan K.Comma s with
-        // ","
-        | ValueSome _ ->
-            match parameterOrVarParameter s with
-            | Error e -> Error e
-            // "," varParameter
-            | Ok(Choice2Of2 v) -> MultiType(List.rev acc, Some v) |> withSpan2 span v.trivia |> Ok
-            // "," parameter …
-            | Ok(Choice1Of2 p) -> parameters1Tail (p::acc) (Span.merge span p.trivia) s
-        // …
-        | _ -> MultiType(List.rev acc, None) |> withTrivia span |> Ok
-
-    /// varParameter | parameter ("," parameter)* ("," varParameter)?
-    and parameters1 s =
-        match parameterOrVarParameter s with
-        | Error e -> Error e
-        | Ok(Choice2Of2 v) -> MultiType([], Some v) |> withTrivia v.trivia |> Ok
-        | Ok(Choice1Of2 p) -> parameters1Tail [p] p.trivia s
-
-    /// "(" parameters1? ")"
-    and parameters0 s =
-        pipe3 (tokenSpan K.LBracket, option parameters1, tokenSpan K.RBracket) (fun (x1, x2, x3) ->
-            match x2 with
-            | None -> MultiType.empty |> withSpan2 x1 x3
-            | Some x2 -> x2
-        ) s
-
-    /// parameter "," varParameter | parameter ("," parameter)+ ("," varParameter)?
+    /// parameter ("," parameter)+
     and parameters2 s =
-        pipe3 (parameter, tokenSpan K.Comma, parameters1) (fun (p1, _, pt) ->
-            match pt.kind with
-            | MultiType(ps, v) -> MultiType(p1::ps, v) |> withSpan2 p1.trivia pt.trivia
-            | _ -> failwithf "unreachable"
+        pipe3 (parameter, token K.Comma, parameters1) (fun (p, c, ps) ->
+            let (Parameters ps') = ps
+            let span = Span.sepBy Source.measure ps'
+
+            MultiType2(p, c, ps)
+            |> withSpan2 p.trivia span
         ) s
 
     and results s = functionType s
 
-    /// parameters0 ":" results
-    and functionTypeTail n s =
-        pipe3 (parameters0, tokenSpan K.Colon, results) (fun (ps, _, rs) ->
-            FunctionType(ps, rs)
-            |> withSpan2 (Name.measure n) rs.trivia
-        ) s
-
-    /// fieldKey ":" functionType
+    /// fieldKey ":" constrainedType
     and fieldSign s =
-        pipe3 (fieldKey, colon, functionType) (fun (k, _, t) ->
-            Field(k, t) |> withSpan2 k.trivia t.trivia
+        pipe3 (fieldKey, colon, constrainedType) (fun (k, c, t) ->
+            Field(k, c, t) |> withSpan2 (Measure.annotated k) t.trivia
         ) s
 
     /// "{" field (fieldSep field)* fieldSep? "}"
     and fields s =
-        pipe4 (tokenSpan K.LCBracket, sepBy fieldSep fieldSign, option fieldSep, tokenSpan K.RCBracket) (fun (l, fs, _, r) ->
-            Fields(SepBy.toNonEmptyList fs)
-            |> withSpan2 l r
+        pipe4 (token K.LCBracket, sepBy fieldSep fieldSign, option fieldSep, token K.RCBracket) (fun (l, fs, s, r) ->
+            Fields(l, fs, s, r)
+            |> withMeasuredTrivia Fields.measure
         ) s
 
     and constraints s = fields s
@@ -909,36 +891,63 @@ module DocumentParser =
 
     /// "(" type ")" | "(" ")"
     and wrappedType s =
-        match tokenSpan K.LBracket s with
+        match token K.LBracket s with
         | Error e -> Error e
 
         // "("
-        | Ok span1 ->
+        | Ok l ->
 
-        match Scanner.readTokenSpan K.RBracket s with
+        match token K.RBracket s with
 
         // "(" ")"
-        | ValueSome span2 -> MultiType.empty |> withSpan2 span1 span2 |> Ok
+        | Ok r -> EmptyType(l, r) |> withMeasuredTrivia TypeSign.measure |> Ok
 
         // "(" …
-        | _ -> pipe2 (typeSign, tokenSpan K.RBracket) (fun (t, _) -> t) s
+        | _ -> pipe2 (typeSign, token K.RBracket) (fun (t, r) -> WrappedType(l, t, r) |> withMeasuredTrivia TypeSign.measure) s
 
     /// "[" "]"
-    and arrayTypeTail t s = pipe2 (tokenSpan K.LSBracket, tokenSpan K.RSBracket) (fun (_, r) -> ArrayType t |> withSpan2 t.trivia r) s
+    and arrayTypeTail t s = pipe2 (token K.LSBracket, token K.RSBracket) (fun (l, r) -> ArrayType(t, l, r) |> withMeasuredTrivia TypeSign.measure) s
     /// primitiveType ("[" "]")*
     and arrayType s = postfixOps primitiveType arrayTypeTail s
+    and makeFunctionType (struct(funName, l, ps, r, c), t) =
+        FunctionType(funName, l, ps, r, c, t)
+        |> withMeasuredTrivia TypeSign.measure
+    and functionTypeHeadTail funNameTrivia s =
+        pipe4 (token K.LBracket, option parameters1, token K.RBracket, colon) (fun (l, ps, r, c) ->
+            let funName = HEmpty |> withTrivia funNameTrivia |> withEmptyAnnotation
+            struct(funName, l, ps, r, c)
+        ) s
+    /// "fun" "(" parameters1? ")" ":"
+    and functionTypeHead s =
+        let state = Scanner.getState s
+        match Scanner.tokenKind s with
+        | K.Name n when n = "fun" ->
+            let funNameTrivia = Scanner.unsafeReadSpan s
+
+            match Scanner.tokenKind s with
+
+            // "fun" "(" …
+            | K.LBracket -> functionTypeHeadTail funNameTrivia s
+
+            | _ ->
+                Scanner.setState &state s
+                Error <| E.findRequireToken K.LBracket
+        | _ -> Error E.RequireName
+
+    /// ("fun" "(" parameters1? ")" ":")* arrayType
+    and functionType s = prefixOps makeFunctionType functionTypeHead arrayType s
     /// ":" constraints
-    and constrainedTypeTail t s = pipe2 (tokenSpan K.Colon, constraints) (fun (_, c) ->  ConstrainedType(t, c) |> withSpan2 t.trivia c.trivia) s
-    /// arrayType ":" constraints
-    and constrainedType s = postfixOps arrayType constrainedTypeTail s
-    and functionType s = constrainedType s
+    and constrainedTypeTail t s = pipe2 (colon, constraints) (fun (colon, c) -> ConstrainedType(t, colon, c) |> withSpan2 t.trivia c.trivia) s
+    /// functionType (":" constraints)*
+    and constrainedType s = postfixOps functionType constrainedTypeTail s
+    /// parameters2 / constrainedType
     and multiType s =
         let s' = Scanner.getState s
         match parameters2 s with
         | Ok _ as r -> r
         | _ ->
             Scanner.setState &s' s
-            functionType s
+            constrainedType s
 
     and typeSign s = multiType s
 
@@ -963,25 +972,30 @@ module DocumentParser =
 
     let typeSignSkipTrivia s = inSkipTriviaScope typeSign s
 
-    let typeTagTail at s =
-        pipe2 (typeSignSkipTrivia, whiteSpaces0) (fun (t, _) -> TypeTag t |> withSpan2 at t.trivia) s
+    let typeTag tagName s =
+        pipe2 (typeSignSkipTrivia, whiteSpaces0) (fun (t, _) ->
+            TypeTag(tagName, t)
+            |> withMeasuredTrivia TagTail.measure
+        ) s
 
-    let globalTagTail at s =
-        pipe4 (whiteSpaces0, name, typeSignSkipTrivia, whiteSpaces0) (fun (_, n, t, _) -> GlobalTag(n, t) |> withSpan2 at t.trivia) s
+    let globalTag tagName s =
+        pipe4 (whiteSpaces0, name, typeSignSkipTrivia, whiteSpaces0) (fun (_, n, t, _) ->
+            GlobalTag(tagName, n, t)
+            |> withMeasuredTrivia TagTail.measure
+        ) s
 
     /// \s* name
-    let featureTagTail at s =
-        pipe3 (whiteSpaces0, name, whiteSpaces0) (fun (_, (Name name as n), _) -> FeatureTag n |> withSpan2 at name.trivia.span) s
+    let featureTag tagName s =
+        pipe3 (whiteSpaces0, name, whiteSpaces0) (fun (_, n, _) ->
+            FeatureTag(tagName, n)
+            |> withMeasuredTrivia TagTail.measure
+        ) s
 
     /// name (":" type)?
-    let classTagTail at s =
-        inSkipTriviaScope (pipe2 (name, option (pipe2 (tokenSpan K.Colon, typeSign) (fun (_, t) -> t))) (fun (Name name as n, t) ->
-            let span2 =
-                match t with
-                | None -> name.trivia.span
-                | Some t -> t.trivia
-
-            ClassTag(n, t) |> withSpan2 at span2
+    let classTag tagName s =
+        inSkipTriviaScope (pipe2 (name, option (pipe2 (colon, typeSign) id)) (fun (n, t) ->
+            ClassTag(tagName, n, t)
+            |> withMeasuredTrivia TagTail.measure
         )) s
 
     let (|Visibility|) = function
@@ -992,25 +1006,37 @@ module DocumentParser =
 
     let visibility s =
         match Scanner.tokenKind s with
-        | K.Name(Visibility(ValueSome v)) -> Scanner.skip s; Ok <| Some v
+        | K.Name(Visibility(ValueSome v)) ->
+            let span = Scanner.tokenSpan s
+            Scanner.skip s
+            v
+            |> withTrivia span
+            |> withEmptyAnnotation
+            |> Some
+            |> Ok
+
         | _ -> Ok None
 
     /// visibility? fieldKey type
-    let fieldTagTail' at s = pipe3 (visibility, fieldKey, typeSign) (fun (v, n, t) -> FieldTag(v, n, t) |> withSpan2 at t.trivia) s
-    let fieldTagTail at s = inSkipTriviaScope (fieldTagTail' at) s
+    let fieldTagTail' tagName s =
+        pipe3 (visibility, fieldKey, typeSign) (fun (v, n, t) ->
+            FieldTag(tagName, v, n, t)
+            |> withMeasuredTrivia TagTail.measure
+        ) s
+    let fieldTag tagName s = inSkipTriviaScope (fieldTagTail' tagName) s
 
-    /// "..." constrainedType?
+    /// "..." primitiveType?
     let variadicTypeParameterTail n s =
-        pipe2 (tokenSpan K.Dot3, option constrainedType) (fun (_, t) ->
-            VariadicTypeParameter(n, t)
-            |> withSpan2 (Name.measure n) (Span.option Source.measure t)
+        pipe2 (token K.Dot3, option primitiveType) (fun (dot3, t) ->
+            VariadicTypeParameter(n, dot3, t)
+            |> withSpan2 (Measure.identifier n) (Span.option Source.measure t)
         ) s
 
     /// ":" constraints
     let typeParameterWithConstraintsTail n s =
-        pipe2 (tokenSpan K.Colon, constraints) (fun (_, t) ->
-            TypeParameter(n, Some t)
-            |> withSpan2 (Name.measure n) t.trivia
+        pipe2 (colon, constraints) (fun (colon, t) ->
+            TypeParameter(n, Some(colon, t))
+            |> withSpan2 (Measure.identifier n) t.trivia
         ) s
 
     /// name (":" constraints)? | name "..." constrainedType?
@@ -1028,42 +1054,46 @@ module DocumentParser =
         | K.Colon -> typeParameterWithConstraintsTail n s
 
         // name …
-        | _ -> TypeParameter(n, None) |> withTrivia (Name.measure n) |> Ok
+        | _ -> TypeParameter(n, None) |> withTrivia (Measure.identifier n) |> Ok
 
     /// typeParameter ("," typeParameter)*
-    let genericTagTail at s =
-        inSkipTriviaScope (sepBy (tokenSpan K.Comma) typeParameter) s
+    let genericTag tagName s =
+        inSkipTriviaScope (sepBy (token K.Comma) typeParameter) s
         |> mapResult (fun xs ->
-            xs
-            |> SepBy.toNonEmptyList
-            |> GenericTag
-            |> withSpan2 at (SepBy.last xs).trivia
+            GenericTag(tagName, xs)
+            |> withMeasuredTrivia TagTail.measure
         )
 
     /// \s* \k<comments>
-    let unknownTagTail at name s =
-        pipe2 (whiteSpaces0, comments0) (fun (_, (Comment { trivia = commentSpan } as c)) ->
-            UnknownTag(name, c)
-            |> withSpan2 at commentSpan
+    let unknownTagTail tagName s =
+        pipe2 (whiteSpaces0, comments0) (fun (_, c) ->
+            UnknownTag(tagName, c)
+            |> withMeasuredTrivia TagTail.measure
         ) s
 
     /// "@" \k<name>
-    let tagHead s = pipe2 (tokenSpan K.At, name) (fun (x1, x2) -> struct(x1, x2)) s
+    let tagHead s = pipe2 (token K.At, name) (fun (x1, x2) -> struct(x1, x2)) s
 
     /// (?<tag> @ \k<name> …)
     let tag s =
         match tagHead s with
         | Error e -> Error e
-        | Ok(at, Name { kind = tagName } & n) ->
+        | Ok(at, Annotated(Name.Name tagName, _)) ->
 
-        match tagName with
-        | "type" -> typeTagTail at s
-        | "global" -> globalTagTail at s
-        | "_Feature" -> featureTagTail at s
-        | "class" -> classTagTail at s
-        | "field" -> fieldTagTail at s
-        | "generic" -> genericTagTail at s
-        | _ -> unknownTagTail at n s
+        let n = HEmpty |> withTrivia tagName.trivia.span |> withEmptyAnnotation
+        match tagName.kind with
+        | "type" -> typeTag n s
+        | "global" -> globalTag n s
+        | "_Feature" -> featureTag n s
+        | "class" -> classTag n s
+        | "field" -> fieldTag n s
+        | "generic" -> genericTag n s
+        | _ -> unknownTagTail (Syntax.Name tagName |> withEmptyAnnotation) s
+
+        |> mapResult (fun e ->
+            Tag(at, e)
+            |> withSpan2 (Measure.annotated at) e.trivia
+        )
 
     /// (?<document> \k<comments> \k<tag>* )
     let document s =

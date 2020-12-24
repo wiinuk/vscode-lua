@@ -552,8 +552,8 @@ module Helpers =
         | TypeAbstraction(ps, t) -> TypeAbstraction(ps, functionReturnTypeRec t) |> Type.makeWithEmptyLocation
         | _ -> t
 
-    let chunkReturnType1 t = t.state.functionType |> functionReturnType1Rec |> Scheme.normalize
-    let chunkReturnType t = t.state.functionType |> functionReturnTypeRec |> Scheme.normalize
+    let chunkReturnType1 t = t.functionType |> functionReturnType1Rec |> Scheme.normalize
+    let chunkReturnType t = t.functionType |> functionReturnTypeRec |> Scheme.normalize
 
     let projectActionsToScheme withConfig =
         projectActions withConfig >> List.map (function
@@ -840,3 +840,50 @@ module Helpers =
         table = types'.table >> Type.makeWithEmptyLocation
         multi1 = fun t -> TypeSystem.multi1 types' t []
     }
+    [<Struct>]
+    type PolymorphicTypedSyntaxVisitor<'T when 'T :> ITypedSyntaxVisitor and 'T : not struct>(visitor: 'T) =
+        interface ITypedSyntaxVisitor with
+            override _.Var(x1, x2) = visitor.Var(x1, x2)
+            override _.Reserved(x1, x2) = visitor.Reserved(x1, x2)
+            override _.Literal(x1, x2, x3, x4) = visitor.Literal(x1, x2, x3, x4)
+    
+            override _.DocumentReserved x = visitor.DocumentReserved x
+            override _.DocumentIdentifier x = visitor.DocumentIdentifier x
+            override _.DocumentFieldSeparator x = visitor.DocumentFieldSeparator x
+            override _.DocumentFieldIdentifier x = visitor.DocumentFieldIdentifier x
+            override _.DocumentFieldVisibility x = visitor.DocumentFieldVisibility x
+    let polyVisitor v = PolymorphicTypedSyntaxVisitor v
+
+    module D = LuaChecker.Syntax.Documents
+    [<AbstractClass>]
+    type TypedSyntaxVisitorBase() =
+        abstract Visit: unit -> unit
+    
+        abstract Var: Var * TypeEnvironment -> unit
+        default v.Var(_, _) = v.Visit()
+        abstract Reserved: ReservedVar * TypeEnvironment -> unit
+        default v.Reserved(_, _) = v.Visit()
+        abstract Literal: Syntaxes.Literal * Type * TypeEnvironment * LeafInfo voption -> unit
+        default v.Literal(_, _, _, _) = v.Visit()
+        
+        abstract DocumentReserved: LeafSemantics D.Reserved -> unit
+        default v.DocumentReserved _ = v.Visit()
+        abstract DocumentIdentifier: LeafSemantics D.Identifier -> unit
+        default v.DocumentIdentifier _ = v.Visit()
+        abstract DocumentFieldSeparator: LeafSemantics D.FieldSeparator -> unit
+        default v.DocumentFieldSeparator _ = v.Visit()
+        abstract DocumentFieldIdentifier: LeafSemantics D.FieldIdentifier -> unit
+        default v.DocumentFieldIdentifier _ = v.Visit()
+        abstract DocumentFieldVisibility: LeafSemantics D.FieldVisibility -> unit
+        default v.DocumentFieldVisibility _ = v.Visit()
+    
+        interface ITypedSyntaxVisitor with
+            override v.Var(x1, x2) = v.Var(x1, x2)
+            override v.Reserved(x1, x2) = v.Reserved(x1, x2)
+            override v.Literal(x1, x2, x3, x4) = v.Literal(x1, x2, x3, x4)
+    
+            override v.DocumentReserved x = v.DocumentReserved x
+            override v.DocumentIdentifier x = v.DocumentIdentifier x
+            override v.DocumentFieldSeparator x = v.DocumentFieldSeparator x
+            override v.DocumentFieldIdentifier x = v.DocumentFieldIdentifier x
+            override v.DocumentFieldVisibility x = v.DocumentFieldVisibility x

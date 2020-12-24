@@ -245,9 +245,9 @@
           <xsd:documentation>string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
-      <xsd:element name="DuplicateTag" type="pattern-2">
+      <xsd:element name="DuplicateTag" type="pattern-3">
         <xsd:annotation>
-          <xsd:documentation>otherTag: string -&gt; string</xsd:documentation>
+          <xsd:documentation>otherTagName: string -&gt; otherTagSpan: string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
       <xsd:element name="FieldParentTagNotFound" type="pattern-1">

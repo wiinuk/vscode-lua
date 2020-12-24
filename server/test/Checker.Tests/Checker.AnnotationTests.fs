@@ -5,6 +5,7 @@ open LuaChecker.Checker.Test.Utils
 open LuaChecker.Checker.Test.Helpers
 open LuaChecker.Checker.Test.TypeExtensions
 open LuaChecker.Primitives
+open LuaChecker.Test
 open LuaChecker.TypeSystem
 type private K = LuaChecker.DiagnosticKind
 
@@ -248,7 +249,7 @@ let specialGlobalRedeclarationWarning() =
     ---@global require _
     "
     =? [
-        warning (16, 23) <| K.RedeclarationOfSpecialGlobalVariable("require", DeclarationKind.GlobalRequire, DeclarationKind.NoFeatures)
+        warning (16, 23) <| K.RedeclarationOfSpecialGlobalVariable("require", DeclarationFeatures.GlobalRequire, DeclarationFeatures.NoFeatures)
     ]
 
 [<Fact>]
@@ -486,7 +487,7 @@ let duplicatedTypeParameterUnifyError() =
     ---@class ConstraintTypeMismatch
     "
     =? [
-        error (20, 33) <| K.UnifyError(TypeMismatch(types.number, types.string))
+        error (53, 66) <| K.UnifyError(TypeMismatch(types.string, types.number))
     ]
 
 [<Fact>]
@@ -880,3 +881,10 @@ let typeVarInMultiConstraint() =
                 types.multi1 types.number
             )
     ]
+
+[<Fact>]
+let typeParameterAnnotation() =
+    chunkResult
+        (fun x -> { x with projectConfig = { x.projectConfig with initialGlobalModulePaths = [] } })
+        "---@global f fun(...): ()"
+    =? multi []

@@ -20,6 +20,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <ProjectReference Include="..\..\src\JsonExtensions\LuaChecker.JsonExtensions.fsproj" />
+    <ProjectReference Include="..\LuaChecker.Test.Helpers\LuaChecker.Test.Helpers.fsproj" />
     <PackageReference Update="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
 </Project>

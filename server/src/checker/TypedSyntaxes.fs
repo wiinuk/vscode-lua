@@ -1,4 +1,4 @@
-﻿module rec LuaChecker.TypedSyntaxes
+module rec LuaChecker.TypedSyntaxes
 open LuaChecker
 open LuaChecker.Primitives
 open LuaChecker.TypeSystem
@@ -6,12 +6,10 @@ module S = LuaChecker.Syntaxes
 module D = LuaChecker.Syntax.Documents
 
 
-type Entity<'T,'S> = {
-    span: Span
-    entity: 'T
-    state: 'S
-}
-type Entity<'T> = Entity<'T, HEmpty>
+type Token<'T> = Token<'T, Span>
+type Tags = LeafSemantics D.Tag list Token
+type NeighbourTags = Tags * Tags
+
 type LeafInfo = {
     externalModulePath: DocumentPath voption
     schemeInstantiation: (Scheme * struct(TypeParameterId * Type) list) voption
@@ -23,13 +21,22 @@ module LeafInfo =
     }
 
 type VarList = Var NonEmptyList
-type Var = Var of name: S.Name * Type * LeafInfo voption
-type ReservedVar = ReservedVar of trivia: S.Trivia * Syntax.TokenKind * Type * LeafInfo voption
 
-type ParameterList = ParameterList' Entity
+type Var =
+    | Var of
+        scope: IdentifierScope *
+        kind: IdentifierKind *
+        representation: IdentifierRepresentation *
+        name: S.Name *
+        varType: Type *
+        leaf: LeafInfo voption
+
+type ReservedVar = ReservedVar of trivia: S.Trivia * kind: Syntax.TokenKind * Type * LeafInfo voption
+
+type ParameterList = ParameterList' Token
 type ParameterList' = ParameterList of Var list * varArg: ReservedVar option
 
-type Exp = Exp' Entity
+type Exp = Exp' Token
 type Exp' =
     | Literal of S.Literal * Type * LeafInfo voption
     | VarArg of ReservedVar
@@ -47,29 +54,29 @@ type Exp' =
     /// `( exp )`
     | Wrap of Exp
     /// `--[[ typeSign ]]( exp )`
-    | TypeReinterpret of typeSign: D.TypeSign * Exp * toType: Type
+    | TypeReinterpret of tags: Tags * Exp
 
     // FunctionCall
     | Call of Exp * Exp list
     | CallWithSelf of Exp * Var * Exp list
 
-type Field = Field' Entity
+type Field = Field' Token
 type Field' =
     | Init of Exp
     | MemberInit of Var * Exp
     | IndexInit of Exp * Exp
 
-type FuncBody = FuncBody' Entity
+type FuncBody = FuncBody' LuaChecker.Syntax.Source
 type FuncBody' = FuncBody of ParameterList option * Block
 
-type LastStat = LastStat' Entity
+type LastStat = Token<LastStat', struct(Span * NeighbourTags)>
 type LastStat' =
     | Break
     | Return of Exp list
 
 type ElseIf = | ElseIf of condition: Exp * ifTrue: Block
 
-type Stat = Stat' Entity
+type Stat = Token<Stat', struct(Span * NeighbourTags)>
 type Stat' =
     | FunctionCall of Exp
     | Assign of Exp NonEmptyList * Exp NonEmptyList
@@ -83,14 +90,14 @@ type Stat' =
     | LocalFunction of Var * FuncBody
     | Local of VarList * value: Exp list
 
-type Block = Block' Entity
+type Block = Token<Block', struct(Span * NeighbourTags)>
 type Block' = {
     stats: Stat list
     lastStat: LastStat option
 }
-type ChunkInfo = {
+type Chunk = {
+    semanticTree: Block
     functionType: Scheme
     ancestorModulePaths: DocumentPath Set
     additionalGlobalEnv: Env
 }
-type Chunk = Entity<Block, ChunkInfo>

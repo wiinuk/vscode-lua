@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\checker\LuaChecker.Checker.fsproj" />
     <ProjectReference Include="..\..\src\Protocol\LuaChecker.Protocol.fsproj" />
+    <ProjectReference Include="..\LuaChecker.Test.Helpers\LuaChecker.Test.Helpers.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\server\standard.d.lua" Link="standard.d.lua">

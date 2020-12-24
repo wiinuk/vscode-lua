@@ -4,14 +4,21 @@ open FsCheck.Xunit
 open LuaChecker
 open LuaChecker.Server.Protocol
 open LuaChecker.Server.Test.Helpers
+open LuaChecker.Test
 open LuaChecker.Text.Json
 open System
 open System.Text
 open global.Xunit
 open Xunit.Abstractions
+open type Marshalling.KnownSemanticTokenModifiers
+open type Marshalling.KnownSemanticTokenTypes
 
 
 type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
+    let t x1 x2 x3 x4 x5 = [|x1; x2; x3; int x4; int x5|]
+    let data xss = [| for xs in xss do yield! xs |]
+    let async = ExtraTopLevelOperators.async
+
     do fixture.SetOutput output
     interface TestsFixture IClassFixture
 
@@ -64,6 +71,25 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                         openClose = true
                         save = Defined { includeText = false }
                         change = TextDocumentSyncKind.Incremental
+                    }
+                    semanticTokensProvider = Defined {
+                        legend = {
+                            tokenTypes = [|
+                                "namespace"; "type"; "class"; "enum"; "interface";
+                                "struct"; "typeParameter"; "parameter"; "variable"; "property";
+                                "enumMember"; "event"; "function"; "method"; "macro";
+                                "keyword"; "modifier"; "comment"; "string"; "number";
+                                "regexp"; "operator"
+                            |]
+                            tokenModifiers = [|
+                                "declaration"; "definition"; "readonly"; "static"; "deprecated";
+                                "abstract"; "async"; "modification"; "documentation"; "defaultLibrary"
+                            |]
+                        }
+                        range = Defined true
+                        full = Defined {
+                            delta = Defined false
+                        }
                     }
                 }
             }
@@ -140,7 +166,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
                     value = String.concat "\n" [
                         "```lua"
                         "---@generic x: number.."
-                        "x: x"
+                        "local x: x"
                         "```"
                     ]
                 }
@@ -275,5 +301,197 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         ]
         r =? [
             publishDiagnostics "file:///c:/main.lua" 1 []
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenFull() = async {
+        let! r = semanticTokenFullResponseData "local x = 10"
+        r =? data [
+            t 0 6 1 number definition
+            t 0 4 2 number Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenRange() = async {
+        let! r = serverActions id [
+            "local x = 10\nlocal y = 'test'" &> ("file:///main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///main.lua"
+            Send <| SemanticTokensRange {
+                SemanticTokensRangeParams.textDocument = { uri = Uri "file:///main.lua" }
+                range = {
+                    start = { line = 1; character = 0 }
+                    ``end`` = { line = 1; character = 15 }
+                }
+            }
+            waitUntilExists 5.<_> <| function
+                | SemanticTokensRangeResponse _ -> true
+                | _ -> false
+        ]
+        r =? [
+            publishDiagnostics "file:///main.lua" 1 []
+            SemanticTokensRangeResponse <| ValueSome {
+                resultId = Undefined
+                data = data [
+                    t 1 6 1 string definition
+                    t 0 4 6 string Empty
+                ]
+            }
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenFunctionAndInterface() = async {
+        let! r = semanticTokenFullResponseData "local function localFunction(table) return table.field end"
+        r =? data [
+            t 0 15 13 ``function`` definition
+            t 0 14 5 parameter definition
+            t 0 14 5 parameter Empty
+            t 0 6 5 property Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenTypeTag() = async {
+        let! r = semanticTokenFullResponseData "local x = --[[---@type string]](10)"
+        r =? data [
+            t 0 6 1 string definition
+            t 0 11 1 keyword Empty
+            t 0 1 4 keyword Empty
+            t 0 5 6 ``type`` Empty
+            t 0 9 2 number Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenGlobalTag() = async {
+        let! r = semanticTokenFullResponseData "---@global myNumber number"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 8 number declaration
+            t 0 9 6 ``type`` Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenGenericType() = async {
+        let! r = semanticTokenFullResponseData "---@global myTable table<string, number>"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 7 variable declaration
+            t 0 8 5 ``type`` Empty
+            t 0 5 1 operator Empty
+            t 0 1 6 ``type`` Empty
+            t 0 6 1 operator Empty
+            t 0 2 6 ``type`` Empty
+            t 0 6 1 operator Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenBeforeStatement() = async {
+        let! r = semanticTokenFullResponseData "---@global x number\nlocal a = 0"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 1 number declaration
+            t 0 2 6 ``type`` Empty
+            t 1 6 1 number definition
+            t 0 4 1 number Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenAfterStatement() = async {
+        let! r = semanticTokenFullResponseData "local a = 0\n---@global x number"
+        r =? data [
+            t 0 6 1 number definition
+            t 0 4 1 number Empty
+            t 1 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 1 number declaration
+            t 0 2 6 ``type`` Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenFeatureTag() = async {
+        let! r = semanticTokenFullResponseData "---@_Feature require\n---@global myRequire any"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 8 keyword Empty
+            t 0 9 7 keyword Empty
+            t 1 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 9 variable declaration
+            t 0 10 3 keyword Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenGlobalTagWithGenericTag2() = async {
+        let! r = semanticTokenFullResponseData "---@generic a\n---@generic b\n---@global myFunction fun(a, b): ()"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 10 ``function`` declaration
+            t 0 11 3 keyword Empty
+            t 0 3 1 operator Empty
+            t 0 1 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 1 1 operator Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenTypeTagWithGenericTag2() = async {
+        let! r = semanticTokenFullResponseData "local x = --[[---@generic a\n---@generic b\n---@type fun(a, b): ()]](42)"
+        r =? data [
+            t 0 6 1 ``function`` definition
+            t 0 11 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 4 keyword Empty
+            t 0 5 3 keyword Empty
+            t 0 3 1 operator Empty
+            t 0 1 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 1 1 operator Empty
+            t 0 4 2 number Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenClassTagWithGenericTag2() = async {
+        let! r = semanticTokenFullResponseData "---@generic arg1\n---@generic arg2\n---@class MyFunction : fun(arg1, arg2) : ()"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 4 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 4 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 5 keyword Empty
+            t 0 6 10 ``function`` Empty
+            t 0 11 1 operator Empty
+            t 0 2 3 keyword Empty
+            t 0 3 1 operator Empty
+            t 0 1 4 ``type`` Empty
+            t 0 4 1 operator Empty
+            t 0 2 4 ``type`` Empty
+            t 0 4 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 1 1 operator Empty
         ]
     }

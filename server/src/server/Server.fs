@@ -55,6 +55,8 @@ let start withOptions (input, output) =
         let agent = {
             resources = resources
             writeAgent = writeAgent
+            semanticTokensDataBuffer = ResizeArray()
+            watch = Stopwatch()
         }
         ImmutableArray.CreateRange [
             for _ in 1..count -> BackgroundAgent.create agent

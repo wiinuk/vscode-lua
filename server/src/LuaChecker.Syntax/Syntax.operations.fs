@@ -24,7 +24,9 @@ module Trivia =
 
 module Token =
     let measure x = x.trivia.span
-    let map mapping x = { kind = x.kind; trivia = mapping x.trivia }
+    let inline map mapping x = { kind = x.kind; trivia = mapping x.trivia }
+    let inline sourced { kind = kind; trivia = trivia } mapping = { kind = mapping kind; trivia = trivia }
+    let make trivia kind = { kind = kind; trivia = trivia }
 
 module Source =
     let measure x = x.trivia

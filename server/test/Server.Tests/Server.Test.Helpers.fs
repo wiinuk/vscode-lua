@@ -15,8 +15,6 @@ open System.Threading
 open Xunit.Abstractions
 
 
-let (=?) l r = if not (l = r) then failwithf "%0A =? %0A" l r
-
 type Async with
     static member ParallelAction(xs: unit Async seq) =
         Async.Parallel xs |> Async.Ignore
@@ -96,6 +94,10 @@ type ProtocolMessage =
     | HoverResponse of Hover voption
     | Shutdown
     | ShutdownResponse
+    | SemanticTokensFull of SemanticTokensParams
+    | SemanticTokensFullResponse of SemanticTokens voption
+    | SemanticTokensRange of SemanticTokensRangeParams
+    | SemanticTokensRangeResponse of SemanticTokens voption
 
     // notification
     | Initialized
@@ -258,13 +260,22 @@ let clientWrite client actions = async {
         | DidSave x -> writeNotification Methods.``textDocument/didSave`` <| ValueSome x
 
         | Hover x ->
-            writeRequest m Methods.``textDocument/hover`` (ValueSome x) (fun e ->
+            writeRequest m Methods.``textDocument/hover`` (ValueSome x) <| fun e ->
                 JsonElement.parse<_> e |> HoverResponse
-            )
+
+        | SemanticTokensFull x ->
+            writeRequest m Methods.``textDocument/semanticTokens/full`` (ValueSome x) <| fun e ->
+                JsonElement.parse e |> SemanticTokensFullResponse
+
+        | SemanticTokensRange x ->
+            writeRequest m Methods.``textDocument/semanticTokens/range`` (ValueSome x) <| fun e ->
+                JsonElement.parse e |> SemanticTokensRangeResponse
 
         | HoverResponse _
         | ShutdownResponse _
         | InitializeResponse _
+        | SemanticTokensFullResponse _
+        | SemanticTokensRangeResponse _
             -> failwith $"invalid client to server response: %A{m}"
 
         | RegisterCapability _
@@ -565,3 +576,17 @@ type TestsFixture() =
     interface IDisposable with
         member _.Dispose() =
             outputLogger |> Option.iter (Logger.remove Log.logger)
+
+let semanticTokenFullResponseData source = async {
+    let! r = serverActions id [
+        source &> ("file:///main.lua", 1)
+        waitUntilHasDiagnosticsOf "file:///main.lua"
+        Send <| SemanticTokensFull { SemanticTokensParams.textDocument = { uri = Uri "file:///main.lua" } }
+        waitUntilExists 5.<_> <| function
+            | SemanticTokensFullResponse _ -> true
+            | _ -> false
+    ]
+    match List.last r with
+    | SemanticTokensFullResponse(ValueSome { data = data }) -> return data
+    | _ -> return failwith $"%A{r}"
+}

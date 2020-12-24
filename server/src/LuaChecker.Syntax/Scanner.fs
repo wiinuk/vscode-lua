@@ -619,7 +619,7 @@ let unsafeReadTrivia s =
     t
 
 let unsafeReadSpan s =
-    let t = &s.currentTokenStructure._span
+    let t = s.currentTokenStructure._span
     readAndSetCurrentToken s
     t
 

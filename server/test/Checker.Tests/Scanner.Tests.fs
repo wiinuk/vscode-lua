@@ -5,6 +5,7 @@ open LuaChecker.Syntax
 open LuaChecker.Syntax.Printer
 open LuaChecker.Syntaxes
 open LuaChecker.Checker.Test.Utils
+open LuaChecker.Test
 open System
 open Xunit
 
