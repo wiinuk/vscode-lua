@@ -487,7 +487,7 @@ let duplicatedTypeParameterUnifyError() =
     ---@class ConstraintTypeMismatch
     "
     =? [
-        error (20, 33) <| K.UnifyError(TypeMismatch(types.number, types.string))
+        error (53, 66) <| K.UnifyError(TypeMismatch(types.string, types.number))
     ]
 
 [<Fact>]

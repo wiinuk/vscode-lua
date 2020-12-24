@@ -10,11 +10,15 @@ open System
 open System.Text
 open global.Xunit
 open Xunit.Abstractions
-type private T = Marshalling.KnownSemanticTokenTypes
-type private M = Marshalling.KnownSemanticTokenModifiers
+open type Marshalling.KnownSemanticTokenModifiers
+open type Marshalling.KnownSemanticTokenTypes
 
 
 type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
+    let t x1 x2 x3 x4 x5 = [|x1; x2; x3; int x4; int x5|]
+    let data xss = [| for xs in xss do yield! xs |]
+    let async = ExtraTopLevelOperators.async
+
     do fixture.SetOutput output
     interface TestsFixture IClassFixture
 
@@ -302,10 +306,10 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.semanticTokenFull() = async {
         let! r = semanticTokenFullResponseData "local x = 10"
-        r =? [|
-            0; 6; 1; int T.number; int M.Empty;
-            0; 4; 2; int T.number; int M.Empty;
-        |]
+        r =? data [
+            t 0 6 1 number definition
+            t 0 4 2 number Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenRange() = async {
@@ -327,102 +331,167 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             publishDiagnostics "file:///main.lua" 1 []
             SemanticTokensRangeResponse <| ValueSome {
                 resultId = Undefined
-                data = [|
-                    1; 6; 1; int T.string; int M.Empty;
-                    0; 4; 6; int T.string; int M.Empty;
-                |]
+                data = data [
+                    t 1 6 1 string definition
+                    t 0 4 6 string Empty
+                ]
             }
         ]
     }
     [<Fact>]
     member _.semanticTokenFunctionAndInterface() = async {
         let! r = semanticTokenFullResponseData "local function localFunction(table) return table.field end"
-        r =? [|
-            0; 15; 13; int T.``function``; int M.Empty;
-            0; 14; 5; int T.parameter; int M.definition;
-            0; 14; 5; int T.parameter; int M.Empty;
-            0; 6; 5; int T.property; int M.Empty;
-        |]
+        r =? data [
+            t 0 15 13 ``function`` definition
+            t 0 14 5 parameter definition
+            t 0 14 5 parameter Empty
+            t 0 6 5 property Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenTypeTag() = async {
         let! r = semanticTokenFullResponseData "local x = --[[---@type string]](10)"
-        r =? [|
-            0; 6; 1; int T.string; int M.Empty;
-            0; 11; 1; int T.keyword; int M.Empty;
-            0; 1; 4; int T.keyword; int M.Empty;
-            0; 5; 6; int T.``type``; int M.Empty;
-            0; 9; 2; int T.number; int M.Empty;
-        |]
+        r =? data [
+            t 0 6 1 string definition
+            t 0 11 1 keyword Empty
+            t 0 1 4 keyword Empty
+            t 0 5 6 ``type`` Empty
+            t 0 9 2 number Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenGlobalTag() = async {
         let! r = semanticTokenFullResponseData "---@global myNumber number"
-        r =? [|
-            0; 3; 1; int T.keyword; int M.Empty;
-            0; 1; 6; int T.keyword; int M.Empty;
-            0; 7; 8; int T.number; int M.Empty;
-            0; 9; 6; int T.``type``; int M.Empty;
-        |]
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 8 number declaration
+            t 0 9 6 ``type`` Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenGenericType() = async {
         let! r = semanticTokenFullResponseData "---@global myTable table<string, number>"
-        r =? [|
-            // @
-            0; 3; 1; int T.keyword; int M.Empty;
-            // global
-            0; 1; 6; int T.keyword; int M.Empty;
-            // myTable
-            0; 7; 7; int T.variable; int M.Empty;
-            // table
-            0; 8; 5; int  T.``type``; int M.Empty;
-            // <
-            0; 5; 1; int T.operator; int M.Empty;
-            // string
-            0; 1; 6; int T.``type``; int M.Empty;
-            // ,
-            0; 6; 1; int T.operator; int M.Empty;
-            // number
-            0; 2; 6; int T.``type``; int M.Empty;
-            // >
-            0; 6; 1; int T.operator; int M.Empty;
-        |]
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 7 variable declaration
+            t 0 8 5 ``type`` Empty
+            t 0 5 1 operator Empty
+            t 0 1 6 ``type`` Empty
+            t 0 6 1 operator Empty
+            t 0 2 6 ``type`` Empty
+            t 0 6 1 operator Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenBeforeStatement() = async {
         let! r = semanticTokenFullResponseData "---@global x number\nlocal a = 0"
-        r =? [|
-            0; 3; 1; int T.keyword; int M.Empty;
-            0; 1; 6; int T.keyword; int M.Empty;
-            0; 7; 1; int T.number; int M.Empty;
-            0; 2; 6; int T.``type``; int M.Empty;
-            1; 6; 1; int T.number; int M.Empty;
-            0; 4; 1; int T.number; int M.Empty;
-        |]
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 1 number declaration
+            t 0 2 6 ``type`` Empty
+            t 1 6 1 number definition
+            t 0 4 1 number Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenAfterStatement() = async {
         let! r = semanticTokenFullResponseData "local a = 0\n---@global x number"
-        r =? [|
-            0; 6; 1; int T.number; int M.Empty;
-            0; 4; 1; int T.number; int M.Empty;
-            1; 3; 1; int T.keyword; int M.Empty;
-            0; 1; 6; int T.keyword; int M.Empty;
-            0; 7; 1; int T.number; int M.Empty;
-            0; 2; 6; int T.``type``; int M.Empty;
-        |]
+        r =? data [
+            t 0 6 1 number definition
+            t 0 4 1 number Empty
+            t 1 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 1 number declaration
+            t 0 2 6 ``type`` Empty
+        ]
     }
     [<Fact>]
     member _.semanticTokenFeatureTag() = async {
         let! r = semanticTokenFullResponseData "---@_Feature require\n---@global myRequire any"
-        r =? [|
-            0; 3; 1; int T.keyword; int M.Empty;
-            0; 1; 8; int T.keyword; int M.Empty;
-            0; 9; 7; int T.keyword; int M.Empty;
-            1; 3; 1; int T.keyword; int M.Empty;
-            0; 1; 6; int T.keyword; int M.Empty;
-            0; 7; 9; int T.variable; int M.Empty;
-            0; 10; 3; int T.keyword; int M.Empty;
-        |]
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 8 keyword Empty
+            t 0 9 7 keyword Empty
+            t 1 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 9 variable declaration
+            t 0 10 3 keyword Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenGlobalTagWithGenericTag2() = async {
+        let! r = semanticTokenFullResponseData "---@generic a\n---@generic b\n---@global myFunction fun(a, b): ()"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 6 keyword Empty
+            t 0 7 10 ``function`` declaration
+            t 0 11 3 keyword Empty
+            t 0 3 1 operator Empty
+            t 0 1 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 1 1 operator Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenTypeTagWithGenericTag2() = async {
+        let! r = semanticTokenFullResponseData "local x = --[[---@generic a\n---@generic b\n---@type fun(a, b): ()]](42)"
+        r =? data [
+            t 0 6 1 ``function`` definition
+            t 0 11 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 1 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 4 keyword Empty
+            t 0 5 3 keyword Empty
+            t 0 3 1 operator Empty
+            t 0 1 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 ``type`` Empty
+            t 0 1 1 operator Empty
+            t 0 1 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 1 1 operator Empty
+            t 0 4 2 number Empty
+        ]
+    }
+    [<Fact>]
+    member _.semanticTokenClassTagWithGenericTag2() = async {
+        let! r = semanticTokenFullResponseData "---@generic arg1\n---@generic arg2\n---@class MyFunction : fun(arg1, arg2) : ()"
+        r =? data [
+            t 0 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 4 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 7 keyword Empty
+            t 0 8 4 typeParameter definition
+            t 1 3 1 keyword Empty
+            t 0 1 5 keyword Empty
+            t 0 6 10 ``function`` Empty
+            t 0 11 1 operator Empty
+            t 0 2 3 keyword Empty
+            t 0 3 1 operator Empty
+            t 0 1 4 ``type`` Empty
+            t 0 4 1 operator Empty
+            t 0 2 4 ``type`` Empty
+            t 0 4 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 2 1 operator Empty
+            t 0 1 1 operator Empty
+        ]
     }

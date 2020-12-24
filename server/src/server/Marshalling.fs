@@ -459,66 +459,79 @@ with
         member _.DocumentReserved _ = ()
 
 (*
-let xs = [
-    "namespace"; "type"; "class"; "enum"; "interface"; "struct"; "typeParameter"; "parameter";
-    "variable"; "property"; "enumMember"; "event"; "function"; "method"; "macro"; "keyword";
-    "modifier"; "comment"; "string"; "number"; "regexp"; "operator";
+#r "nuget: HtmlAgilityPack"
+#r "nuget: FSharp.Compiler.Service"
+open HtmlAgilityPack
+open System.Net
+open FSharp.Compiler.SourceCodeServices.Keywords
+open type System.Text.RegularExpressions.Regex
+
+let uri = "https://microsoft.github.io/language-server-protocol/specifications/specification-current/"
+
+let html = new HtmlDocument()
+html.LoadHtml(use wc = new WebClient() in wc.DownloadString uri)
+let enumValues enumName = [
+    for code in html.DocumentNode.SelectNodes "//code" do
+        let code = code.InnerText
+        if IsMatch(code, @$"\benum\s+{enumName}\b") then
+            let enumMembers = Match(code, @$"\benum\s+{enumName}\s*\{{([^}}]*?)\}}")
+            for m in Matches(enumMembers.Groups.[1].Value, @"\w+\s*=\s*'([^']*)?'") do
+                m.Groups.[1].Value
 ]
+let name n = if DoesIdentifierNeedQuotation n then $"``{n}``" else n
+
 printfn "type KnownSemanticTokenTypes ="
-for i, n in List.indexed xs do
-    printfn $"    | ``{n}`` = {i}"
-printfn $"    | KnownMax = {List.length xs - 1}"
+let ts = enumValues "SemanticTokenTypes"
+for i, n in Seq.indexed ts do
+    printfn $"    | {name n} = {i}"
+printfn $"    | KnownMax = {List.length ts - 1}"
+printfn ""
+let ms = enumValues "SemanticTokenModifiers"
+printfn "[<Flags>]"
+printfn "type KnownSemanticTokenModifiers ="
+printfn "    | Empty = 0"
+for i, n in List.indexed ms do
+    printfn $"    | {name n} = {pown 2 i}"
+printfn $"    | KnownMaxBitCount = {List.length ms - 1}"
 *)
 type KnownSemanticTokenTypes =
     | ``namespace`` = 0
     | ``type`` = 1
     | ``class`` = 2
-    | ``enum`` = 3
+    | enum = 3
     | ``interface`` = 4
     | ``struct`` = 5
-    | ``typeParameter`` = 6
-    | ``parameter`` = 7
-    | ``variable`` = 8
-    | ``property`` = 9
-    | ``enumMember`` = 10
-    | ``event`` = 11
+    | typeParameter = 6
+    | parameter = 7
+    | variable = 8
+    | property = 9
+    | enumMember = 10
+    | event = 11
     | ``function`` = 12
-    | ``method`` = 13
-    | ``macro`` = 14
-    | ``keyword`` = 15
-    | ``modifier`` = 16
-    | ``comment`` = 17
-    | ``string`` = 18
-    | ``number`` = 19
-    | ``regexp`` = 20
-    | ``operator`` = 21
+    | method = 13
+    | macro = 14
+    | keyword = 15
+    | modifier = 16
+    | comment = 17
+    | string = 18
+    | number = 19
+    | regexp = 20
+    | operator = 21
     | KnownMax = 21
 
-(*
-let xs = [
-    "declaration"; "definition"; "readonly"; "static"; "deprecated"; "abstract"; "async";
-    "modification"; "documentation"; "defaultLibrary";
-]
-printfn "[<Flags>]"
-printfn "type KnownSemanticTokenModifiers ="
-printfn "    | Empty = 0"
-for i, n in List.indexed xs do
-    printfn $"    | ``{n}`` = {pown 2 i}"
-printfn $"    | KnownMaxBitCount = {List.length xs - 1}"
-*)
 [<Flags>]
 type KnownSemanticTokenModifiers =
     | Empty = 0
-    | ``declaration`` = 1
-    | ``definition`` = 2
-    | ``readonly`` = 4
+    | declaration = 1
+    | definition = 2
+    | readonly = 4
     | ``static`` = 8
-    | ``deprecated`` = 16
+    | deprecated = 16
     | ``abstract`` = 32
-    | ``async`` = 64
-    | ``modification`` = 128
-    | ``documentation`` = 256
-    | ``defaultLibrary`` = 512
+    | async = 64
+    | modification = 128
+    | documentation = 256
+    | defaultLibrary = 512
     | KnownMaxBitCount = 9
 
 let semanticTokenTypeLegend = [
@@ -574,8 +587,8 @@ let writeReservedTokenSemantics (this: _ byref) (ReservedVar(trivia = { span = s
 let leafFlagModifiersSemantics leafFlags =
     let m = M.Empty
     let m = if leafFlags &&& L.Definition = L.Definition then m ||| M.definition else m
-    let m = if leafFlags &&& L.Definition = L.Declaration then m ||| M.declaration else m
-    let m = if leafFlags &&& L.Definition = L.Modification then m ||| M.modification else m
+    let m = if leafFlags &&& L.Declaration = L.Declaration then m ||| M.declaration else m
+    let m = if leafFlags &&& L.Modification = L.Modification then m ||| M.modification else m
     m
 
 let leafFlagSemantics defaultType leafFlags =
@@ -746,11 +759,18 @@ let writeLeafSemantics (this: _ byref) defaultType leaf =
 
     writeTokenSemantics &this tokenType tokenModifiers
 
+let identifierRepresentationToTokenModifiers = function
+    | IdentifierRepresentation.Declaration -> M.declaration
+    | IdentifierRepresentation.Definition -> M.definition
+    | IdentifierRepresentation.Reference -> M.Empty
+
 let writeVarTokenSemantics (this: _ byref) (Var(_, kind, repr, Name { trivia = { span = span } }, type', _)) typeEnv =
     writeTokenRange &this span
     let struct(tokenType, tokenModifiers) =
         match typeSemantics &this type' [] typeEnv with
-        | ValueSome(((T.``function`` | T.number | T.string), _) as s) -> s
+        | ValueSome((T.``function`` | T.number | T.string) as t, m) ->
+            t, m ||| identifierRepresentationToTokenModifiers repr
+
         | _ ->
 
         let t =
@@ -760,13 +780,7 @@ let writeVarTokenSemantics (this: _ byref) (Var(_, kind, repr, Name { trivia = {
             | IdentifierKind.Field -> T.property
             | IdentifierKind.Method -> T.method
 
-        let m =
-            match repr with
-            | IdentifierRepresentation.Declaration -> M.declaration
-            | IdentifierRepresentation.Definition -> M.definition
-            | IdentifierRepresentation.Reference -> M.Empty
-
-        t, m
+        t, identifierRepresentationToTokenModifiers repr
 
     writeTokenSemantics &this tokenType tokenModifiers
 

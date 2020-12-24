@@ -549,9 +549,9 @@ module private Constraints =
 [<AutoOpen>]
 module private Helpers =
     [<Struct>]
-    type Converting<'F,'T> =
-        | Pending of pending: 'F
-        | Accepted of accepted: 'T
+    type Converting<'From,'To> =
+        | Pending of pending: 'From
+        | Accepted of accepted: 'To
 
     let toPendingValues xs = xs |> List.map Pending
     let chooseConvertedValues xs = xs |> List.choose (function Accepted x -> Some x | _ -> None)
@@ -790,7 +790,7 @@ module private Helpers =
         //
         // `----@generic p: { x: n }, p: { y: n }, n, …` の場合
         // nameToBind = `Map ["p", (?p, [`{ x: n }`; `{ y: n }`]); "n", (?n, [])]`
-        let nameToBind = foldTypeParameters (collectTypeParameterBindsCore env) Map.empty <| List.rev modifierTags
+        let nameToBind = foldTypeParameters (collectTypeParameterBindsCore env) Map.empty modifierTags
 
         // 型引数注釈がなかったので終わり
         if Map.isEmpty nameToBind then env, modifierTags else
@@ -1129,7 +1129,7 @@ module private Helpers =
 let findTypeTag env span struct(ds, es) =
     reportParseErrors env span es
 
-    let mutable modifierTags = []
+    let mutable modifierTagsRev = []
     let mutable lastTypeTag = ValueNone
     for { kind = D.Document(_, tags) } in ds do
         for { kind = D.Tag(_, tail) } as tag in tags do
@@ -1138,10 +1138,10 @@ let findTypeTag env span struct(ds, es) =
                 match lastTypeTag with
                 | ValueSome struct(_, tag) -> reportInfo env tag.trivia <| DiagnosticKind.DuplicateTag("type", tag.trivia)
                 | _ -> ()
-                lastTypeTag <- ValueSome(modifierTags, tag)
-                modifierTags <- []
+                lastTypeTag <- ValueSome(List.rev modifierTagsRev, tag)
+                modifierTagsRev <- []
 
-            | _ -> modifierTags <- tag::modifierTags
+            | _ -> modifierTagsRev <- tag::modifierTagsRev
 
     match lastTypeTag with
     | ValueSome(modifierTags, ({ kind = D.Tag(at, ({ kind = D.TypeTag(``type``, typeSign) } as typeTagTail)) } as typeTag)) ->
@@ -1182,7 +1182,7 @@ let findTypeTag env span struct(ds, es) =
 let statementLevelTags env span struct(ds, es) =
     reportParseErrors env span es
 
-    let mutable modifierTags = []
+    let mutable modifierTagsRev = []
     let mutable lastClass = ValueNone
     let tags = [
         for { kind = D.Document(_, tags) } in ds do
@@ -1193,12 +1193,12 @@ let statementLevelTags env span struct(ds, es) =
                     | ValueSome lastClass -> yield! endClass lastClass
                     | _ -> ()
 
-                    lastClass <- ValueSome <| classTag env modifierTags (at, ``class``, identifier, parent, tail.trivia, tag.trivia)
-                    modifierTags <- []
+                    lastClass <- ValueSome <| classTag env (List.rev modifierTagsRev) (at, ``class``, identifier, parent, tail.trivia, tag.trivia)
+                    modifierTagsRev <- []
 
                 | D.FieldTag(field, visibility, name, typeSign) ->
-                    lastClass <- fieldTag env modifierTags lastClass (at, field, visibility, name, typeSign, tail.trivia, tag.trivia)
-                    modifierTags <- []
+                    lastClass <- fieldTag env (List.rev modifierTagsRev) lastClass (at, field, visibility, name, typeSign, tail.trivia, tag.trivia)
+                    modifierTagsRev <- []
 
                 | D.GlobalTag(``global``, name, typeSign) ->
                     match lastClass with
@@ -1206,11 +1206,11 @@ let statementLevelTags env span struct(ds, es) =
                     | _ -> ()
 
                     lastClass <- ValueNone
-                    yield! globalTag env modifierTags (at, ``global``, name, typeSign, tail.trivia, tag.trivia)
-                    modifierTags <- []
+                    yield! globalTag env (List.rev modifierTagsRev) (at, ``global``, name, typeSign, tail.trivia, tag.trivia)
+                    modifierTagsRev <- []
 
 
-                | _ -> modifierTags <- tag::modifierTags
+                | _ -> modifierTagsRev <- tag::modifierTagsRev
 
         match lastClass with
         | ValueSome lastClass -> yield! endClass lastClass
@@ -1218,5 +1218,5 @@ let statementLevelTags env span struct(ds, es) =
 
         lastClass <- ValueNone
     ]
-    processRemainingModifierTags env modifierTags
+    processRemainingModifierTags env (List.rev modifierTagsRev)
     tags |> Token.make (Span.list Source.measure tags)
