@@ -540,7 +540,7 @@ let rec excludeByDeclaringTypes (metadata: MetadataReader) (typeDefinition: Type
     excludeByDeclaringTypes metadata (t.GetDeclaringType())
 
 [<Struct>]
-type Stage =
+type GetterParseStage =
     | ExpectLdarg0
     | ExpectLdfld
     | ExpectRet
@@ -553,9 +553,7 @@ type Stage =
 *)
 [<Struct>]
 type ParseUsedGetterBackingFieldVisitor(metadata: MetadataReader) =
-
-    [<DefaultValue>]
-    val mutable stage: Stage
+    [<DefaultValue>] val mutable stage: GetterParseStage
 
     member v.Accept nextStage = v.stage <- nextStage; true
     member v.Done result = v.stage <- Return result; false
@@ -581,35 +579,87 @@ type ParseUsedGetterBackingFieldVisitor(metadata: MetadataReader) =
         member v.MethodDefinition(_, _) = v.Failure()
         member v.MethodSpecification(_, _) = v.Failure()
 
-let isUsedGetterBackingField (module': PEReader) (metadata: MetadataReader) (m: MethodDefinition) =
-    if m.Attributes.HasFlag MethodAttributes.SpecialName && metadata.GetString(m.Name).StartsWith "get_" then
+[<Struct>]
+type SetterParseStage =
+    | ExpectLdarg0
+    | ExpectLdarg1
+    | ExpectStfld
+    | ExpectRet
+    | Return of bool
+(*
+    ldarg.0
+    ldarg.1
+    stfld …
+    ret
+*)
+[<Struct>]
+type ParseUsedSetterBackingFieldVisitor(metadata: MetadataReader) =
+    [<DefaultValue>] val mutable stage: SetterParseStage
+    member v.Accept stage = v.stage <- stage; true
+    member v.Done r = v.stage <- Return r; false
+    member v.Failure() = v.Done false
 
-        match m.RelativeVirtualAddress with
+    interface IVisitor with
+        member v.None op =
+            match v.stage, op.operator with
+            | ExpectLdarg0, ILOpCode.Ldarg_0 -> v.Accept ExpectLdarg1
+            | ExpectLdarg1, ILOpCode.Ldarg_1 -> v.Accept ExpectStfld
+            | ExpectRet, ILOpCode.Ret -> v.Done true
+            | _ -> v.Failure()
 
-        // 抽象メソッド?
-        | 0 -> false
+        member v.FieldDefinition(op, _) =
+            match v.stage, op.operator with
+            | ExpectStfld, ILOpCode.Stfld -> v.Accept ExpectRet
+            | _ -> v.Failure()
 
-        | address ->
-            let body = module'.GetMethodBody address
-            let mutable visitor =
-                ParseUsedGetterBackingFieldVisitor(
-                    metadata = metadata,
-                    stage = ExpectLdarg0
-                )
+        member v.MemberReference(op, _) =
+            match v.stage, op.operator with
+            | ExpectStfld, ILOpCode.Stfld -> v.Accept ExpectRet
+            | _ -> v.Failure()
 
-            visitILOperations &visitor body
-            match visitor.stage with
-            | Return x -> x
-            | _ -> false
-    else
-        false
+        member v.MethodDefinition(_, _) = v.Failure()
+        member v.MethodSpecification(_, _) = v.Failure()
+
+let isGetter (metadata: MetadataReader) (m: MethodDefinition) =
+    m.Attributes.HasFlag MethodAttributes.SpecialName &&
+    metadata.GetString(m.Name).StartsWith "get_"
+
+let isSetter (metadata: MetadataReader) (m: MethodDefinition) =
+    m.Attributes.HasFlag MethodAttributes.SpecialName &&
+    metadata.GetString(m.Name).StartsWith "set_"
+
+let isUsedGetterBackingField (module': PEReader) metadata m =
+    if not (isGetter metadata m) || m.RelativeVirtualAddress = 0 then false else
+
+    let body = module'.GetMethodBody m.RelativeVirtualAddress
+    let mutable visitor =
+        ParseUsedGetterBackingFieldVisitor(
+            metadata = metadata,
+            stage = GetterParseStage.ExpectLdarg0
+        )
+
+    visitILOperations &visitor body
+    match visitor.stage with
+    | GetterParseStage.Return x -> x
+    | _ -> false
+
+let isUsedSetterBackingField (module': PEReader) metadata m =
+    if not (isSetter metadata m) || m.RelativeVirtualAddress = 0 then false else
+
+    let body = module'.GetMethodBody m.RelativeVirtualAddress
+    let mutable visitor =
+        ParseUsedSetterBackingFieldVisitor(
+            metadata = metadata,
+            stage = SetterParseStage.ExpectLdarg0
+        )
+    visitILOperations &visitor body
+    match visitor.stage with
+    | SetterParseStage.Return x -> x
+    | _ -> false
 
 let findParentProperty (metadata: MetadataReader) (h: MethodDefinitionHandle) =
     let m = metadata.GetMethodDefinition h
-    if not <| m.Attributes.HasFlag MethodAttributes.SpecialName then ValueNone else
-
-    let name = metadata.GetString m.Name
-    if not (name.StartsWith "get_" || name.StartsWith "set_") then ValueNone else
+    if not (isGetter metadata m || isSetter metadata m) then ValueNone else
 
     let declaringType = m.GetDeclaringType()
     if declaringType.IsNil then ValueNone else
@@ -690,7 +740,8 @@ let publicUnusedMembersDiagnosticsBy (usingMemberIds: ConcurrentDictionary<_,_>)
             usingMemberIds.ContainsKey id ||
 
             // メソッドが使われていなくても、プロパティのバッキングフィールドが使われているならメソッドが使われていることにする
-            isUsedGetterBackingField module' metadata methodDefinition
+            isUsedGetterBackingField module' metadata methodDefinition ||
+            isUsedSetterBackingField module' metadata methodDefinition
         then ()
         else
 
