@@ -522,10 +522,10 @@ let findLocationFromILOffsetBy moduleFilePath debugMetadata methodDefinition' of
             uri = moduleFilePath
         }
 
-let rec hiddenByDeclaringTypes (metadata: MetadataReader) (methodDefinition: TypeDefinitionHandle) =
-    if methodDefinition.IsNil then false else
+let rec excludeByDeclaringTypes (metadata: MetadataReader) (typeDefinition: TypeDefinitionHandle) =
+    if typeDefinition.IsNil then false else
 
-    let t = metadata.GetTypeDefinition methodDefinition
+    let t = metadata.GetTypeDefinition typeDefinition
 
     // public でなければ除外
     not (t.Attributes.HasFlag TypeAttributes.Public) ||
@@ -533,8 +533,11 @@ let rec hiddenByDeclaringTypes (metadata: MetadataReader) (methodDefinition: Typ
     // 名前に '@' を含む型はコンパイラによって生成されたらしいので除外する
     metadata.GetString(t.Name).Contains "@" ||
 
+    // [<SuppressMessage(…, …)>] が付いている型は除外
+    hasSuppressMessageAttribute metadata !%typeDefinition analyzerCategory memberUnusedCode ||
+
     // 定義されている型を調査
-    hiddenByDeclaringTypes metadata (t.GetDeclaringType())
+    excludeByDeclaringTypes metadata (t.GetDeclaringType())
 
 [<Struct>]
 type Stage =
@@ -642,8 +645,8 @@ let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefini
     // virtual メソッドは除外
     a.HasFlag MethodAttributes.Virtual ||
 
-    // 定義されている型によって隠されているメソッドは除外
-    hiddenByDeclaringTypes metadata (m.GetDeclaringType()) ||
+    // 定義されている型によって除外されているか
+    excludeByDeclaringTypes metadata (m.GetDeclaringType()) ||
 
     // [CompilerGenerated] は除外
     hasCompilerGeneratedAttribute metadata !%h ||
