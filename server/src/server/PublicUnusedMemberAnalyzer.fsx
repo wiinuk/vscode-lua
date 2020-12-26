@@ -16,6 +16,13 @@ type H = System.Reflection.Metadata.HandleKind
 let p, nl, ws = Run.styled, Run.lineBreak, Run.whitespace
 
 
+let defaultMessages = {|
+    memberUnused = "{0} が使われていません"
+    startAnalysisHeader = "------ 分析開始: ディレクトリ: {0} ------"
+|}
+let selectMessage resource selector =
+    Option.defaultValue defaultMessages resource |> selector
+
 let inline tryPick chooser source =
     let mutable e = (^EnumerableLike: (member GetEnumerator: unit -> _) source)
     let mutable result = ValueNone
@@ -108,12 +115,6 @@ let showId = function
     | MethodId(declaringType, name) -> showDeclaringType declaringType ++ p Styles.memberName name
     | FieldId(declaringType, name) -> showDeclaringType declaringType ++ p Styles.memberName name
 
-let defaultMessages = {|
-    memberUnused = "{0} が使われていません"
-|}
-let selectMessage resource selector =
-    Option.defaultValue defaultMessages resource |> selector
-
 let showKind messages = function
     | MemberUnused id ->
         Run.ofMarkup <| String.Format(selectMessage messages (fun x -> x.memberUnused), Run.markup (showId id))
@@ -129,11 +130,14 @@ let showSeverity s =
 
     p style text
 
+let diagnosticCode (kind: DiagnosticKind) =
+    $"AA{(let u, _ = Reflection.FSharpValue.GetUnionFields(kind, kind.GetType()) in u.Tag + 1):D04}"
+
 let printDiagnostic messages d =
     showLocation d.location ++
     p Styles.delimiter ":" ++ ws ++
-    showSeverity d.severity ++
-    p Styles.label $" AA{(let u, _ = Reflection.FSharpValue.GetUnionFields(d.kind, d.kind.GetType()) in u.Tag + 1):D04}" ++
+    showSeverity d.severity ++ ws ++
+    p Styles.label (diagnosticCode d.kind) ++
     p Styles.delimiter ":" ++ ws ++
     showKind messages d.kind
     |> Run.printLine
@@ -376,20 +380,50 @@ type CollectMemberIdVisitor(metadata: MetadataReader, results: ConcurrentDiction
                 if isTrace then printfn $"    find {showOperation op} {showId id} %b{added}"
             true
 
+let attributeType (metadata: MetadataReader) (c: CustomAttribute) =
+    let constructor = c.Constructor
+    match constructor.Kind with
+    | H.MemberReference ->
+        let attributeType = metadata.GetMemberReference(MemberReferenceHandle.op_Explicit constructor).Parent
+        match attributeType.Kind with
+        | H.TypeReference -> TypeReferenceHandle.op_Explicit attributeType
+        | _ -> TypeReferenceHandle()
+    | _ -> TypeReferenceHandle()
+
 let hasCompilerGeneratedAttribute (metadata: MetadataReader) entity =
     metadata.GetCustomAttributes entity
     |> exists (fun c ->
-        let c = metadata.GetCustomAttribute c
-        let constructor = c.Constructor
-        match constructor.Kind with
-        | H.MemberReference ->
-            let attributeType = metadata.GetMemberReference(MemberReferenceHandle.op_Explicit constructor).Parent
-            match attributeType.Kind with
-            | H.TypeReference ->
-                let attributeType = metadata.GetTypeReference(TypeReferenceHandle.op_Explicit attributeType)
-                let attributeTypeName = metadata.GetString attributeType.Name
-                attributeTypeName = "CompilerGeneratedAttribute"
-            | _ -> false
+        let attribute = metadata.GetCustomAttribute c
+        let attributeType = metadata.GetTypeReference <| attributeType metadata attribute
+        metadata.GetString attributeType.Name = "CompilerGeneratedAttribute"
+    )
+
+let primitiveTypeCodeProvider = { new ICustomAttributeTypeProvider<_> with
+    member _.GetPrimitiveType typeCode = typeCode
+    member _.GetUnderlyingEnumType typeCode = typeCode
+
+    member _.GetSZArrayType _ = LanguagePrimitives.EnumOfValue 0uy
+    member _.GetSystemType() = LanguagePrimitives.EnumOfValue 0uy
+    member _.GetTypeFromDefinition(_, _, _) = LanguagePrimitives.EnumOfValue 0uy
+    member _.GetTypeFromReference(_, _, _) = LanguagePrimitives.EnumOfValue 0uy
+    member _.GetTypeFromSerializedName _ = LanguagePrimitives.EnumOfValue 0uy
+    member _.IsSystemType _ = false
+}
+
+// [<SuppressMessage("category", "checkId…")>]
+let hasSuppressMessageAttribute (metadata: MetadataReader) entity expectedCategory expectedCheckId =
+    metadata.GetCustomAttributes entity
+    |> exists (fun c ->
+        let attribute = metadata.GetCustomAttribute c
+        let attribyteType = metadata.GetTypeReference <| attributeType metadata attribute
+        if metadata.GetString attribyteType.Name <> "SuppressMessageAttribute" then false else
+
+        let fixedArguments = attribute.DecodeValue(primitiveTypeCodeProvider).FixedArguments
+        if fixedArguments.Length <> 2 then false else
+
+        match fixedArguments.[0].Value, fixedArguments.[1].Value with
+        | (:? string as category), (:? string as checkId) ->
+            category = expectedCategory && checkId.StartsWith(expectedCheckId + "")
         | _ -> false
     )
 
@@ -543,6 +577,9 @@ let isUsedGetterBackingField (module': PEReader) (metadata: MetadataReader) (m: 
     else
         false
 
+let inline (!%) x = ((^From or ^To): (static member op_Implicit: ^From -> ^To) x)
+
+let memberUnusedCode = diagnosticCode <| MemberUnused(FieldId(ValueNone, ""))
 let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefinitionHandle) =
 
     // Main は除外
@@ -561,10 +598,13 @@ let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefini
     hiddenByDeclaringTypes metadata (m.GetDeclaringType()) ||
 
     // [CompilerGenerated] は除外
-    hasCompilerGeneratedAttribute metadata (MethodDefinitionHandle.op_Implicit h) ||
+    hasCompilerGeneratedAttribute metadata !%h ||
 
     // 名前に '@' を含むメソッドはコンパイラによって生成されたらしいので除外する
-    metadata.GetString(m.Name).Contains "@"
+    metadata.GetString(m.Name).Contains "@" ||
+
+    // [<SuppressMessage(__SOURCE_FILE__, memberUnusedCode…)>] が付いたメンバは除外
+    hasSuppressMessageAttribute metadata !%h __SOURCE_FILE__ memberUnusedCode
 
 type ModuleDiagnosticMetadata = {
     module': PEReader
@@ -612,9 +652,30 @@ let setDescriptionWithTime text (task: ProgressTask) =
     let time = if task.ElapsedTime.HasValue then $"{task.ElapsedTime.Value.Milliseconds:G}" else "???"
     task.Description <- $"{text}: {time,4}ms"
 
+let nullConsole() =
+    let cursor = { new IAnsiConsoleCursor with
+        member _.Move(_, _) = ()
+        member _.SetPosition(_, _) = ()
+        member _.Show _ = ()
+    }
+    let input = { new IAnsiConsoleInput with
+        member _.ReadKey _ = ConsoleKeyInfo()
+    }
+    { new IAnsiConsole with
+        member _.Capabilities = Capabilities(true, ColorSystem.TrueColor, false, false)
+        member _.Encoding = System.Text.Encoding.UTF8
+        member _.Height = 1000
+        member _.Width = 1000
+        member _.Write _ = ()
+        member _.Clear _ = ()
+        member _.Cursor = cursor
+        member _.Input = input
+        member _.Pipeline = new Rendering.RenderPipeline()
+    }
+
 let checkPublicUnusedMembers diagnostics producerAssemblyPaths consumerAssemblyPaths =
     let usingMemberIds = ConcurrentDictionary()
-    let console = if isInfo then AnsiConsole.Console else AnsiConsoleSettings(Out = TextWriter.Null) |> AnsiConsole.Create
+    let console = if isInfo then AnsiConsole.Console else nullConsole()
 
     console.Progress().Start(fun progress ->
 

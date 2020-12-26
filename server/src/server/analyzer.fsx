@@ -3,6 +3,7 @@
 open Argu
 open Fake.IO.GlobbingPattern
 open Fake.IO.Globbing.Operators
+open System
 open System.Collections.Concurrent
 open System.IO
 open RichConsole
@@ -23,6 +24,10 @@ if isDebug then printfn $"%A{fsi.CommandLineArgs}"
 
 let outputPath = args.GetResult <@ Output_Path @>
 let resources = None
+
+String.Format(selectMessage resources (fun x -> x.startAnalysisHeader), p Styles.sourceLocation outputPath |> Run.markup)
+|> Run.ofMarkup
+|> Run.printLine
 
 let assemblyPaths = [
     yield! setBaseDir outputPath !!"LuaChecker*.dll"
