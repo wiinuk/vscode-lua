@@ -16,12 +16,15 @@ type H = System.Reflection.Metadata.HandleKind
 let p, nl, ws = Run.styled, Run.lineBreak, Run.whitespace
 
 
+let analyzerCategory = __SOURCE_FILE__
 let defaultMessages = {|
     memberUnused = "{0} が使われていません"
     startAnalysisHeader = "------ 分析開始: ディレクトリ: {0} ------"
 |}
 let selectMessage resource selector =
     Option.defaultValue defaultMessages resource |> selector
+
+let inline (!%) x = ((^From or ^To): (static member op_Implicit: ^From -> ^To) x)
 
 let inline tryPick chooser source =
     let mutable e = (^EnumerableLike: (member GetEnumerator: unit -> _) source)
@@ -132,6 +135,8 @@ let showSeverity s =
 
 let diagnosticCode (kind: DiagnosticKind) =
     $"AA{(let u, _ = Reflection.FSharpValue.GetUnionFields(kind, kind.GetType()) in u.Tag + 1):D04}"
+
+let memberUnusedCode = diagnosticCode <| MemberUnused(FieldId(ValueNone, ""))
 
 let printDiagnostic messages d =
     showLocation d.location ++
@@ -577,9 +582,33 @@ let isUsedGetterBackingField (module': PEReader) (metadata: MetadataReader) (m: 
     else
         false
 
-let inline (!%) x = ((^From or ^To): (static member op_Implicit: ^From -> ^To) x)
+let findParentProperty (metadata: MetadataReader) (h: MethodDefinitionHandle) =
+    let m = metadata.GetMethodDefinition h
+    if not <| m.Attributes.HasFlag MethodAttributes.SpecialName then ValueNone else
 
-let memberUnusedCode = diagnosticCode <| MemberUnused(FieldId(ValueNone, ""))
+    let name = metadata.GetString m.Name
+    if not (name.StartsWith "get_" || name.StartsWith "set_") then ValueNone else
+
+    let declaringType = m.GetDeclaringType()
+    if declaringType.IsNil then ValueNone else
+
+    let declaringType = metadata.GetTypeDefinition declaringType
+    declaringType.GetProperties()
+    |> tryPick (fun p ->
+        let property = metadata.GetPropertyDefinition p
+        let accessors = property.GetAccessors()
+        if accessors.Getter = h || accessors.Setter = h then
+            ValueSome p
+        else
+            ValueNone
+    )
+
+let excludeByParentProperty (metadata: MetadataReader) (h: MethodDefinitionHandle) =
+    match findParentProperty metadata h with
+    | ValueNone -> false
+    | ValueSome property ->
+        hasSuppressMessageAttribute metadata !%property analyzerCategory memberUnusedCode
+
 let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefinitionHandle) =
 
     // Main は除外
@@ -604,7 +633,10 @@ let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefini
     metadata.GetString(m.Name).Contains "@" ||
 
     // [<SuppressMessage(__SOURCE_FILE__, memberUnusedCode…)>] が付いたメンバは除外
-    hasSuppressMessageAttribute metadata !%h __SOURCE_FILE__ memberUnusedCode
+    hasSuppressMessageAttribute metadata !%h analyzerCategory memberUnusedCode ||
+
+    // 定義されたプロパティによって除外されているか
+    excludeByParentProperty metadata h
 
 type ModuleDiagnosticMetadata = {
     module': PEReader
