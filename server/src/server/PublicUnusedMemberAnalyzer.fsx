@@ -338,30 +338,38 @@ let entityAsTypeId (metadata: MetadataReader) (typeDefinitionOrReferenceOrSpecif
 
     | _ -> ValueNone
 
+let addMethodDefinition (metadata: MetadataReader) m (results: ConcurrentDictionary<_,_>) =
+    let m = metadata.GetMethodDefinition m
+    let a = m.Attributes
+
+    // public または internal
+    if not (a.HasFlag MethodAttributes.Public || a.HasFlag MethodAttributes.Assembly) then ValueNone else
+
+    let id = methodDefinitionId metadata m
+    ValueSome struct(id, results.TryAdd(id, ()))
+
+let addMethodReference (metadata: MetadataReader) m (results: ConcurrentDictionary<_,_>) =
+    let m = metadata.GetMemberReference m
+    match m.GetKind() with
+    | MemberReferenceKind.Method ->
+        let name = metadata.GetString m.Name
+        let id = MethodId(entityAsTypeId metadata m.Parent, name)
+        ValueSome struct(id, results.TryAdd(id, ()))
+    | _ -> ValueNone
+
 [<Struct>]
 type CollectMemberIdVisitor(metadata: MetadataReader, results: ConcurrentDictionary<Id, unit>) =
     static let showOperation op = $"IL_{op.offset:X04} {op.operator}"
 
     member _.MethodDefinition(op, m) =
-        let m = metadata.GetMethodDefinition m
-        let a = m.Attributes
-
-        // public または internal
-        if a.HasFlag MethodAttributes.Public || a.HasFlag MethodAttributes.Assembly then
-            let id = methodDefinitionId metadata m
-            let added = results.TryAdd(id, ())
-            if isTrace then printfn $"    find {showOperation op} {showId id} %b{added}"
+        match addMethodDefinition metadata m results with
+        | ValueSome(id, added) -> if isTrace then printfn $"    find {showOperation op} {showId id} %b{added}"
+        | _ -> ()
         true
 
-    member _.MemberReference(op, operand) =
-        let m = metadata.GetMemberReference operand
-        match m.GetKind() with
-        | MemberReferenceKind.Method ->
-            let name = metadata.GetString m.Name
-            let id = MethodId(entityAsTypeId metadata m.Parent, name)
-            let added = results.TryAdd(id, ())
-            if isTrace then printfn $"    find {showOperation op} {showId id} %b{added}"
-
+    member _.MemberReference(op, m) =
+        match addMethodReference metadata m results with
+        | ValueSome(id, added) -> if isTrace then printfn $"    find {showOperation op} {showId id} %b{added}"
         | _ -> ()
         true
 
@@ -432,12 +440,12 @@ let hasSuppressMessageAttribute (metadata: MetadataReader) entity expectedCatego
         | _ -> false
     )
 
-let collectUsingMembers (module': PEReader) (metadata: MetadataReader) (task: ProgressTask) (result: ConcurrentDictionary<_,_>) =
-    let methods = metadata.MethodDefinitions
-    task.MaxValue <- double methods.Count
-    if isInfo then printfn $"collecting members in {methods.Count} methods"
+let collectUsingMembers (module': PEReader) (metadata: MetadataReader) (task: ProgressTask) result =
+    task.MaxValue <- double (metadata.MethodDefinitions.Count + metadata.CustomAttributes.Count)
+    if isInfo then printfn $"collecting members in {metadata.MethodDefinitions.Count} methods"
 
-    for methodDefinitionHandle in methods do
+    // メソッド内で使っているメンバーを集める
+    for methodDefinitionHandle in metadata.MethodDefinitions do
         let methodDefinition = metadata.GetMethodDefinition methodDefinitionHandle
         let declaringType = metadata.GetTypeDefinition <| methodDefinition.GetDeclaringType()
         task.Description <-
@@ -457,6 +465,17 @@ let collectUsingMembers (module': PEReader) (metadata: MetadataReader) (task: Pr
             let mutable visitor = CollectMemberIdVisitor(metadata, result)
             visitILOperations &visitor (module'.GetMethodBody address)
 
+    // カスタム属性内で使っているメンバーを集める
+    task.Description <- sprintf $"collection member in {metadata.CustomAttributes.Count} attributes"
+    for attributeHandle in metadata.CustomAttributes do
+        task.Increment 1.
+
+        let attribute = metadata.GetCustomAttribute attributeHandle
+        let constructor = attribute.Constructor
+        match constructor.Kind with
+        | H.MethodDefinition -> addMethodDefinition metadata (MethodDefinitionHandle.op_Explicit constructor) result |> ignore
+        | H.MemberReference -> addMethodReference metadata (MemberReferenceHandle.op_Explicit constructor) result |> ignore
+        | k -> failwith $"{k}"
 
 let report (xs: _ ConcurrentBag) severity location kind = xs.Add {
     severity = severity
@@ -508,8 +527,8 @@ let rec hiddenByDeclaringTypes (metadata: MetadataReader) (methodDefinition: Typ
 
     let t = metadata.GetTypeDefinition methodDefinition
 
-    // ( public または internal ) でなければ除外
-    not (t.Attributes.HasFlag TypeAttributes.Public || t.Attributes.HasFlag TypeAttributes.NestedAssembly) ||
+    // public でなければ除外
+    not (t.Attributes.HasFlag TypeAttributes.Public) ||
 
     // 名前に '@' を含む型はコンパイラによって生成されたらしいので除外する
     metadata.GetString(t.Name).Contains "@" ||
@@ -617,8 +636,8 @@ let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefini
     let m = metadata.GetMethodDefinition h
     let a = m.Attributes
 
-    // (public か internal) でないメソッドは除外
-    not (a.HasFlag MethodAttributes.Public || a.HasFlag MethodAttributes.Assembly) ||
+    // public でないメソッドは除外
+    not (a.HasFlag MethodAttributes.Public) ||
 
     // virtual メソッドは除外
     a.HasFlag MethodAttributes.Virtual ||
