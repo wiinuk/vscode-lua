@@ -2,6 +2,7 @@
 #load "RichConsole.fsx"
 open RichConsole
 open RichConsole.Run.Operators
+open FSharp.Compiler.SourceCodeServices
 open Spectre.Console
 open System
 open System.Collections.Concurrent
@@ -20,6 +21,7 @@ let analyzerCategory = __SOURCE_FILE__
 let defaultMessages = {|
     memberUnused = "{0} が使われていません"
     startAnalysisHeader = "------ 分析開始: ディレクトリ: {0} ------"
+    endAnalysis = "------ 分析終了: 経過時間: {0} ------"
 |}
 let selectMessage resource selector =
     Option.defaultValue defaultMessages resource |> selector
@@ -340,13 +342,12 @@ let entityAsTypeId (metadata: MetadataReader) (typeDefinitionOrReferenceOrSpecif
 
 let addMethodDefinition (metadata: MetadataReader) m (results: ConcurrentDictionary<_,_>) =
     let m = metadata.GetMethodDefinition m
-    let a = m.Attributes
-
-    // public または internal
-    if not (a.HasFlag MethodAttributes.Public || a.HasFlag MethodAttributes.Assembly) then ValueNone else
-
-    let id = methodDefinitionId metadata m
-    ValueSome struct(id, results.TryAdd(id, ()))
+    match m.Attributes &&& MethodAttributes.MemberAccessMask with
+    | MethodAttributes.Public
+    | MethodAttributes.Assembly ->
+        let id = methodDefinitionId metadata m
+        ValueSome struct(id, results.TryAdd(id, ()))
+    | _ -> ValueNone
 
 let addMethodReference (metadata: MetadataReader) m (results: ConcurrentDictionary<_,_>) =
     let m = metadata.GetMemberReference m
@@ -386,11 +387,13 @@ type CollectMemberIdVisitor(metadata: MetadataReader, results: ConcurrentDiction
 
         member _.FieldDefinition(op, operand) =
             let f = metadata.GetFieldDefinition operand
-            let a = f.Attributes
-            if a.HasFlag FieldAttributes.Public || a.HasFlag FieldAttributes.Assembly then
+            match f.Attributes &&& FieldAttributes.FieldAccessMask with
+            | FieldAttributes.Public
+            | FieldAttributes.Assembly ->
                 let id = fieldDefinitionId metadata f
                 let added = results.TryAdd(id, ())
                 if isTrace then printfn $"    find {showOperation op} {showId id} %b{added}"
+            | _ -> ()
             true
 
 let attributeType (metadata: MetadataReader) (c: CustomAttribute) =
@@ -528,12 +531,12 @@ let rec excludeByDeclaringTypes (metadata: MetadataReader) (typeDefinition: Type
     let t = metadata.GetTypeDefinition typeDefinition
 
     // public でなければ除外
-    not (t.Attributes.HasFlag TypeAttributes.Public) ||
+    (t.Attributes &&& TypeAttributes.VisibilityMask <> TypeAttributes.Public) ||
 
     // 名前に '@' を含む型はコンパイラによって生成されたらしいので除外する
     metadata.GetString(t.Name).Contains "@" ||
 
-    // [<SuppressMessage(…, …)>] が付いている型は除外
+    // [<SuppressMessage(…, …)>] で指定された型は除外
     hasSuppressMessageAttribute metadata !%typeDefinition analyzerCategory memberUnusedCode ||
 
     // 定義されている型を調査
@@ -620,12 +623,15 @@ type ParseUsedSetterBackingFieldVisitor(metadata: MetadataReader) =
         member v.MethodDefinition(_, _) = v.Failure()
         member v.MethodSpecification(_, _) = v.Failure()
 
+let inline hasFlag set element =
+    set &&& element = element
+
 let isGetter (metadata: MetadataReader) (m: MethodDefinition) =
-    m.Attributes.HasFlag MethodAttributes.SpecialName &&
+    hasFlag m.Attributes MethodAttributes.SpecialName &&
     metadata.GetString(m.Name).StartsWith "get_"
 
 let isSetter (metadata: MetadataReader) (m: MethodDefinition) =
-    m.Attributes.HasFlag MethodAttributes.SpecialName &&
+    hasFlag m.Attributes MethodAttributes.SpecialName &&
     metadata.GetString(m.Name).StartsWith "set_"
 
 let isUsedGetterBackingField (module': PEReader) metadata m =
@@ -690,10 +696,10 @@ let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefini
     let a = m.Attributes
 
     // public でないメソッドは除外
-    not (a.HasFlag MethodAttributes.Public) ||
+    (a &&& MethodAttributes.MemberAccessMask <> MethodAttributes.Public) ||
 
     // virtual メソッドは除外
-    a.HasFlag MethodAttributes.Virtual ||
+    hasFlag a MethodAttributes.Virtual ||
 
     // 定義されている型によって除外されているか
     excludeByDeclaringTypes metadata (m.GetDeclaringType()) ||
@@ -704,7 +710,7 @@ let isExcludeMethod (metadata: MetadataReader) entryPointHandle (h: MethodDefini
     // 名前に '@' を含むメソッドはコンパイラによって生成されたらしいので除外する
     metadata.GetString(m.Name).Contains "@" ||
 
-    // [<SuppressMessage(__SOURCE_FILE__, memberUnusedCode…)>] が付いたメンバは除外
+    // [<SuppressMessage(…, …)>] で指定されたメンバは除外
     hasSuppressMessageAttribute metadata !%h analyzerCategory memberUnusedCode ||
 
     // 定義されたプロパティによって除外されているか
@@ -715,6 +721,39 @@ type ModuleDiagnosticMetadata = {
     debugMetadata: MetadataReader option
     metadata: MetadataReader
 }
+let lineTokens state (tokenizer: FSharpSourceTokenizer) line (result: _ ResizeArray) =
+    let mutable state = state
+    let lineTokenizer = tokenizer.CreateLineTokenizer line
+    while
+        match lineTokenizer.ScanToken state with
+        | Some token, state' -> result.Add token; state <- state'; true
+        | _, state' -> state <- state'; false
+        do ()
+    state
+
+let fsharpSourceIncludesInline location tokenizer tokens =
+    try
+        let path = Uri(location.uri).LocalPath
+        match Path.GetExtension path with
+        | ".fs"
+        | ".fsx" ->
+            let startLine = max (location.startLine - 1) 1
+            let endLine = location.endLine + 1
+            File.ReadLines path
+            |> Seq.skip (startLine - 1)
+            |> Seq.truncate (endLine - startLine)
+            |> Seq.scan (fun struct(state, _) line ->
+                try
+                    let state = lineTokens state tokenizer line tokens
+                    state, tokens |> exists (fun x -> x.TokenName = "INLINE")
+                finally
+                    tokens.Clear()
+            ) (FSharpTokenizerLexState.Initial, false)
+            |> Seq.exists (fun struct(_, x) -> x)
+        | _ -> false
+
+    with _ -> false
+
 let publicUnusedMembersDiagnosticsBy (usingMemberIds: ConcurrentDictionary<_,_>) moduleFilePath metadata (task: ProgressTask) diagnostics =
     let { module' = module'; debugMetadata = debugMetadata; metadata = metadata } = metadata
 
@@ -724,6 +763,9 @@ let publicUnusedMembersDiagnosticsBy (usingMemberIds: ConcurrentDictionary<_,_>)
             MetadataTokens.MethodDefinitionHandle headers.CorHeader.EntryPointTokenOrRelativeVirtualAddress
         else
             MetadataTokens.MethodDefinitionHandle 0
+
+    let tokenizer = FSharpSourceTokenizer([], None)
+    let tokens = ResizeArray()
 
     // モジュールの全てのメソッドを列挙
     task.MaxValue <- double metadata.MethodDefinitions.Count
@@ -745,8 +787,12 @@ let publicUnusedMembersDiagnosticsBy (usingMemberIds: ConcurrentDictionary<_,_>)
         then ()
         else
 
-        // 使われていなければ報告
         let location = findLocationFromILOffsetBy moduleFilePath debugMetadata methodDefinitionHandle 0
+
+        // F# ソースが inline トークンを含むなら除外
+        if fsharpSourceIncludesInline location tokenizer tokens then () else
+
+        // 使われていなければ報告
         report diagnostics Hint location <| MemberUnused id
 
 let openPEFile path =
