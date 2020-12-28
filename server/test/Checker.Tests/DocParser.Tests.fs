@@ -65,6 +65,7 @@ module private Helpers =
             | FunctionType(t, l, m1, r, colon, m2) ->
                 FunctionType(reserved f t, reserved f l, Option.map (parameters f) m1, reserved f r, reserved f colon, typeSign f m2)
 
+            | NilType k -> NilType(reserved f k)
             | NamedType(n, ts) -> NamedType(identifier f n, Option.map (genericArguments f) ts)
 
             // multi type
@@ -721,4 +722,9 @@ let [<Fact(DisplayName = "---@type ((fun(): a),)")>] autoWrapFunctionTypeInSingl
         |> withEmptySpan
 
     multiType [param innerType]
+    |> typeSignRoundTripTest
+
+let [<Fact(DisplayName = "---@type nil")>] nilType() =
+    NilType reserved
+    |> withEmptySpan
     |> typeSignRoundTripTest

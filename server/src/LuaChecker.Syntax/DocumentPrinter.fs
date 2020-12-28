@@ -99,6 +99,7 @@ let rec typePrecedence = function
     | FunctionType _ -> Precedence.FunctionType
     | ConstrainedType _ -> Precedence.ConstrainedType
     | ArrayType _ -> Precedence.ArrayType
+    | NilType _
     | InterfaceType _
     | NamedType _ -> Precedence.PrimitiveType
 
@@ -130,6 +131,7 @@ let rec typeSignNoWrap options t = seq {
     | ArrayType(t, _, _) ->
         yield! typeSign Precedence.ArrayType options t.kind; "[]"
 
+    | NilType _ -> "nil"
     | NamedType(n, ts) ->
         name n
         match ts with

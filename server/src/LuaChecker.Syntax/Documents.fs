@@ -60,6 +60,8 @@ module Documents =
 
         ///<summary>`function` `table&lt;number, string&gt;`</summary>
         | NamedType of name: 'A Identifier * 'A GenericArguments option
+        /// `nil`
+        | NilType of 'A Reserved
 
         /// "(" parameter "," ")"
         | SingleMultiType of lBracket: 'A Reserved * 'A Parameter * comma: 'A Reserved * rBracket: 'A Reserved

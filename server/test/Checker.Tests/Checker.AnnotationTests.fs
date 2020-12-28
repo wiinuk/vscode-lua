@@ -888,3 +888,10 @@ let typeParameterAnnotation() =
         (fun x -> { x with projectConfig = { x.projectConfig with initialGlobalModulePaths = [] } })
         "---@global f fun(...): ()"
     =? multi []
+
+[<Fact>]
+let nilAnnotation() =
+    chunkResult id "
+    return --[[---@type nil]](42), 10
+    "
+    =? multi [types.nil; types.number]

@@ -222,6 +222,7 @@ module private Type =
         let struct(t', typeSign) =
             match t.kind with
             | D.WrappedType(l, t, r) -> wrappedType &env (l, t, r)
+            | D.NilType nil -> nilType &env nil
             | D.NamedType(name, ts) -> namedType &env (name, ts)
             | D.ArrayType(et, l, r) -> arrayType &env t.trivia (et, l, r)
             | D.InterfaceType fs -> interfaceType &env t.trivia fs
@@ -296,6 +297,11 @@ module private Type =
 
         makeConsType &env comma.trivia (p1, parametersType),
         D.MultiType2(pSign1, withOperatorSemantics c, parametersSign)
+
+    and nilType (env: _ byref) (D.Annotated(nilToken, _) as nilSign) =
+        let t = types(env.env).nil |> Type.makeWithLocation (sourceLocation env.env nilToken.trivia)
+        let nilSign = D.NilType(nilSign |> withType (L.Type ||| L.Keyword) t)
+        t, nilSign
 
     and namedType (env: _ byref) (D.Annotated(Name n as name, _) as typeName, ts) =
         let nameSpan = n.trivia.span
