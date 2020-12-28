@@ -4,6 +4,7 @@ open LuaChecker
 open LuaChecker.Checker.Test.Utils
 open LuaChecker.Checker.Test.TypeExtensions
 open LuaChecker.Checker.Test.Helpers
+open LuaChecker.Parser.Tests
 open LuaChecker.Syntax
 open LuaChecker.Test
 module T = TypedSyntaxes
@@ -72,36 +73,6 @@ let unifyNumberAndVarWithInterface() =
     let t1 = types.number
     let t2 = Type.newVarWithFields 1 ["x", types.number]
     unify t1 t2 =? ValueSome(UndefinedField(t1, FieldKey.String "x"))
-
-[<Fact>]
-let syntaxHitTest() =
-    let visitor = {
-        literal = fun struct(_, x) -> x.trivia.span, TokenKind.ofLiteralKind x.kind
-        name = fun struct(_, Name x) -> x.trivia.span, TokenKind.Name x.kind
-        reserved = fun struct(_, t, k) -> t.span, k
-    }
-    let test i source =
-        let s = Scanner.create source
-        let x = Parser.block s
-        match Scanner.currentErrors s with
-        | [] -> Block.hitTest visitor () i x
-        | es -> failwith $"%A{List.rev es}"
-
-    let token (s, e) k = ValueSome({ start = s; end' = e }, k)
-
-    let source = "local function f() return end"
-    test -1 source =? ValueNone
-    test 0 source =? token (0, 5) TokenKind.Local
-    test 4 source =? token (0, 5) TokenKind.Local
-    test 5 source =? ValueNone
-    test 6 source =? token (6, 14) TokenKind.Function
-    test 15 source =? token (15, 16) (TokenKind.Name "f")
-    test 16 source =? token (16, 17) TokenKind.LBracket
-    test 17 source =? token (17, 18) TokenKind.RBracket
-    test 19 source =? token (19, 25) TokenKind.Return
-    test 26 source =? token (26, 29) TokenKind.End
-    test 29 source =? ValueNone
-    test 30 source =? ValueNone
 
 [<Fact>]
 let typedHitTest() =

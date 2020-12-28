@@ -1,6 +1,7 @@
 module LuaChecker.TolerantParserCombinator
 open System.ComponentModel
 open LuaChecker.Syntax
+open System.Diagnostics.CodeAnalysis
 
 
 let inline list isTerminator p s =
@@ -18,18 +19,21 @@ let inline sepByCore makeState foldState finishState isTerminator sepP p s =
         state <- foldState state (sepP s) (p s)
     finishState x state
 
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline sepBy isTerminator sepP p s =
     sepByCore
         (fun _ -> []) (fun acc sep x -> (sep, x)::acc) (fun x acc -> struct(x, List.rev acc))
         isTerminator sepP p s
 
 /// `p (op p)*`
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline chainL isTerminator p op f s =
     sepByCore
         (fun x -> x) (fun l op r -> f(l, op, r)) (fun _ x -> x)
         isTerminator op p s
 
 /// `p (op p)*`
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline chainR isTerminator p op f s =
     sepByCore
         (fun _ -> []) (fun ops op r -> (r, op)::ops) (fun l ops ->
@@ -72,6 +76,7 @@ let _ensureAndAdd (ops: _ byref) op =
     ops.Add op
 
 /// op* p
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline prefixOps isTerminator reduce op p s =
     // TODO: pool
     let mutable ops = null

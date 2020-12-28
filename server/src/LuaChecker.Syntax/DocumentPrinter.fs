@@ -1,9 +1,7 @@
 module LuaChecker.Syntax.DocumentPrinter
 open LuaChecker
-open LuaChecker.Primitives
 open LuaChecker.Syntax
 open LuaChecker.Syntax.Documents
-open LuaChecker.Syntaxes
 open System
 
 
@@ -246,18 +244,6 @@ and parameters options ps = seq {
             ", "
             yield! parameter options p
     }
-and parameters0 options xs = seq {
-    "("; yield! typeSignNoWrap options xs; ")"
-    }
-and results options { kind = xs } = seq {
-    match xs with
-    | EmptyType _ -> "()"
-    | MultiType2 _ ->
-        if options.wrapResultType
-        then yield! parameters0 options xs
-        else yield! typeSignNoWrap options xs
-    | _ -> yield! typeSign Precedence.Type options xs
-    }
 and parameter options { kind = Parameter(n, t) } = seq {
     match n with
     | None ->
@@ -352,14 +338,4 @@ let document options d = seq {
 let documents options ds = seq {
     yield! Seq.map (document options) ds |> Seq.sepBy ["\n"]
     if options.lastNewLine then "\n"
-}
-let allDocuments options ds = seq {
-    match options.style with
-    | LineDocument
-    | LongDocuments _ -> yield! documents options ds
-    | LongDocument eqCount ->
-        let eqCount = max 0 eqCount
-        yield! longCommentStart eqCount; "\n"
-        yield! documents options ds; "\n"
-        yield! longCommentEnd eqCount
 }

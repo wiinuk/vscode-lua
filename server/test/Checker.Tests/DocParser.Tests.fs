@@ -15,8 +15,24 @@ type RoundTripConfig = {
     trailingNoise: string NonNull
     options: DocumentPrinter.Options
 }
+module Printer =
+    let allDocuments options ds = seq {
+        match options.style with
+        | LineDocument
+        | LongDocuments _ -> yield! documents options ds
+        | LongDocument eqCount ->
+            let eqCount = max 0 eqCount
+            yield! longCommentStart eqCount; "\n"
+            yield! documents options ds; "\n"
+            yield! longCommentEnd eqCount
+    }
+
 [<AutoOpen>]
 module private Helpers =
+    module SepBy =
+        let inline map mapping x = SepBy.mapSep (fun x -> x) mapping x
+        let cons x sep (SepBy(x1, xs)) = SepBy(x, (sep, x1)::xs)
+
     let parseCore source position length =
         let s = Scanner.create source
         Parser.DocumentParser.documents s position length
@@ -28,7 +44,7 @@ module private Helpers =
 
     let parse source = parseRange source 0 source.Length
 
-    let print options ds = allDocuments options ds |> String.concat ""
+    let print options ds = Printer.allDocuments options ds |> String.concat ""
 
     module Mapping =
         let source (mapSpan, _) t = { kind = t.kind; trivia = mapSpan t.trivia }
@@ -494,6 +510,7 @@ let [<Fact(DisplayName = "---@field public x a")>] visibility() =
             |> tag
         ]
     ]
+    |> roundTripTest printConfig
 
 let [<Fact>] typeSignRoundTrip() = checkWith (fun c -> { c with MaxTest = c.MaxTest * 2 }) typeSignRoundTripTest
 

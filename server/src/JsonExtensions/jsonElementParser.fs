@@ -1,4 +1,5 @@
 namespace LuaChecker.Text.Json
+open LuaChecker
 open System
 open System.Collections.Concurrent
 open System.Collections.Generic
@@ -83,7 +84,7 @@ module private JsonElementParserHelpers =
     let getTypedParserOrRaise<'T> options = getParserOrRaise typeof<'T> options :?> JsonElementParser<'T>
 
 [<Sealed>]
-type EnumToIntegerParser<'T when 'T :> Enum and 'T : struct>() =
+type private EnumToIntegerParser<'T when 'T :> Enum and 'T : struct>() =
     inherit JsonElementParser<'T>()
     static let typeCode = Type.GetTypeCode typeof<'T>
     override _.Parse(e, _) =
@@ -132,7 +133,7 @@ type EnumParserFactory() =
         let t = typedefof<EnumToIntegerParser<AttributeTargets>>.MakeGenericType(t)
         createParser t null
 
-type SZArrayParser<'T>(options) =
+type private SZArrayParser<'T>(options) =
     inherit JsonElementParser<'T array>()
 
     let elementParser = getTypedParserOrRaise<'T> options
@@ -184,17 +185,13 @@ module ParserOptions =
     [<RequiresExplicitTypeArguments>]
     let getTypedParserOrRaise<'T> options = getTypedParserOrRaise<'T> options
 
-    let create() = {
-        parsers = defaultFactories
-        typeToParser = ConcurrentDictionary defaultParsers
-    }
     let createFromParsers parsers = {
         parsers = [yield! parsers; yield! defaultFactories]
         typeToParser = ConcurrentDictionary defaultParsers
     }
 
 [<Sealed>]
-type FSharpOptionParser<'T>(options) =
+type private FSharpOptionParser<'T>(options) =
     inherit JsonElementParser<'T option>()
     let valueParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) =
@@ -210,7 +207,7 @@ type FSharpOptionParserFactory() =
         createParser t [|options|]
 
 [<Sealed>]
-type FSharpValueOptionParser<'T>(options) =
+type private FSharpValueOptionParser<'T>(options) =
     inherit JsonElementParser<'T voption>()
     let valueParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) =
@@ -230,7 +227,7 @@ type UncheckedDefaultParser<'T>() =
 
 type FSharpUnitParser() = inherit UncheckedDefaultParser<unit>()
 
-type FSharpRecordOptionalFieldParser<'T>(options) =
+type private FSharpRecordOptionalFieldParser<'T>(options) =
     inherit JsonElementParser<'T OptionalField>()
     let valueParser = getTypedParserOrRaise<'T> options
     override _.Parse(e, options) = Defined(valueParser.Parse(e, options))

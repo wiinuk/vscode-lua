@@ -5,6 +5,7 @@ open LuaChecker.Primitives
 open LuaChecker.Syntaxes
 open LuaChecker.TypeSystem
 open System.IO
+open System.Collections.Concurrent
 
 
 module rec TypeExtensions =
@@ -435,6 +436,30 @@ module Helpers =
     open TypeExtensions
     open LuaChecker.TypedSyntaxes
 
+    module FileSystem =
+        let memory() =
+            let gate = obj()
+            let mutable lastWriteTime = System.DateTime.MinValue
+            let backingStore = ConcurrentDictionary()
+            {
+                readAllText = fun x -> lock gate <| fun _ -> snd backingStore.[x]
+                writeAllText = fun struct(p, c) -> lock gate <| fun _ ->
+                    backingStore.[p] <- (lastWriteTime, c)
+                    lastWriteTime <- lastWriteTime.AddMilliseconds 1.
+
+                deleteFile = fun x -> lock gate <| fun _ -> backingStore.TryRemove x |> ignore
+                lastWriteTime = fun x -> lock gate <| fun _ -> fst backingStore.[x]
+                enumerateFiles = fun x -> lock gate <| fun _ -> seq {
+                    let rootPath = DocumentPath.toPathOrFail x
+                    for kv in backingStore do
+
+                        // NOTE: テスト用の雑実装
+                        match DocumentPath.toPathOrNone kv.Key with
+                        | ValueSome path when path.StartsWith rootPath -> kv.Key
+                        | _ -> ()
+                }
+            }
+
     let toDocumentPath path =
         let path = Path.ChangeExtension(path, ".lua")
         DocumentPath.ofRelativeUri (System.Uri "file:///C:/") (System.Uri(path, System.UriKind.RelativeOrAbsolute))
@@ -476,6 +501,13 @@ module Helpers =
         sources: SourceConfig list
         projectConfig: ProjectConfig<'TypeEnv>
     }
+    let checkCached project path =
+        match Project.tryFind path project with
+        | ValueNone -> None, Seq.empty, project
+        | ValueSome sourceFile ->
+            let chunk, diagnostics, project = Checkers.checkSourceFileCached project path sourceFile
+            Some chunk, diagnostics, project
+
     let addInitialGlobalModulesFromRealFileSystem p paths =
         let paths = [ for path in paths do Path.GetFullPath path |> DocumentPath.ofPath ]
         for path in paths do

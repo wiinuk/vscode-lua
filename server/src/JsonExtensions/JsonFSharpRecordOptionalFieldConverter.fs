@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Text.Json.Serialization
+namespace LuaChecker.Text.Json.Serialization
 open LuaChecker.Text.Json
 open LuaChecker.Text.Json.Serialization.Internal
 open System
@@ -8,7 +8,7 @@ open System.Text.Json.Serialization
 
 
 [<Sealed>]
-type JsonFSharpRecordOptionalFieldConverter<'T>(options: JsonSerializerOptions) =
+type private JsonFSharpRecordOptionalFieldConverter<'T>(options: JsonSerializerOptions) =
     inherit JsonConverter<'T OptionalField>()
 
     let valueType = typeof<'T>

@@ -8,7 +8,6 @@
     <Compile Include="Document.types.fs" />
     <Compile Include="Syntaxes.fs" />
     <Compile Include="TokenKind.fs" />
-    <Compile Include="Syntax.HitTest.fs" />
     <Compile Include="Syntax.abstractions.fs" />
     <Compile Include="Syntax.operations.fs" />
     <Compile Include="LineMap.fs" />

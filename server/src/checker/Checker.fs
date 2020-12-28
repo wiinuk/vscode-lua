@@ -113,14 +113,6 @@ let standardEnv packagePath = {
     }
     packagePath = packagePath
 }
-
-let checkCached project path =
-    match Project.tryFind path project with
-    | ValueNone -> None, Seq.empty, project
-    | ValueSome sourceFile ->
-        let chunk, diagnostics, project = Checkers.checkSourceFileCached project path sourceFile
-        Some chunk, diagnostics, project
-
 let updateDescendants file project =
     project.pathToSourceFile
     |> HashMap.fold (fun struct(project, descendants) sourcePath sourceFile ->

@@ -50,10 +50,8 @@
     <DisallowedLeadingNewLine>トークンの前の改行は無効です</DisallowedLeadingNewLine>
     <RequireAnyField>フィールドが必要です</RequireAnyField>
     <RequireAnyStat>式が必要です</RequireAnyStat>
-    <RequireAnyToken>数値、文字列、名前、他のキーワードなどが必要です</RequireAnyToken>
     <RequireBinaryOp>`+`、`*` などの二項演算子が必要です</RequireBinaryOp>
     <RequireUnaryOp>`-`、`#` などの単項演算子が必要です</RequireUnaryOp>
-    <RequireFunctionCall>関数呼び出しが必要です</RequireFunctionCall>
     <RequireLiteral>`true`、`false`、`nil`、数値、文字列などの即値が必要です</RequireLiteral>
     <RequireName>名前が必要です</RequireName>
     <RequireString>文字列が必要です</RequireString>

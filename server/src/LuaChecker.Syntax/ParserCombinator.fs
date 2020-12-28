@@ -1,5 +1,6 @@
-﻿module LuaChecker.ParserCombinator
+module LuaChecker.ParserCombinator
 open System.ComponentModel
+open System.Diagnostics.CodeAnalysis
 
 
 let inline list p s =
@@ -124,18 +125,21 @@ let inline sepByCore makeState foldState finishState sepP p s =
 
     Ok(finishState x state)
 
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline sepBy sepP p s =
     sepByCore
         (fun _ -> []) (fun acc sep x -> (sep, x)::acc) (fun x acc -> struct(x, List.rev acc))
         sepP p s
 
 /// `p (op p)*`
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline chainL p op f s =
     sepByCore
         (fun x -> x) (fun l op r -> f(l, op, r)) (fun _ x -> x)
         op p s
 
 /// `p (op p)*`
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline chainR p op f s =
     sepByCore
         (fun _ -> []) (fun ops op r -> (r, op)::ops) (fun l ops ->
@@ -191,6 +195,7 @@ let _ensureAndAdd (ops: _ byref) op =
     ops.Add op
     true
 
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let inline prefixOps reduce op p s =
     // TODO: pool
     let mutable ops = null

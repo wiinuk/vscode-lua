@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources p1:noNamespaceSchemaLocation="resources.xsd" xmlns:p1="http://www.w3.org/2001/XMLSchema-instance">
   <diagnostic-messages>
-    <RequireAnyToken>RequireAnyToken</RequireAnyToken>
     <RequireFieldSep>RequireFieldSep</RequireFieldSep>
     <RequireToken>RequireToken({0})</RequireToken>
     <RequireBinaryOp>RequireBinaryOp</RequireBinaryOp>
@@ -9,7 +8,6 @@
     <RequireLiteral>RequireLiteral</RequireLiteral>
     <RequireName>RequireName</RequireName>
     <RequireString>RequireString</RequireString>
-    <RequireFunctionCall>RequireFunctionCall</RequireFunctionCall>
     <RequireVar>RequireVar</RequireVar>
     <DisallowedLeadingNewLine>DisallowedLeadingNewLine</DisallowedLeadingNewLine>
     <RequireAnyStat>RequireAnyStat</RequireAnyStat>

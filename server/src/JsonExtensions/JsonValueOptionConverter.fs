@@ -1,4 +1,4 @@
-﻿namespace LuaChecker.Text.Json.Serialization
+namespace LuaChecker.Text.Json.Serialization
 open System
 open System.Reflection
 open System.Text.Json
@@ -6,7 +6,7 @@ open System.Text.Json.Serialization
 
 
 [<Sealed>]
-type JsonConverterValueOption<'T>(options: JsonSerializerOptions) =
+type private JsonConverterValueOption<'T>(options: JsonSerializerOptions) =
     inherit JsonConverter<'T voption>()
 
     let valueType = typeof<'T>

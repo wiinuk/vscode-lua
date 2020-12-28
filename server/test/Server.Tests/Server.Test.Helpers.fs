@@ -1,6 +1,7 @@
 module LuaChecker.Server.Test.Helpers
 open FSharp.Data.UnitSystems.SI.UnitSymbols
 open LuaChecker
+open LuaChecker.Checker.Test.Helpers
 open LuaChecker.Server
 open LuaChecker.Server.Json
 open LuaChecker.Server.Log
@@ -13,6 +14,7 @@ open System.IO
 open System.Text.Json
 open System.Threading
 open Xunit.Abstractions
+module MessageWriter = LuaChecker.Server.Protocol.Tests.MessageWriter
 
 
 type Async with

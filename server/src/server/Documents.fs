@@ -12,7 +12,6 @@ type Document = {
     lineMap: LineMap Lazy
 }
 module Document =
-    let empty = { contents = ""; version = -1; lineMap = lazy LineMap.create "" }
     let create version contents = { contents = contents; version = version; lineMap = lazy LineMap.create contents }
     let positionToIndex { line = line; character = char } { lineMap = Lazy lineMap } =
         LineMap.lineStartPosition line lineMap + char
