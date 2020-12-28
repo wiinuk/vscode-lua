@@ -242,9 +242,9 @@ let clientWrite client actions = async {
         MessageWriter.writeJson output <| JsonRpcMessage.notification method ps
 
     let writeRequest message method ps parser =
+        let id = Interlocked.Increment &id
         MessageWriter.writeJson output <| JsonRpcMessage.request id method ps
-        responseHandlers.AddOrUpdate(id, (message, parser), fun _ v -> v) |> ignore
-        Interlocked.Increment &id |> ignore
+        responseHandlers.TryAdd(id, (message, parser)) |> ignore
 
     let writeResponse id response =
         match response with
