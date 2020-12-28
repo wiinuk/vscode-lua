@@ -1,16 +1,4 @@
-
-// analyzer.fsx
-#r "nuget: Argu, 5.5.0"
-#r "System.Configuration"
-#r "nuget: Fake.IO.FileSystem"
-
-// PublicUnusedMemberAnalyzer.fsx
-#r "nuget: System.Reflection.Metadata, 5.0.0"
-
-// RichConsole.fsx
-#r "nuget: FSharp.Compiler.Service, 38.0.2"
-#r "nuget: Spectre.Console, 0.35.0"
-
+module LuaChecker.Analyzers.RichConsole
 open FSharp.Compiler.SourceCodeServices
 open Spectre.Console
 open Spectre.Console.Rendering

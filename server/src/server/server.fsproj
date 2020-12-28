@@ -21,8 +21,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <None Include="ResourcesSchemaGen.fsx" />
-    <None Include="RichConsole.fsx" />
-    <None Include="PublicUnusedMemberAnalyzer.fsx" />
     <None Include="analyzer.fsx" />
     <Compile Include="Log.fs" />
     <Compile Include="SR.fs" />
@@ -49,9 +47,9 @@
   <Target Name="_GenerateResourcesScheme" BeforeTargets="AfterResolveReferences" Inputs="@(ReferencePath);ResourcesSchemaGen.fsx" Outputs="resources.xsd">
     <Exec Command="dotnet fsi --quiet --exec --define:GEN --use:ResourcesSchemaGen.fsx" />
   </Target>
-  <Target Name="_RunAssemblyAnalyzer" AfterTargets="Build">
+  <Target Condition="'$(Configuration)'=='Debug'" Name="_RunAssemblyAnalyzer" AfterTargets="Build">
     <PropertyGroup>
-      <ExecCommand>dotnet fsi analyzer.fsx --output-path "$([System.IO.Path]::Combine($(MSBuildProjectDirectory),$(OutputPath)).TrimEnd('\'))"</ExecCommand>
+      <ExecCommand>dotnet ../../analyzers/AnalyzerMain/bin/Debug/net5.0/AnalyzerMain.dll --output-path "$([System.IO.Path]::Combine($(MSBuildProjectDirectory),$(OutputPath)).TrimEnd('\'))"</ExecCommand>
     </PropertyGroup>
     <Exec Command="$(ExecCommand)" ConsoleToMsBuild="true" />
   </Target>

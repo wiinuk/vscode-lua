@@ -1,5 +1,4 @@
-
-#load "RichConsole.fsx"
+module LuaChecker.Analyzers.UnusedMemberAssemblyAnalyzer
 open RichConsole
 open RichConsole.Run.Operators
 open FSharp.Compiler.SourceCodeServices
