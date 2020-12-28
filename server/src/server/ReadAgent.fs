@@ -1,6 +1,7 @@
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module LuaChecker.Server.ReadAgent
 open LuaChecker.Server.Protocol
+open LuaChecker.Server.ServerResources
 open LuaChecker.Server.Json
 open LuaChecker.Server.Log
 open LuaChecker.Text.Json
@@ -23,11 +24,11 @@ let start agent =
             ifWarn { trace "JSON RPC format is invalid." }
             loop agent
 
-        | Error e -> ifError { Log.Format(agent.resources.LogMessages.MessageParseError, e) }
+        | Error e -> ifError { Log.Format(resources.LogMessages.MessageParseError, e) }
 
-        | Ok { method = Defined Methods.exit } -> ifInfo { Log.Format agent.resources.LogMessages.ReceivedExitNotification }
+        | Ok { method = Defined Methods.exit } -> ifInfo { Log.Format resources.LogMessages.ReceivedExitNotification }
         | Ok request ->
-            ifDebug { Log.Format(agent.resources.LogMessages.MessageReceived, request) }
+            ifDebug { Log.Format(resources.LogMessages.MessageReceived, request) }
             agent.projectAgent.Post <| ProcessReceivedMessage request
             loop agent
 

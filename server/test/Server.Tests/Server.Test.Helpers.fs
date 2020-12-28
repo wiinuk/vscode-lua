@@ -172,6 +172,8 @@ type ConnectionConfig = {
     serverPlatform: PlatformID option
     initialFiles: {| source: string; uri: string |} list
     rootUri: Uri
+    resourcePaths: string list
+    locale: string option
     createFileSystem: unit -> FileSystem
     globalModuleFiles: {| source: string; path: string |} list
 }
@@ -183,12 +185,14 @@ module ConnectionConfig =
         backgroundCheckDelay = TimeSpan.Zero
         serverPlatform = Some PlatformID.Win32NT
         initialFiles = []
+        resourcePaths = ["./resources.xml"]
         globalModuleFiles = [
             for path in Server.ServerCreateOptions.defaultOptions.globalModulePaths do
                 let path = Path.GetFullPath path
                 {| path = path; source = File.ReadAllText path |}
         ]
         rootUri = Uri "file:///C:/"
+        locale = None
         createFileSystem = FileSystem.memory
     }
 type Client<'V,'R> = {
@@ -238,9 +242,9 @@ let clientWrite client actions = async {
         MessageWriter.writeJson output <| JsonRpcMessage.notification method ps
 
     let writeRequest message method ps parser =
+        let id = Interlocked.Increment &id
         MessageWriter.writeJson output <| JsonRpcMessage.request id method ps
-        responseHandlers.AddOrUpdate(id, (message, parser), fun _ v -> v) |> ignore
-        Interlocked.Increment &id |> ignore
+        responseHandlers.TryAdd(id, (message, parser)) |> ignore
 
     let writeResponse id response =
         match response with
@@ -421,7 +425,7 @@ let serverActionsWithBoilerPlate withConfig actions = async {
             { c with
                 fileSystem = fileSystem
                 platform = config.serverPlatform
-                resourcePaths = ["./resources.xml"]
+                resourcePaths = config.resourcePaths
                 backgroundCheckDelay = config.backgroundCheckDelay
                 globalModulePaths = [for f in config.globalModuleFiles do f.path]
             }
@@ -469,7 +473,10 @@ let waitUntilMatchLatestDiagnosticsOf fileUri predicate =
 let serverActions withConfig messages = async {
     let config = withConfig ConnectionConfig.defaultValue
     let! rs = serverActionsWithBoilerPlate withConfig [
-        Send <| Initialize { rootUri = ValueSome config.rootUri }
+        Send <| Initialize {
+            rootUri = ValueSome config.rootUri
+            locale = config.locale |> Option.unbox
+        }
         waitUntilExists 5.<_> <| function
             | InitializeResponse _ -> true
             | _ -> false
