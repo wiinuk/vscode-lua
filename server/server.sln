@@ -20,6 +20,9 @@ EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "LuaChecker.Protocol", "src\Protocol\LuaChecker.Protocol.fsproj", "{16B927A7-FC6F-480F-B470-BF8F37D8C145}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "server", "src\server\server.fsproj", "{ED3A8261-DF9F-421F-B7B0-DAFA192163D6}"
+	ProjectSection(ProjectDependencies) = postProject
+		{E1962383-8788-4F58-B376-035BFAF13FE9} = {E1962383-8788-4F58-B376-035BFAF13FE9}
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{1B05EB73-7F7C-4AB2-A989-227DF8EC367A}"
 	ProjectSection(SolutionItems) = preProject
@@ -37,7 +40,7 @@ Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "LuaChecker.Test.Helpers", "
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "analyzers", "analyzers", "{8EE59FF4-26AB-466D-8DC4-3E1DB8B5B682}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "UnusedMemberAssemblyAnalyzer", "analyzers\UnusedMemberAssemblyAnalyzer\UnusedMemberAssemblyAnalyzer.fsproj", "{5CF2F285-3DDB-4405-999D-631C5134347E}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "UnusedMemberAssemblyAnalyzer", "analyzers\UnusedMemberAssemblyAnalyzer\UnusedMemberAssemblyAnalyzer.fsproj", "{5CF2F285-3DDB-4405-999D-631C5134347E}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "AnalyzerMain", "analyzers\AnalyzerMain\AnalyzerMain.fsproj", "{E1962383-8788-4F58-B376-035BFAF13FE9}"
 EndProject
