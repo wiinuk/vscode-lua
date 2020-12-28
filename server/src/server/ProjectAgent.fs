@@ -2,10 +2,11 @@
 module LuaChecker.Server.ProjectAgent
 open LuaChecker
 open LuaChecker.Server.Log
+open LuaChecker.Server.ServerResources
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
-open System.IO
+open System.Globalization
 open System.Text
 open System.Text.Json
 open type LuaChecker.Server.Marshalling.MarshallingContext
@@ -49,17 +50,17 @@ module private Helpers =
             | ValueNone -> InFs(path, agent.project.projectRare.fileSystem.lastWriteTime path)
             | ValueSome document -> InMemory(document.contents, document.version)
 
-        ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
+        ifDebug { Log.Format(resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
         ifDebug { agent.watch.Restart() }
         let _, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path source
-        ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
+        ifDebug { Log.Format(resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
 
         let agent = { agent with project = project }
 
         let agent =
             match document with
             | ValueNone ->
-                ifDebug { Log.Format(agent.resources.LogMessages.UnopenedFileDiagnosticsIsNotPublished, path) }
+                ifDebug { Log.Format(resources.LogMessages.UnopenedFileDiagnosticsIsNotPublished, path) }
                 agent
 
             | ValueSome document ->
@@ -106,15 +107,19 @@ module private Helpers =
     let checkProjectFileOrCachedResult agent path project =
         match Project.tryFind path project with
         | ValueSome sourceFile ->
-            ifDebug { Log.Format(agent.resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
+            ifDebug { Log.Format(resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
             ifDebug { agent.watch.Restart() }
             let typedTree, diagnostics, project = Checkers.checkSourceFileCached project path sourceFile
-            ifDebug { Log.Format(agent.resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
+            ifDebug { Log.Format(resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
             Some typedTree, diagnostics, project
 
         | ValueNone -> None, upcast [], project
 
-let initialize agent id { rootUri = rootUri } =
+let initialize agent id { rootUri = rootUri; locale = locale } =
+    match locale with
+    | ValueSome locale -> resources <- ServerResources.loadFile agent.resourcePaths [locale]
+    | _ -> ()
+
     let agent =
         match rootUri with
         | ValueSome root -> { agent with ProjectAgent.root = root }
@@ -160,7 +165,7 @@ let initialized inbox agent =
     let responseHandler inbox struct(agent, r) =
         match r with
         | Error e ->
-            ifWarn { Log.Format(agent.resources.LogMessages.ErrorResponseReceived, e) }
+            ifWarn { Log.Format(resources.LogMessages.ErrorResponseReceived, e) }
             agent
 
         | Ok() ->
@@ -204,7 +209,7 @@ let didChangeWatchedFiles agent { changes = changes } =
     let mutable agent' = agent
     for change in changes do
         let path = DocumentPath.ofRelativeUri agent'.root change.uri
-        ifDebug { Log.Format(agent.resources.LogMessages.FileChanged, DocumentPath.toUriString path, change.``type``) }
+        ifDebug { Log.Format(resources.LogMessages.FileChanged, DocumentPath.toUriString path, change.``type``) }
 
         if DocumentPath.toUriString(path).EndsWith(".lua", StringComparison.InvariantCultureIgnoreCase) then
             agent' <- processFileEvent agent' path change
@@ -273,7 +278,7 @@ let processNotification inbox agent methods ps =
     | M.``workspace/didChangeWatchedFiles`` -> didChangeWatchedFiles agent <| JsonElement.parse ps
 
     | method ->
-        ifWarn { Log.Format(agent.resources.LogMessages.UnknownNotification, method, ps) }
+        ifWarn { Log.Format(resources.LogMessages.UnknownNotification, method, ps) }
         agent
 
 let processRequest agent id ps = function
@@ -285,7 +290,7 @@ let processRequest agent id ps = function
     | M.shutdown -> JsonElement.parse ps |> shutdown agent id
 
     | method ->
-        ifError { Log.Format(agent.resources.LogMessages.UnknownRequest, id, method, ps) }
+        ifError { Log.Format(resources.LogMessages.UnknownRequest, id, method, ps) }
         let error = {
             code = JsonRpcErrorCodes.MethodNotFound
             message = "method not found"
@@ -298,7 +303,7 @@ let processResponse agent id result =
     match Map.tryFind id agent.responseHandlers with
     | ValueSome handler -> handler(agent, result)
     | _ ->
-        ifWarn { Log.Format(agent.resources.LogMessages.ResponseHandlerNotFound, id, result) }
+        ifWarn { Log.Format(resources.LogMessages.ResponseHandlerNotFound, id, result) }
         agent
 
 let processMessage inbox agent = function
@@ -328,7 +333,7 @@ let processMessage inbox agent = function
         processResponse agent id <| Error(OptionalField.toVOption error)
 
     | message ->
-        ifWarn { Log.Format(agent.resources.LogMessages.InvalidMessageFormat, message) }
+        ifWarn { Log.Format(resources.LogMessages.InvalidMessageFormat, message) }
         agent
 
 let processEnumerateFilesResponse agent files =

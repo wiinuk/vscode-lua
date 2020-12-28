@@ -2,6 +2,7 @@
 module LuaChecker.Server.WriteAgent
 open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
+open LuaChecker.Server.ServerResources
 open System
 open System.Text
 open type WriteAgent
@@ -22,7 +23,7 @@ let create agent = new MailboxProcessor<_>(fun inbox ->
         match! inbox.Receive() with
         | QuitWriteAgent -> return ()
         | WriteMessage message ->
-            ifDebug { Log.Format(agent.resources.LogMessages.MessageSending, Encoding.UTF8.GetString message.Span) }
+            ifDebug { Log.Format(resources.LogMessages.MessageSending, Encoding.UTF8.GetString message.Span) }
             MessageWriter.writeRawMessage agent.writer message.Span
 
             return! loop agent

@@ -17,7 +17,6 @@ type private L = LuaChecker.LeafFlags
 
 type MarshallingContext = {
     root: Uri
-    resources: ServerResources.Resources
     documents: Documents
 }
 
@@ -78,7 +77,7 @@ let showRelativePath context path =
     then DocumentPath.ofUri pathInRoot |> showPath
     else pathInRoot.ToString()
 
-let (|Messages|) context = context.resources.DiagnosticMessages
+let (|Messages|) _ = ServerResources.resources.DiagnosticMessages
 type private P = Syntax.ParseError
 type private K = LuaChecker.DiagnosticKind
 module D = Documents

@@ -32,7 +32,6 @@ let publishDiagnostics agent projectAgent path version document diagnostics =
 
         let context = {
             documents = projectAgent.documents
-            resources = agent.resources
             root = projectAgent.root
         }
         Seq.toArray <| Marshalling.marshalDocumentDiagnostics context path document diagnostics
@@ -50,7 +49,6 @@ let hoverHitTestAndResponse requestId projectAgent document { TypedSyntaxes.sema
     let index = Document.positionToIndex position document
     let context = {
         root = projectAgent.root
-        resources = projectAgent.resources
         documents = projectAgent.documents
     }
     let mutable this = {
