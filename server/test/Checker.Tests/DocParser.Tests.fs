@@ -512,6 +512,28 @@ let [<Fact(DisplayName = "---@field public x a")>] visibility() =
     ]
     |> roundTripTest printConfig
 
+let [<Fact(DisplayName = "--[[---@field [[]] a]]")>] longStringInLongComment() =
+    [
+        document "" [
+            FieldTag(
+                reserved,
+                None,
+                FieldKey.String "" |> withEmpty,
+                type0 "a"
+            )
+            |> withEmptySpan
+            |> tag
+        ]
+    ]
+    |> roundTripTest {
+        printConfig with
+            options = {
+                printConfig.options with
+                    style = LongDocuments -1
+                    stringStyle = Printer.LongString
+            }
+    }
+
 let [<Fact>] typeSignRoundTrip() = checkWith (fun c -> { c with MaxTest = c.MaxTest * 2 }) typeSignRoundTripTest
 
 let [<Fact(DisplayName = "---@type a")>] simpleTypeTag() =
