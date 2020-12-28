@@ -3,6 +3,7 @@ open LuaChecker
 open LuaChecker.Syntax
 open LuaChecker.Syntax.Documents
 open System
+open System.Diagnostics.CodeAnalysis
 
 
 type DocumentStyle =
@@ -335,6 +336,7 @@ let document options d = seq {
         yield! longCommentEnd eqCount
 }
 /// `--- …⏎--- …` or `--[[ --- … ]]⏎--[[ --- … ]]`
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let documents options ds = seq {
     yield! Seq.map (document options) ds |> Seq.sepBy ["\n"]
     if options.lastNewLine then "\n"
