@@ -594,6 +594,7 @@ module private DocumentParserHelpers =
             | FunctionType(l, _, _, _, _, r) -> Span.merge (annotated l) r.trivia
             | InterfaceType x -> x.trivia
             | MultiType2(l, _, r) -> Span.merge l.trivia (parameters r)
+            | NilType k -> annotated k
             | NamedType(l, None) -> identifier l
             | NamedType(l, Some(GenericArguments(_, _, _, r))) -> Span.merge (identifier l) (annotated r)
             | SingleMultiType(l, _, _, r) -> Span.merge (annotated l) (annotated r)
@@ -765,6 +766,10 @@ module DocumentParser =
 
     let rec primitiveType s =
         match Scanner.tokenKind s with
+        | K.Nil ->
+            let n = "nil" |> withTrivia (Scanner.unsafeReadTrivia s) |> Syntax.Name |> withEmptyAnnotation
+            namedType n
+
         | K.Name n ->
             let n' = n |> withTrivia (Scanner.unsafeReadTrivia s) |> Syntax.Name |> withEmptyAnnotation
 

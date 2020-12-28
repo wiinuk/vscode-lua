@@ -892,6 +892,6 @@ let typeParameterAnnotation() =
 [<Fact>]
 let nilAnnotation() =
     chunkResult id "
-    return --[[---@type nil]](42)
+    return --[[---@type nil]](42), 10
     "
-    =? types.nil
+    =? multi [types.nil; types.number]

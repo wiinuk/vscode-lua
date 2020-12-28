@@ -504,10 +504,16 @@ type Arbs =
                 let! sepXs = Gen.listOfLength (length - 1) (Gen.zip sep x)
                 return SepBy(x0, sepXs)
                 }
-            and leafType = gen {
-                let! n = identifier
-                return D.NamedType(n, None)
+            and leafType = Gen.oneof [
+                gen {
+                    let! n = identifier
+                    return D.NamedType(n, None)
                 }
+                gen {
+                    let! r = reserved
+                    return D.NilType r
+                }
+                ]
             and genericArguments size = gen {
                 match size with
                 | 0 -> return None
@@ -617,7 +623,8 @@ type Arbs =
         let rec validTypeSign minPrecedence t =
             minPrecedence <= DocumentPrinter.typePrecedence t &&
             match t with
-            | D.EmptyType _ -> true
+            | D.EmptyType _
+            | D.NilType _ -> true
             | D.ArrayType(e, _, _) -> validTypeSign D.Precedence.ArrayType e.kind
             | D.ConstrainedType(t, _, fs) ->
                 validTypeSign D.Precedence.PrimitiveType t.kind &&

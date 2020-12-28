@@ -434,6 +434,7 @@ module private rec IterateRange =
             | D.EmptyType(x1, x2) -> emptyType &v &env (x1, x2)
             | D.SingleMultiType(x1, x2, x3, x4) -> singleMultiType &v &env (x1, x2, x3, x4)
             | D.ArrayType(x1, x2, x3) -> arrayType &v &env (x1, x2, x3)
+            | D.NilType x1 -> reserved &v &env x1
             | D.NamedType(x1, x2) -> namedType &v &env (x1, x2)
             | D.VariadicType x1 -> variadicType &v &env x1
             | D.ConstrainedType(x1, x2, x3) -> constrainedType &v &env (x1, x2, x3)
