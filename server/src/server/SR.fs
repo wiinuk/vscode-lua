@@ -15,21 +15,21 @@ module ServerResources =
         xml.Validate(schema, fun _ e -> match e.Severity with XmlSeverityType.Warning -> () | _ -> validationException := Some e.Exception)
         !validationException
 
-    let loadFile resourcePaths cultures =
+    let loadFile resourcePaths ietfLanguageTags =
         let cultures = seq {
-            yield! cultures
             CultureInfo.CurrentUICulture
             CultureInfo.CurrentCulture
             CultureInfo.InstalledUICulture
         }
-        let cultures = seq {
+        let ietfLanguageTags = seq {
+            yield! ietfLanguageTags
             for c in cultures do
                 if not (isNull c) && not c.IsNeutralCulture && c.Name <> "en-US" then
-                    c
+                    c.Name
         }
         let suffixes = seq {
-            match Seq.tryHead cultures with
-            | Some c -> "." + c.Name.ToLower()
+            match Seq.tryHead ietfLanguageTags with
+            | Some c -> "." + c.ToLower()
             | _ -> ()
 
             ".en-us"

@@ -143,12 +143,8 @@ let initialize agent id { rootUri = rootUri; locale = locale } =
     let agent = 
         match locale with
         | ValueSome locale ->
-            let culture =
-                try [CultureInfo.GetCultureInfoByIetfLanguageTag locale]
-                with :? CultureNotFoundException -> []
-
             { agent with
-                resources = ServerResources.loadFile agent.resourcePaths culture
+                resources = ServerResources.loadFile agent.resourcePaths [locale]
             }
         | _ -> agent
     agent
