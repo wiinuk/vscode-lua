@@ -504,12 +504,12 @@ type Arbs =
                 let! sepXs = Gen.listOfLength (length - 1) (Gen.zip sep x)
                 return SepBy(x0, sepXs)
                 }
-            and leafType = Gen.oneof [
-                gen {
+            and leafType = Gen.frequency [
+                7, gen {
                     let! n = identifier
                     return D.NamedType(n, None)
                 }
-                gen {
+                1, gen {
                     let! r = reserved
                     return D.NilType r
                 }

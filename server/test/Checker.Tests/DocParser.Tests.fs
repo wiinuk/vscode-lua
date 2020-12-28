@@ -723,3 +723,8 @@ let [<Fact(DisplayName = "---@type ((fun(): a),)")>] autoWrapFunctionTypeInSingl
 
     multiType [param innerType]
     |> typeSignRoundTripTest
+
+let [<Fact(DisplayName = "---@type nil")>] nilType() =
+    NilType reserved
+    |> withEmptySpan
+    |> typeSignRoundTripTest

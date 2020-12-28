@@ -764,12 +764,17 @@ module DocumentParser =
             | ValueSome(k, t) -> k |> withTrivia t.span |> withEmptyAnnotation |> Ok
             | _ -> Error E.RequireAnyFieldKey
 
+    let nilType s =
+        HEmpty
+        |> withTrivia (Scanner.unsafeReadSpan s)
+        |> withEmptyAnnotation
+        |> NilType
+        |> withMeasuredTrivia TypeSign.measure
+        |> Ok
+
     let rec primitiveType s =
         match Scanner.tokenKind s with
-        | K.Nil ->
-            let n = "nil" |> withTrivia (Scanner.unsafeReadTrivia s) |> Syntax.Name |> withEmptyAnnotation
-            namedType n
-
+        | K.Nil -> nilType s
         | K.Name n ->
             let n' = n |> withTrivia (Scanner.unsafeReadTrivia s) |> Syntax.Name |> withEmptyAnnotation
 
