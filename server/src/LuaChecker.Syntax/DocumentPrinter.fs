@@ -207,7 +207,9 @@ and fieldKey options (Annotated({ kind = k }, _)) = seq {
                 // `--[[ --- … --[[ … ]] … ]]` のように長ドキュメントに、対応するレベルの `]]` を含めることはできないので
                 // `--[[ --- … --[=[ … ]=] … ]]` のように `=` の数を変えて対応する
                 | LongDocument n
-                | LongDocuments n -> if n = longStringEqCount then n + 1 else longStringEqCount
+                | LongDocuments n ->
+                    let n = max 0 n
+                    if n = longStringEqCount then n + 1 else longStringEqCount
 
                 | LineDocument -> longStringEqCount
 
