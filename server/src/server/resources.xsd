@@ -305,6 +305,46 @@
           <xsd:documentation>string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
+      <xsd:element name="Type1Source" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="Type2Source" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="Constraints1Source" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="Constraints2Source" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="RequiresTypeSource" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ActualTypeSource" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="ConstraintsSource" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
+      <xsd:element name="TypeSource" type="pattern-1">
+        <xsd:annotation>
+          <xsd:documentation>string</xsd:documentation>
+        </xsd:annotation>
+      </xsd:element>
     </xsd:all>
   </xsd:complexType>
   <xsd:complexType name="log-messages">

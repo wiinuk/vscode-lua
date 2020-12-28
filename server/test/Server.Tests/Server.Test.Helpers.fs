@@ -514,6 +514,13 @@ let diagnostic severity (sl, sc) (el, ec) code message = {
 let error = diagnostic DiagnosticSeverity.Error
 let warning = diagnostic DiagnosticSeverity.Warning
 let info = diagnostic DiagnosticSeverity.Information
+let relatedInfo uri (sl, sc) (el, ec) message = {
+    location = {
+        uri = uri
+        range = range (sl, sc) (el, ec)
+    }
+    message = message
+}
 
 let didChange changes (path, version) = Send <| DidChange {
     textDocument = {

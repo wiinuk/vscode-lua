@@ -60,6 +60,14 @@
     <GenericTypeSubstitute>GenericTypeSubstitute({0}, {1})</GenericTypeSubstitute>
     <OtherFieldLocation>OtherFieldLocation</OtherFieldLocation>
     <OtherTagLocation>OtherTagLocation</OtherTagLocation>
+    <Type1Source>Type1Source</Type1Source>
+    <Type2Source>Type2Source</Type2Source>
+    <Constraints1Source>Constraints1Source</Constraints1Source>
+    <Constraints2Source>Constraints2Source</Constraints2Source>
+    <RequiresTypeSource>RequiresTypeSource</RequiresTypeSource>
+    <ActualTypeSource>ActualTypeSource</ActualTypeSource>
+    <ConstraintsSource>ConstraintsSource</ConstraintsSource>
+    <TypeSource>TypeSource</TypeSource>
   </diagnostic-messages>
   <log-messages>
     <LoadResourceFrom>LoadResourceFrom({0})</LoadResourceFrom>

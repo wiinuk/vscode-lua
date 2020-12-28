@@ -19,6 +19,14 @@ type OtherMessages =
     | GenericTypeSubstitute of typeParameterName: string * typeName: string
     | OtherFieldLocation
     | OtherTagLocation
+    | Type1Source
+    | Type2Source
+    | Constraints1Source
+    | Constraints2Source
+    | RequiresTypeSource
+    | ActualTypeSource
+    | ConstraintsSource
+    | TypeSource
 
 type ServerMessages =
     | LoadResourceFrom of resourcePath: string

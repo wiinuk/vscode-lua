@@ -263,7 +263,40 @@ let inline marshalCollisionInfoToRelatedInfo locations showSummary context (name
                     { location = location; message = message }
     |]
 
+let locationsToRelatedInformation context message locations = seq {
+    for Location(path, span) in locations do
+        match tryFindLocation context.documents path span with
+        | ValueNone -> ()
+        | ValueSome location -> { location = location; message = message }
+}
+
+let marshalUnifyErrorToRelatedInfomation (Messages m as context) = function
+    | TypeMismatch(t1, t2) ->
+        Seq.append
+            (locationsToRelatedInformation context m.Type1Source t1.trivia)
+            (locationsToRelatedInformation context m.Type2Source t2.trivia)
+
+    | ConstraintMismatch(c1, c2) ->
+        Seq.append
+            (locationsToRelatedInformation context m.Constraints1Source c1.trivia)
+            (locationsToRelatedInformation context m.Constraints2Source c2.trivia)
+
+    | RequireField(_, _, requireType) -> locationsToRelatedInformation context m.RequiresTypeSource requireType.trivia
+    | UndefinedField(actualType, _) -> locationsToRelatedInformation context m.ActualTypeSource actualType.trivia
+    | ConstraintAndTypeMismatch(c, t) ->
+        Seq.append
+            (locationsToRelatedInformation context m.ConstraintsSource c.trivia)
+            (locationsToRelatedInformation context m.TypeSource t.trivia)
+
+    | TagSpaceConstraintMismatch(_, _, actualType, _) -> locationsToRelatedInformation context m.ActualTypeSource actualType.trivia
+    | _ -> upcast []
+
 let marshalDiagnosticKindToRelatedInformation (Messages m as context) path document = function
+    | K.UnifyError e ->
+        marshalUnifyErrorToRelatedInfomation context e
+        |> Seq.toArray
+        |> Defined
+
     | K.ExternalModuleError(path, Diagnostic(span, _, kind)) ->
         match tryFindLocation context.documents path span with
         | ValueNone -> Undefined

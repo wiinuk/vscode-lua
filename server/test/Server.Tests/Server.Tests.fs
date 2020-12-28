@@ -498,23 +498,15 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.unifyErrorWithLocation() = async {
         let! r = serverActions id [
-            "local x = 1 + 2\nlocal y = 'a' .. 'b'\nreturn x + y" &> ("file:///main.lua", 1)
+            "return 10 + 'a'" &> ("file:///main.lua", 1)
             waitUntilHasDiagnosticsOf "file:///main.lua"
         ]
         r =? [
             publishDiagnostics "file:///main.lua" 1 [
-                { error (2, 11) (2, 12) 1004 "ConstraintMismatch(string.., ..number)" with
+                { error (0, 12) (0, 15) 1004 "ConstraintMismatch(\"a\".., ..number)" with
                     relatedInformation = Defined [|
-                        {
-                            location = {
-                                uri = ""
-                                range = {
-                                    start = { line = 0; character = 0 }
-                                    ``end`` = { line = 0; character = 0 }
-                                }
-                            }
-                            message = ""
-                        }
+                        relatedInfo "file:///main.lua" (0, 12) (0, 15) "Constraints1Source"
+                        relatedInfo "file:///main.lua" (0, 10) (0, 11) "Constraints2Source"
                     |]
                 }
             ]
