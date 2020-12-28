@@ -1,6 +1,7 @@
 module LuaChecker.Server.Server
 open LuaChecker
 open LuaChecker.Server.Log
+open LuaChecker.Server.ServerResources
 open System
 open System.Collections.Immutable
 open System.Diagnostics
@@ -45,15 +46,13 @@ let start withOptions (input, output) =
         ]
         |> Checker.addInitialGlobalModules project
 
-    let resources = ServerResources.loadFile options.resourcePaths []
+    ServerResources.resources <- ServerResources.loadFile options.resourcePaths []
     use writeAgent = WriteAgent.create {
         writer = output
-        resources = resources
     }
     let backgroundAgents =
         let count = max 1 Environment.ProcessorCount
         let agent = {
-            resources = resources
             writeAgent = writeAgent
             semanticTokensDataBuffer = ResizeArray()
             watch = Stopwatch()
@@ -63,11 +62,10 @@ let start withOptions (input, output) =
         ]
 
     use projectAgent = ProjectAgent.create {
+        resourcePaths = options.resourcePaths
         writeAgent = writeAgent
         backgroundAgents = backgroundAgents
 
-        resourcePaths = options.resourcePaths
-        resources = resources
         pendingCheckPaths = Set.empty
         project = project
         root = rootUri
@@ -90,7 +88,6 @@ let start withOptions (input, output) =
         projectAgent.Start()
         ReadAgent.start {
             projectAgent = projectAgent
-            resources = resources
             reader = input
         }
         ifInfo { trace "%s" resources.LogMessages.ServerTerminatedNormally }

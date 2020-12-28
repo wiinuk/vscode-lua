@@ -8,7 +8,6 @@ open System.Text.Json
 
 
 type WriteAgent = {
-    resources: ServerResources.Resources
     writer: MessageWriter.MessageWriter
 }
 type WriteAgentMessage =
@@ -16,7 +15,6 @@ type WriteAgentMessage =
     | QuitWriteAgent
 
 type BackgroundAgent = {
-    resources: ServerResources.Resources
     writeAgent: WriteAgentMessage MailboxProcessor
     semanticTokensDataBuffer: int ResizeArray
     watch: Stopwatch
@@ -39,7 +37,6 @@ type BackgroundAgentMessage =
 
 and ProjectAgent = {
     resourcePaths: string list
-    resources: ServerResources.Resources
     project: Project
     root: Uri
     documents: Documents
@@ -64,6 +61,5 @@ and ProjectAgentMessage =
 
 type ReadAgent = {
     reader: MessageReader.MessageReader
-    resources: ServerResources.Resources
     projectAgent: ProjectAgentMessage MailboxProcessor
 }

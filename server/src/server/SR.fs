@@ -61,3 +61,5 @@ module ServerResources =
         | _ -> ()
 
         resource
+
+    let mutable resources = loadFile [] []
