@@ -8,7 +8,7 @@ let [<Literal>] SettingsPath = __SOURCE_DIRECTORY__  + "/../src/supported-runtim
 let projectPath = Path.Combine(__SOURCE_DIRECTORY__, "src/server/server.fsproj")
 
 // ResourcesSchemaGen.fsx が参照できる位置にアセンブリをビルドする
-CreateProcess.fromRawCommand "dotnet" ["build"; projectPath]
+CreateProcess.fromRawCommand "dotnet" ["build"]
     |> CreateProcess.ensureExitCode
     |> Proc.run
     |> ignore
