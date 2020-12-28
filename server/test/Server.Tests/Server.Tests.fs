@@ -139,8 +139,18 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         sortDiagnosticsAndOthers r =? ([
             publishDiagnostics "file:///C:/main.lua" 1 []
             publishDiagnostics "file:///C:/main.lua" 2 [
-                error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
-                error (0, 12) (0, 13) 1004 "ConstraintMismatch(1.., ..string)"
+                { error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)" with
+                    relatedInformation = Defined [|
+                        relatedInfo "file:///C:/main.lua" (0, 7) (0, 8) "Constraints1Source"
+                        relatedInfo "file:///C:/main.lua" (0, 9) (0, 11) "Constraints2Source"
+                    |]
+                }
+                { error (0, 12) (0, 13) 1004 "ConstraintMismatch(1.., ..string)" with
+                    relatedInformation = Defined [|
+                        relatedInfo "file:///C:/main.lua" (0, 12) (0, 13) "Constraints1Source"
+                        relatedInfo "file:///C:/main.lua" (0, 9) (0, 11) "Constraints2Source"
+                    |]
+                }
             ]
         ], [])
     }
@@ -187,8 +197,18 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         ]
         sortDiagnosticsAndOthers r =? ([
             publishDiagnostics "file:///C:/lib.lua" 1 [
-                error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)"
-                error (0, 12) (0, 13) 1004 "ConstraintMismatch(2.., ..string)"
+                { error (0, 7) (0, 8) 1004 "ConstraintMismatch(1.., ..string)" with
+                    relatedInformation = Defined [|
+                        relatedInfo "file:///C:/lib.lua" (0, 7) (0, 8) "Constraints1Source"
+                        relatedInfo "file:///C:/lib.lua" (0, 9) (0, 11) "Constraints2Source"
+                    |]
+                }
+                { error (0, 12) (0, 13) 1004 "ConstraintMismatch(2.., ..string)" with
+                    relatedInformation = Defined [|
+                        relatedInfo "file:///C:/lib.lua" (0, 12) (0, 13) "Constraints1Source"
+                        relatedInfo "file:///C:/lib.lua" (0, 9) (0, 11) "Constraints2Source"
+                    |]
+                }
             ]
             publishDiagnostics "file:///C:/main.lua" 2 [
                 { error (0, 18) (0, 23) 1104 "ExternalModuleError(C:\\lib.lua, (1,8 - 1,9) Error: ConstraintMismatch(1.., ..string))" with
@@ -493,6 +513,23 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             t 0 2 1 operator Empty
             t 0 2 1 operator Empty
             t 0 1 1 operator Empty
+        ]
+    }
+    [<Fact>]
+    member _.unifyErrorWithLocation() = async {
+        let! r = serverActions id [
+            "return 10 + 'a'" &> ("file:///main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///main.lua"
+        ]
+        r =? [
+            publishDiagnostics "file:///main.lua" 1 [
+                { error (0, 12) (0, 15) 1004 "ConstraintMismatch(\"a\".., ..number)" with
+                    relatedInformation = Defined [|
+                        relatedInfo "file:///main.lua" (0, 12) (0, 15) "Constraints1Source"
+                        relatedInfo "file:///main.lua" (0, 10) (0, 11) "Constraints2Source"
+                    |]
+                }
+            ]
         ]
     }
     [<Fact>]

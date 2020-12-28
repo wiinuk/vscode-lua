@@ -45,6 +45,14 @@
     <GenericTypeSubstitute>{0} は {1}</GenericTypeSubstitute>
     <OtherFieldLocation>他のフィールドの場所</OtherFieldLocation>
     <OtherTagLocation>他のタグの場所</OtherTagLocation>
+    <TypeSource>型の推論元</TypeSource>
+    <ConstraintsSource>制約の推論元</ConstraintsSource>
+    <Type1Source>型1の推論元</Type1Source>
+    <Type2Source>型2の推論元</Type2Source>
+    <Constraints1Source>制約1の推論元</Constraints1Source>
+    <Constraints2Source>制約2の推論元</Constraints2Source>
+    <ActualTypeSource>実際の型の推論元</ActualTypeSource>
+    <RequiresTypeSource>必要な型の推論元</RequiresTypeSource>
 
     <ParseError>一般的な構文エラー：{0}</ParseError>
     <DisallowedLeadingNewLine>トークンの前の改行は無効です</DisallowedLeadingNewLine>
