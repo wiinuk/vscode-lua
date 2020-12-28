@@ -166,22 +166,6 @@ let showKind config k = seq {
     // documentation comment
     | K.At -> "@"
 }
-let printTokenWithTrivia source struct(config, token) = seq {
-    let t = token.trivia
-    match source with
-    | Some source when not <| Span.isEmpty t.span ->
-        (source: string).[t.span.start - t.leadingTriviaLength .. t.span.end' + t.trailingTriviaLength - 1]
-
-    | _ ->
-        for _ in 1..max 1 t.leadingTriviaLength do " "
-        yield! showKind config token.kind
-        for _ in 1..max 0 t.trailingTriviaLength do " "
-}
-let printToken struct(config, token) = seq {
-    " "
-    yield! showKind config token.kind
-}
-
 [<Struct>]
 type PrintEnv<'T,'S> = {
     config: PrintConfig

@@ -1,4 +1,4 @@
-﻿module internal LuaChecker.Text.Json.Serialization.JsonFSharpRecordConverterEmitter
+module internal LuaChecker.Text.Json.Serialization.JsonFSharpRecordConverterEmitter
 open FSharp.Reflection
 open LuaChecker.Primitives
 open LuaChecker.Reflection.Emit
@@ -65,13 +65,13 @@ let defineReadMethod (converterT: TypeBuilder) fieldConverters recordConstructor
     let recordC = ILMethod.declare<args<record>, result> recordConstructor
 
     // override this.Read(reader: Utf8JsonReader byref, typeToConvert: Type, options: JsonSerializerOptions): 'RecordType =
-    let baseReadM = converterT.BaseType.GetMethod "Read"
+    let baseReadM = converterT.BaseType.GetMethod (nameof Unchecked.defaultof<JsonConverter<_>>.Read)
     let readM = converterT.DefineMethod(baseReadM.Name, M.Public ||| M.Virtual ||| M.HideBySig, baseReadM.ReturnType, [| for p in baseReadM.GetParameters() -> p.ParameterType |])
     for p in baseReadM.GetParameters() do
         readM.DefineParameter(p.Position + 1, p.Attributes, p.Name) |> ignore
 
     let readStartRecordM =
-        typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod "readStartRecord"
+        typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod (nameof JsonConverterFSharpRecord.readStartRecord)
         |> ILMethod.declare<args<_Utf8JsonReader>, result>
 
     let s = ILStack.getILGenerator<args<converter, _Utf8JsonReader, Type, JsonSerializerOptions>, result<record>> readM
@@ -99,10 +99,10 @@ let defineReadMethod (converterT: TypeBuilder) fieldConverters recordConstructor
     //        goto beginLoop
     //    endLoop:
     let readIsPropertyWithVerifyM =
-        typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod "readIsPropertyWithVerify"
+        typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod (nameof JsonConverterFSharpRecord.readIsPropertyWithVerify)
         |> ILMethod.declare<args<_Utf8JsonReader>, result<bool>>
-    let tryReadFieldMD1 = typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod "tryReadField"
-    let skipAnyPropertyM = typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod "skipAnyProperty" |> ILMethod.declare<args<_Utf8JsonReader>, result>
+    let tryReadFieldMD1 = typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod (nameof JsonConverterFSharpRecord.tryReadField<_>)
+    let skipAnyPropertyM = typeof<JsonConverterFSharpRecord.Marker>.DeclaringType.GetMethod (nameof JsonConverterFSharpRecord.skipAnyProperty) |> ILMethod.declare<args<_Utf8JsonReader>, result>
     let beginLoopL = s.DefineLabel()
     let endLoopL = s.DefineLabel()
     let s = s.MarkLabel beginLoopL
@@ -138,7 +138,7 @@ let defineReadMethod (converterT: TypeBuilder) fieldConverters recordConstructor
 
 let defineWriteMethod (converterT: TypeBuilder) fieldConverters =
     // override this.Write(writer: Utf8JsonWriter, record: 'RecordType, options: JsonWriterOptions) =
-    let baseWriteM = converterT.BaseType.GetMethod "Write"
+    let baseWriteM = converterT.BaseType.GetMethod (nameof Unchecked.defaultof<JsonConverter<_>>.Write)
     let readM = converterT.DefineMethod(baseWriteM.Name, M.Public ||| M.Virtual ||| M.HideBySig, baseWriteM.ReturnType, [| for p in baseWriteM.GetParameters() -> p.ParameterType |])
     for m in baseWriteM.GetParameters() do
         readM.DefineParameter(m.Position + 1, m.Attributes, m.Name) |> ignore

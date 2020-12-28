@@ -703,12 +703,6 @@ let wrap env (l, x, _) =
         T.TypeReinterpret(tags, x') |> withSpan span,
         t'
 
-let isExplicitStaticKey = function
-    | Init _
-    | MemberInit(Name _, _, _)
-    | IndexInit(_, { kind = Literal _ }, _, _, _) -> true
-    | _ -> false
-
 [<Struct>]
 type TableCheckState = {
     hasExplicitKey: bool

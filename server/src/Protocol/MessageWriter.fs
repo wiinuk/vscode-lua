@@ -32,7 +32,6 @@ let borrowStream output =
         writer = new Utf8JsonWriter(writerBuffer, options)
     }
 let utf8 = Encoding.UTF8
-let utf8Memory (s: string) = utf8.GetBytes s |> ReadOnlyMemory
 
 /// `"Content-Length: "`
 let private utf8ContentLengthHeaderHead = "Content-Length: "B
@@ -48,14 +47,6 @@ type BufferWriterExtensions =
 
 /// `"\r\n\r\n"`
 let private utf8HeaderEnd = "\r\n\r\n"B
-let writeUtf8 { outputBuffer = buffer; output = output } (utf8Message: _ ReadOnlySpan) =
-    buffer.Clear()
-    buffer.Write(ReadOnlySpan utf8ContentLengthHeaderHead)
-    buffer.Write utf8Message.Length
-    buffer.Write(ReadOnlySpan utf8HeaderEnd)
-    output.Write buffer.WrittenSpan
-    output.Write utf8Message
-
 let writeRawMessage { outputBuffer = outputBuffer; output = output } (utf8Json: byte ReadOnlySpan) =
     outputBuffer.Clear()
     outputBuffer.Write(ReadOnlySpan utf8ContentLengthHeaderHead)
@@ -63,13 +54,3 @@ let writeRawMessage { outputBuffer = outputBuffer; output = output } (utf8Json: 
     outputBuffer.Write(ReadOnlySpan utf8HeaderEnd)
     output.Write outputBuffer.WrittenSpan
     output.Write utf8Json
-
-let writeJson ({ writer = writer; writerBuffer = writerBuffer } as messageWriter) message =
-    writerBuffer.Clear()
-    writer.Reset()
-    Json.serializeWriter writer message
-    writer.Flush()
-    writeRawMessage messageWriter writerBuffer.WrittenSpan
-
-let writeJsonRpcResponse writer (response: JsonRpcMessage<_,_,_>) = writeJson writer response
-let writeJsonRpcNotification writer (notification: JsonRpcMessage<_,_,_>) = writeJson writer notification

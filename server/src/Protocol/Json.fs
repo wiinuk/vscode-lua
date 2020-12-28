@@ -1,9 +1,10 @@
-﻿module LuaChecker.Server.Json
+module LuaChecker.Server.Json
 open LuaChecker.Primitives
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json.Serialization
 open System.Text.Json
 open System.Runtime.CompilerServices
+open System.Diagnostics.CodeAnalysis
 
 
 let internal options =
@@ -18,10 +19,8 @@ let internal options =
 
 [<RequiresExplicitTypeArguments; MethodImpl(MethodImplOptions.AggressiveInlining)>]
 let deserialize<'T> uft8Json: 'T = JsonSerializer.Deserialize(utf8Json = uft8Json, options = options)
-[<RequiresExplicitTypeArguments>]
-let deserializeString<'T> json: 'T = JsonSerializer.Deserialize(json = json, options = options)
 let serialize value = JsonSerializer.SerializeToUtf8Bytes(value, options)
-let serializeString value = JsonSerializer.Serialize(value, options)
+[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
 let serializeWriter writer value = JsonSerializer.Serialize(writer, value, options)
 
 module Utf8Serializable =

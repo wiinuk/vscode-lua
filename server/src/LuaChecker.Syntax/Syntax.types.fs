@@ -103,7 +103,6 @@ type TokenKind =
 
 [<RequireQualifiedAccess>]
 type ParseError =
-    | RequireAnyToken
     | RequireFieldSep
     | RequireToken of TokenKind
     | RequireBinaryOp
@@ -111,7 +110,6 @@ type ParseError =
     | RequireLiteral
     | RequireName
     | RequireString
-    | RequireFunctionCall
     | RequireVar
     | DisallowedLeadingNewLine
     | RequireAnyStat

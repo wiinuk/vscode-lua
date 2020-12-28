@@ -83,28 +83,6 @@ module FileSystem =
             Directory.EnumerateFiles(DocumentPath.toPathOrFail x, "*", EnumerationOptions())
             |> Seq.map DocumentPath.ofPath
     }
-    let memory() =
-        let gate = obj()
-        let mutable lastWriteTime = System.DateTime.MinValue
-        let backingStore = Dictionary()
-        {
-            readAllText = fun x -> lock gate <| fun _ -> snd backingStore.[x]
-            writeAllText = fun struct(p, c) -> lock gate <| fun _ ->
-                backingStore.[p] <- (lastWriteTime, c)
-                lastWriteTime <- lastWriteTime.AddMilliseconds 1.
-
-            deleteFile = fun x -> lock gate <| fun _ -> backingStore.Remove x |> ignore
-            lastWriteTime = fun x -> lock gate <| fun _ -> fst backingStore.[x]
-            enumerateFiles = fun x -> lock gate <| fun _ -> seq {
-                let rootPath = DocumentPath.toPathOrFail x
-                for kv in backingStore do
-
-                    // NOTE: テスト用の雑実装
-                    match DocumentPath.toPathOrNone kv.Key with
-                    | ValueSome path when path.StartsWith rootPath -> kv.Key
-                    | _ -> ()
-            }
-        }
 
 type TypeCache = {
     /// ...(type(a: nil..) -> a)
@@ -198,13 +176,6 @@ type ProjectRareUpdate = {
 [<Struct>]
 type HashMap<'K,'V> = HashMap of ImmutableDictionary<'K,'V>
 module HashMap =
-    [<Sealed; AbstractClass>]
-    type private EmptyHashMapHolder<'K,'V> when 'K : equality private () =
-        static let value: HashMap<'K,'V> = HashMap <| ImmutableDictionary.Create LanguagePrimitives.FastGenericEqualityComparer
-        static member Value = value
-
-    [<GeneralizableValue>]
-    let empty<'K,'V when 'K : equality> = EmptyHashMapHolder<'K,'V>.Value
     let emptyWith comparer = HashMap <| ImmutableDictionary.Create comparer
 
     let add key value (HashMap map) = HashMap <| map.SetItem(key, value)

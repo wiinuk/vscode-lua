@@ -10,11 +10,6 @@
   </xsd:element>
   <xsd:complexType name="diagnostic-messages">
     <xsd:all>
-      <xsd:element name="RequireAnyToken" type="pattern-1">
-        <xsd:annotation>
-          <xsd:documentation>string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
       <xsd:element name="RequireFieldSep" type="pattern-1">
         <xsd:annotation>
           <xsd:documentation>string</xsd:documentation>
@@ -46,11 +41,6 @@
         </xsd:annotation>
       </xsd:element>
       <xsd:element name="RequireString" type="pattern-1">
-        <xsd:annotation>
-          <xsd:documentation>string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
-      <xsd:element name="RequireFunctionCall" type="pattern-1">
         <xsd:annotation>
           <xsd:documentation>string</xsd:documentation>
         </xsd:annotation>

@@ -269,7 +269,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
         ]
         r =? [
             publishDiagnostics "file:///C:/main.lua" 1 [
-                error (0, 6) (0, 7) 0007 "RequireName"
+                error (0, 6) (0, 7) 0006 "RequireName"
             ]
         ]
     }

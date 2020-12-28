@@ -1,6 +1,7 @@
 namespace LuaChecker.Primitives
 open System
 open System.Collections.Generic
+open System.Diagnostics.CodeAnalysis
 
 
 [<Struct; NoEquality; NoComparison; RequireQualifiedAccess>]
@@ -46,7 +47,9 @@ type NonEmptyList<'T> = NonEmptyList of 'T * 'T list with
         member x.GetEnumerator() = x.GetEnumerator() :> Collections.IEnumerator
 
 module NonEmptyList =
+    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
     let head (NonEmptyList(x, _)) = x
+    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
     let inline map f (NonEmptyList(x, xs)) =
         let x = f x
         match xs with
@@ -54,7 +57,6 @@ module NonEmptyList =
         | _ -> NonEmptyList(x, List.map f xs)
 
     let toList (NonEmptyList(x, xs)) = x::xs
-    let toSeq (NonEmptyList _ as xs) = xs :> _ seq
     let singleton x = NonEmptyList(x, [])
     let tryOfList = function [] -> ValueNone | x::xs -> ValueSome(NonEmptyList(x, xs))
     let cons head (NonEmptyList(x, xs)) = NonEmptyList(head, x::xs)
@@ -69,12 +71,14 @@ module NonEmptyList =
         | [], [] -> NonEmptyList(x1, [x2])
         | _ -> NonEmptyList(x1, xs1@x2::xs2)
 
+    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
     let inline fold folder state (NonEmptyList(x, xs)) =
         let s = folder state x
         match xs with
         | [] -> s
         | _ -> List.fold folder s xs
 
+    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
     let inline foldBack folder (NonEmptyList(x, xs)) state =
         let state =
             match xs with
@@ -82,6 +86,7 @@ module NonEmptyList =
             | _ -> List.foldBack folder xs state
         folder x state
 
+    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
     let inline mapFold folder state (NonEmptyList(x, xs)) =
         let struct(x, state) = folder state x
         match xs with
@@ -90,5 +95,6 @@ module NonEmptyList =
             let xs, state = List.mapFold (fun state x -> let struct(x, state) = folder state x in x, state) state xs
             NonEmptyList(x, xs), state
 
+    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
     let inline forall predicate (NonEmptyList(x, xs)) =
         predicate x && List.forall predicate xs

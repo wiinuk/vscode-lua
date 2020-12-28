@@ -1,4 +1,4 @@
-﻿namespace rec LuaChecker.Syntax
+namespace rec LuaChecker.Syntax
 open LuaChecker
 open LuaChecker.Primitives
 open LuaChecker.Syntax

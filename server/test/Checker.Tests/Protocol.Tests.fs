@@ -47,6 +47,30 @@ type Utf8JsonSerializable<'T> = struct
 end
 let utf8JsonSerializable<'T> = the<Utf8JsonSerializable<'T>>
 
+module MessageWriter =
+    open LuaChecker.Server.Protocol.MessageWriter
+    open System.Buffers
+
+    let private utf8ContentLengthHeaderHead = "Content-Length: "B
+    /// `"\r\n\r\n"`
+    let private utf8HeaderEnd = "\r\n\r\n"B
+
+    let writeUtf8 { outputBuffer = buffer; output = output } (utf8Message: _ ReadOnlySpan) =
+        buffer.Clear()
+        buffer.Write(ReadOnlySpan utf8ContentLengthHeaderHead)
+        buffer.Write utf8Message.Length
+        buffer.Write(ReadOnlySpan utf8HeaderEnd)
+        output.Write buffer.WrittenSpan
+        output.Write utf8Message
+
+    let writeJson ({ writer = writer; writerBuffer = writerBuffer } as messageWriter) message =
+        writerBuffer.Clear()
+        writer.Reset()
+        Json.serializeWriter writer message
+        writer.Flush()
+        writeRawMessage messageWriter writerBuffer.WrittenSpan
+
+
 [<Fact>]
 let readSimpleMessage() =
     let input = new MemoryStream()
@@ -92,7 +116,8 @@ let messageRoundTrip() = check <| fun x ->
 [<Fact>]
 let serializeJsonRpcVersion() =
     JsonRpcVersion.``2.0``
-    |> Json.serializeString =? "\"2.0\""
+    |> Json.serialize
+    |> Encoding.UTF8.GetString =? "\"2.0\""
 
 [<Fact>]
 let writeSimpleResponse() =
