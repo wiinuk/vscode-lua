@@ -4,11 +4,11 @@ open Fake.Core
 open FSharp.Data
 open System.IO
 
-let [<Literal>] SettingsPath = __SOURCE_DIRECTORY__  + "/../src/supported-runtime-specs.json"
+let [<Literal>] SettingsPath = __SOURCE_DIRECTORY__ + "/../src/supported-runtime-specs.json"
 let projectPath = Path.Combine(__SOURCE_DIRECTORY__, "src/server/server.fsproj")
 
 // ResourcesSchemaGen.fsx が参照できる位置にアセンブリをビルドする
-CreateProcess.fromRawCommand "dotnet" ["build"]
+CreateProcess.fromRawCommand "dotnet" ["build"; __SOURCE_DIRECTORY__]
     |> CreateProcess.ensureExitCode
     |> Proc.run
     |> ignore
