@@ -38,6 +38,7 @@ type BackgroundAgentMessage =
     | QuitBackgroundAgent
 
 and ProjectAgent = {
+    resourcePaths: string list
     resources: ServerResources.Resources
     project: Project
     root: Uri

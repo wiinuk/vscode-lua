@@ -5,7 +5,7 @@ open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
-open System.IO
+open System.Globalization
 open System.Text
 open System.Text.Json
 open type LuaChecker.Server.Marshalling.MarshallingContext
@@ -114,7 +114,7 @@ module private Helpers =
 
         | ValueNone -> None, upcast [], project
 
-let initialize agent id { rootUri = rootUri } =
+let initialize agent id { rootUri = rootUri; locale = locale } =
     let agent =
         match rootUri with
         | ValueSome root -> { agent with ProjectAgent.root = root }
@@ -140,6 +140,17 @@ let initialize agent id { rootUri = rootUri } =
             }
         }
     }
+    let agent = 
+        match locale with
+        | ValueSome locale ->
+            let culture =
+                try [CultureInfo.GetCultureInfoByIetfLanguageTag locale]
+                with :? CultureNotFoundException -> []
+
+            { agent with
+                resources = ServerResources.loadFile agent.resourcePaths culture
+            }
+        | _ -> agent
     agent
 
 let initialized inbox agent =

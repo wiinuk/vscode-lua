@@ -240,6 +240,8 @@ type FileEvent = {
 [<Struct>]
 type InitializeParams = {
     rootUri: Uri voption
+    /// IETF language tag = `CultureInfo.Name`
+    locale: string voption
 }
 [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]

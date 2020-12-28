@@ -15,8 +15,9 @@ module ServerResources =
         xml.Validate(schema, fun _ e -> match e.Severity with XmlSeverityType.Warning -> () | _ -> validationException := Some e.Exception)
         !validationException
 
-    let loadFile resourcePaths =
+    let loadFile resourcePaths cultures =
         let cultures = seq {
+            yield! cultures
             CultureInfo.CurrentUICulture
             CultureInfo.CurrentCulture
             CultureInfo.InstalledUICulture

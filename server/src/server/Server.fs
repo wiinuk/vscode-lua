@@ -45,7 +45,7 @@ let start withOptions (input, output) =
         ]
         |> Checker.addInitialGlobalModules project
 
-    let resources = ServerResources.loadFile options.resourcePaths
+    let resources = ServerResources.loadFile options.resourcePaths []
     use writeAgent = WriteAgent.create {
         writer = output
         resources = resources
@@ -66,6 +66,7 @@ let start withOptions (input, output) =
         writeAgent = writeAgent
         backgroundAgents = backgroundAgents
 
+        resourcePaths = options.resourcePaths
         resources = resources
         pendingCheckPaths = Set.empty
         project = project
