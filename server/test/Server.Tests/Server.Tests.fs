@@ -544,3 +544,15 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             ]
         ]
     }
+    [<Fact>]
+    member _.localeJa() = async {
+        let! r = serverActions (fun c -> { c with locale = Some "ja"; resourcePaths = [] }) [
+            "local = 1" &> ("file:///C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+        ]
+        r =? [
+            publishDiagnostics "file:///C:/main.lua" 1 [
+                error (0, 6) (0, 7) 0006 "名前が必要です"
+            ]
+        ]
+    }
