@@ -8,6 +8,8 @@ open System.Collections.Concurrent
 open System.Diagnostics
 open System.IO
 
+
+let p = Run.styled
 type Command =
     | Output_Path of string
     | Log_Level of LogLevel
@@ -38,7 +40,7 @@ if isDebug then printfn $"%A{assemblyPaths}"
 
 let diagnostics = ConcurrentBag()
 checkPublicUnusedMembers diagnostics assemblyPaths assemblyPaths
-for d in diagnostics do printDiagnostic resources d
+for d in diagnostics do Diagnostic.print resources d
 
 let hasError = diagnostics |> Seq.exists (fun d -> Hint < d.severity)
 do
