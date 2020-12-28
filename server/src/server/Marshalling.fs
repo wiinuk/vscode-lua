@@ -270,7 +270,7 @@ let locationsToRelatedInformation context message locations = seq {
         | ValueSome location -> { location = location; message = message }
 }
 
-let marshalUnifyErrorToRelatedInfomation (Messages m as context) = function
+let marshalUnifyErrorToRelatedInformation (Messages m as context) = function
     | TypeMismatch(t1, t2) ->
         Seq.append
             (locationsToRelatedInformation context m.Type1Source t1.trivia)
@@ -293,7 +293,7 @@ let marshalUnifyErrorToRelatedInfomation (Messages m as context) = function
 
 let marshalDiagnosticKindToRelatedInformation (Messages m as context) path document = function
     | K.UnifyError e ->
-        marshalUnifyErrorToRelatedInfomation context e
+        marshalUnifyErrorToRelatedInformation context e
         |> Seq.toArray
         |> Defined
 
