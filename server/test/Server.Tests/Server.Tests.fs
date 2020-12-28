@@ -56,7 +56,7 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
     [<Fact>]
     member _.initializeAndExit() = async {
         let! r = serverActionsWithBoilerPlate id [
-            Send <| Initialize { rootUri = ValueSome(Uri "file:///") }
+            Send <| Initialize { rootUri = ValueSome(Uri "file:///"); locale = ValueNone }
             Send Initialized
             receiveRequest 5.<_> <| function RegisterCapability _ -> Some RegisterCapabilityResponse | _ -> None
             Send Shutdown
@@ -493,5 +493,17 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             t 0 2 1 operator Empty
             t 0 2 1 operator Empty
             t 0 1 1 operator Empty
+        ]
+    }
+    [<Fact>]
+    member _.locale() = async {
+        let! r = serverActions (fun c -> { c with locale = Some "ja-jp"; resourcePaths = [] }) [
+            "local = 1" &> ("file:///C:/main.lua", 1)
+            waitUntilHasDiagnosticsOf "file:///C:/main.lua"
+        ]
+        r =? [
+            publishDiagnostics "file:///C:/main.lua" 1 [
+                error (0, 6) (0, 7) 0006 "名前が必要です"
+            ]
         ]
     }
