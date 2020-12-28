@@ -2,7 +2,6 @@ namespace LuaChecker.Server
 open FSharp.Data
 open LuaChecker.Server.Log
 open System.Globalization
-open System
 open System.IO
 open System.Xml.Linq
 open System.Xml.Schema
@@ -37,9 +36,19 @@ module ServerResources =
             "." + CultureInfo.InvariantCulture.TwoLetterISOLanguageName.ToLower()
             ""
         }
+        let paths = Directory.GetFiles(".", "resources*.xml") |> Array.sort
         let paths = seq {
             yield! resourcePaths
-            for suffix in suffixes -> sprintf "./resources%s.xml" suffix
+
+            for suffix in suffixes do
+                for path in paths do
+                    let langExt =
+                        match Path.GetFileNameWithoutExtension path |> Path.GetExtension with
+                        | null -> ""
+                        | x -> x.ToLowerInvariant()
+
+                    if langExt.StartsWith suffix then
+                        path
         }
         let resource = Seq.head <| seq {
             for path in paths do
