@@ -13,7 +13,7 @@ type HEmpty = | HEmpty = 0uy
 
 [<AutoOpen>]
 module HEmpty =
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let (|HEmpty|) (x: HEmpty) = x
     let HEmpty = HEmpty.HEmpty
 

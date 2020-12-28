@@ -22,10 +22,10 @@ module Local =
     let get x = x._contents
     let set x v = x._contents <- v
     let create (_: Scope<'S>) (x: 'T): Local<'S,'T> = { _contents = x }
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline modify f x = set x (f (get x))
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let run (scope: 'Scope byref when 'Scope :> ILocalScope<_> and 'Scope : struct) = scope.Invoke Scope
     let runNotStruct (scope: 'Scope when 'Scope :> ILocalScope<_> and 'Scope : not struct) = scope.Invoke Scope
 
@@ -54,7 +54,7 @@ module Pool =
         if pool.items.Count < pool.maxCount then
             pool.items.Add x
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline using pool scope =
         let x = rentManual pool
         let r = scope x

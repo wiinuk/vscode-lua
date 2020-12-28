@@ -20,7 +20,7 @@ let internal options =
 [<RequiresExplicitTypeArguments; MethodImpl(MethodImplOptions.AggressiveInlining)>]
 let deserialize<'T> uft8Json: 'T = JsonSerializer.Deserialize(utf8Json = uft8Json, options = options)
 let serialize value = JsonSerializer.SerializeToUtf8Bytes(value, options)
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 let serializeWriter writer value = JsonSerializer.Serialize(writer, value, options)
 
 module Utf8Serializable =

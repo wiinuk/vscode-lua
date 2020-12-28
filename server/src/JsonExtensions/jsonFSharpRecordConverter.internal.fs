@@ -49,7 +49,7 @@ module internal JsonSerializerOptionExtensions =
 module JsonConverterFSharpRecord =
     type internal Marker = class end
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<RequiresExplicitTypeArguments>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let createField<'F> (name: string) (options: JsonSerializerOptions) =
@@ -61,12 +61,12 @@ module JsonConverterFSharpRecord =
             IsOptional = t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<OptionalField<_>>
         }
     /// `{`
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let readStartRecord(reader: Utf8JsonReader byref) =
         if reader.TokenType <> JsonTokenType.StartObject then raise <| JsonException()
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let readIsPropertyWithVerify (reader: Utf8JsonReader byref) =
         if reader.Read() then
@@ -78,7 +78,7 @@ module JsonConverterFSharpRecord =
             raise <| JsonException()
 
     /// `"fieldName": field`
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<RequiresExplicitTypeArguments>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let tryReadField<'F> (reader: Utf8JsonReader byref) options field (result: 'F byref) =
@@ -93,14 +93,14 @@ module JsonConverterFSharpRecord =
             false
 
     /// `"anyName": anyJson`
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let skipAnyProperty(reader: Utf8JsonReader byref) =
         if reader.TokenType <> JsonTokenType.PropertyName then raise <| JsonException()
         reader.Skip()
         reader.Skip()
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<RequiresExplicitTypeArguments>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let writeField<'F> (writer: Utf8JsonWriter) field (value: 'F) options =

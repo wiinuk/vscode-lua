@@ -252,7 +252,7 @@ let marshalDiagnosticKindToTags = function
     | K.TypeTagParentSyntaxNotFound -> Defined [|DiagnosticTag.Unnecessary|]
     | _ -> Undefined
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 let inline marshalCollisionInfoToRelatedInfo locations showSummary context (name, d1, d2, ds) =
     Defined [|
         for d in d1::d2::ds do

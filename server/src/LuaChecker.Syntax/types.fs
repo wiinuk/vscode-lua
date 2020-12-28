@@ -73,14 +73,14 @@ module SepBy =
         | [] -> x
         | _ -> List.last xs |> snd
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline fold folder state (SepBy(x, sepXs)) =
         let s = folder state x
         match sepXs with
         | [] -> s
         | _ -> List.fold (fun s (_, x) -> folder s x) s sepXs
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline mapSep sepMapping mapping (SepBy(x, sepXs)) =
         let x = mapping x
         let sepXs =
@@ -106,19 +106,19 @@ module Span =
         | _, true -> x1
         | _ -> { start = min x1.start x2.start; end' = max x1.end' x2.end' }
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline sepBy measure xs = merge (measure (SepBy.head xs)) (measure (SepBy.last xs))
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline list measure = function
         | [] -> empty
         | [x] -> measure x
         | x::xs -> merge (measure x) (measure (List.last xs))
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline tuple2 (measure1, measure2) (x1, x2) =
         merge (measure1 x1) (measure2 x2)
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline option measure = function
         | None -> empty
         | Some x -> measure x

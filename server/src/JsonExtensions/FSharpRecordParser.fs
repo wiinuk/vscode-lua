@@ -14,17 +14,17 @@ type FSharpRecordFieldParser<'F> = {
 
 module FSharpRecordParser =
     type internal Marker = class end
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<RequiresExplicitTypeArguments>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let createField<'F> name options = {
         utf8Name = Encoding.UTF8.GetBytes(s = name)
         parser = ParserOptions.getParserOrRaise typeof<'F> options :?> 'F JsonElementParser
     }
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let validateObject (e: JsonElement) = if e.ValueKind <> JsonValueKind.Object then raise <| JsonException()
 
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let parseField<'F> (e: JsonElement) options f (result: 'F byref) =
         let mutable p = JsonElement()
         if e.TryGetProperty(ReadOnlySpan f.utf8Name, &p) then

@@ -233,7 +233,7 @@ Logger.add logger <| Logger.fileLogger "server.log"
 Logger.add logger <| Logger.standardErrorLogger()
 Logger.add logger <| Logger.debugLogger()
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 let inline trace format =
     Printf.ksprintf (fun x c -> Logger.log logger c x) format
 type Log =
@@ -253,11 +253,11 @@ with
         if Logger.isEnabled b.trace b.traceEvent then
             x () b.traceEvent
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 let ifOutput = { trace = logger; traceEvent = DetailLevel.Output }
 let ifError = { trace = logger; traceEvent = DetailLevel.Error }
 let ifWarn = { trace = logger; traceEvent = DetailLevel.Warning }
 let ifInfo = { trace = logger; traceEvent = DetailLevel.Info }
 let ifDebug = { trace = logger; traceEvent = DetailLevel.Debug }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 let ifTrace = { trace = logger; traceEvent = DetailLevel.Trace }

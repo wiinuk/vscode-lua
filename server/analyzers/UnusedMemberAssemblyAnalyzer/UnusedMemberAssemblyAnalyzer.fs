@@ -124,7 +124,7 @@ module Diagnostic =
 module private Helpers =
     let p = Run.styled
 
-    let analyzerCategory = __SOURCE_FILE__
+    let analyzerCategory = "UnusedMemberAssemblyAnalyzer"
     let inline (!%) x = ((^From or ^To): (static member op_Implicit: ^From -> ^To) x)
 
     let inline tryPick chooser source =

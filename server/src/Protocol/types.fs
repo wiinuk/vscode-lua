@@ -133,7 +133,7 @@ module JsonRpcMessage =
 
 type boolean = bool
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type TextDocumentItem = {
     uri: Uri
     version: int
@@ -192,18 +192,18 @@ type PublishDiagnosticsParams = {
     version: int OptionalField
     diagnostics: Diagnostic array
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type VersionedTextDocumentIdentifier = {
     uri: Uri
     version: int voption
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type TextDocumentContentChangeEvent = {
     range: Range OptionalField
     text: string
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type TextDocumentIdentifier = {
     uri: Uri
@@ -236,17 +236,17 @@ type FileEvent = {
     uri: Uri
     ``type``: FileChangeType
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type InitializeParams = {
     rootUri: Uri voption
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidOpenTextDocumentParams = {
     textDocument: TextDocumentItem
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidSaveTextDocumentParams = {
     textDocument: TextDocumentIdentifier
@@ -284,22 +284,22 @@ type ServerCapabilities = {
 type InitializeResult = {
     capabilities: ServerCapabilities
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type DidChangeTextDocumentParams = {
     textDocument: VersionedTextDocumentIdentifier
     contentChanges: TextDocumentContentChangeEvent array
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidCloseTextDocumentParams = {
     textDocument: TextDocumentIdentifier
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidChangeWatchedFilesParams = {
     changes: FileEvent array
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type HoverParams = {
     textDocument: TextDocumentIdentifier
@@ -311,14 +311,14 @@ type WatchKind =
     | Change = 2uy
     | Delete = 4uy
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type FileSystemWatcher = {
     globPattern: string
     kind: WatchKind OptionalField
 }
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidChangeWatchedFilesRegistrationOptions = {
     watchers: FileSystemWatcher array
@@ -333,19 +333,19 @@ type Registration = {
     id: string
     methodAndRegisterOptions: RegisterOptions
 }
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type RegistrationParams = {
     registrations: Registration array
 }
 
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct; RequireQualifiedAccess>]
 type SemanticTokensParams = {
     textDocument: TextDocumentIdentifier
 }
 [<RequireQualifiedAccess>]
-[<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type SemanticTokensRangeParams = {
     textDocument: TextDocumentIdentifier
     range: Range

@@ -14,7 +14,7 @@ module Map =
         else ValueNone
 
 module Seq =
-    [<SuppressMessage("PublicUnusedMemberAnalyzer.fsx", "AA0001:MemberUnused")>]
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline tryPickV chooser (xs: #seq<_>) =
         use e = xs.GetEnumerator()
         let mutable result = ValueNone
