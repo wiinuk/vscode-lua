@@ -1,6 +1,7 @@
-﻿namespace LuaChecker.Text.Json.Parsing.Internal
+namespace LuaChecker.Text.Json.Parsing.Internal
 open LuaChecker.Text.Json
 open System
+open System.Diagnostics.CodeAnalysis
 open System.Text
 open System.Text.Json
 open System.Runtime.CompilerServices
@@ -13,14 +14,17 @@ type FSharpRecordFieldParser<'F> = {
 
 module FSharpRecordParser =
     type internal Marker = class end
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     [<RequiresExplicitTypeArguments>]
     [<MethodImpl(MethodImplOptions.AggressiveInlining)>]
     let createField<'F> name options = {
         utf8Name = Encoding.UTF8.GetBytes(s = name)
         parser = ParserOptions.getParserOrRaise typeof<'F> options :?> 'F JsonElementParser
     }
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let validateObject (e: JsonElement) = if e.ValueKind <> JsonValueKind.Object then raise <| JsonException()
 
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let parseField<'F> (e: JsonElement) options f (result: 'F byref) =
         let mutable p = JsonElement()
         if e.TryGetProperty(ReadOnlySpan f.utf8Name, &p) then
@@ -114,7 +118,7 @@ module private Emitter =
         //     FSharpRecordParser.parseField e options this.field1 &value1
         //     // ...
         //     FSharpRecordParser.parseField e options this.fieldN &valueN
-        let parseFieldMD1 = typeof<FSharpRecordParser.Marker>.DeclaringType.GetMethod "parseField"
+        let parseFieldMD1 = typeof<FSharpRecordParser.Marker>.DeclaringType.GetMethod (nameof FSharpRecordParser.parseField)
         let s =
             locals
             |> Array.fold (fun s l ->

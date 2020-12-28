@@ -1,5 +1,6 @@
 namespace LuaChecker.Server.Protocol
 open System
+open System.Diagnostics.CodeAnalysis
 open System.Text.Json
 open LuaChecker.Text.Json
 
@@ -132,6 +133,7 @@ module JsonRpcMessage =
 
 type boolean = bool
 
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type TextDocumentItem = {
     uri: Uri
     version: int
@@ -190,15 +192,18 @@ type PublishDiagnosticsParams = {
     version: int OptionalField
     diagnostics: Diagnostic array
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type VersionedTextDocumentIdentifier = {
     uri: Uri
     version: int voption
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type TextDocumentContentChangeEvent = {
     range: Range OptionalField
     text: string
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type TextDocumentIdentifier = {
     uri: Uri
@@ -231,14 +236,17 @@ type FileEvent = {
     uri: Uri
     ``type``: FileChangeType
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type InitializeParams = {
     rootUri: Uri voption
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidOpenTextDocumentParams = {
     textDocument: TextDocumentItem
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidSaveTextDocumentParams = {
     textDocument: TextDocumentIdentifier
@@ -276,18 +284,22 @@ type ServerCapabilities = {
 type InitializeResult = {
     capabilities: ServerCapabilities
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type DidChangeTextDocumentParams = {
     textDocument: VersionedTextDocumentIdentifier
     contentChanges: TextDocumentContentChangeEvent array
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidCloseTextDocumentParams = {
     textDocument: TextDocumentIdentifier
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidChangeWatchedFilesParams = {
     changes: FileEvent array
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type HoverParams = {
     textDocument: TextDocumentIdentifier
@@ -299,12 +311,14 @@ type WatchKind =
     | Change = 2uy
     | Delete = 4uy
 
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type FileSystemWatcher = {
     globPattern: string
     kind: WatchKind OptionalField
 }
 
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type DidChangeWatchedFilesRegistrationOptions = {
     watchers: FileSystemWatcher array
@@ -319,16 +333,19 @@ type Registration = {
     id: string
     methodAndRegisterOptions: RegisterOptions
 }
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct>]
 type RegistrationParams = {
     registrations: Registration array
 }
 
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 [<Struct; RequireQualifiedAccess>]
 type SemanticTokensParams = {
     textDocument: TextDocumentIdentifier
 }
 [<RequireQualifiedAccess>]
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 type SemanticTokensRangeParams = {
     textDocument: TextDocumentIdentifier
     range: Range

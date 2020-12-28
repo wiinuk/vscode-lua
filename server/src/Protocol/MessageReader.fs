@@ -1,4 +1,4 @@
-﻿module LuaChecker.Server.Protocol.MessageReader
+module LuaChecker.Server.Protocol.MessageReader
 open LuaChecker.Primitives
 open System
 open System.Buffers
@@ -88,9 +88,6 @@ let rec skipWhiteSpaces (input: Stream) =
     | '\r'B
     | ' 'B -> skipWhiteSpaces input
     | c -> Ok c
-
-type Span<'T> with
-    member x.Readonly = Span.op_Implicit x
 
 let readBytes (buffer: _ Span) (source: Stream) =
     let mutable remaining = buffer

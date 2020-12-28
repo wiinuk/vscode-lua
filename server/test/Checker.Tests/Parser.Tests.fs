@@ -46,7 +46,38 @@ module Prop =
                 Arguments = []
             }
 
+module Printer =
+    let printToken struct(config, token) = seq {
+        " "
+        yield! showKind config token.kind
+    }
+
 module Scanner =
+    open Scanner
+
+    let leadingTriviaAndToken s =
+        let leadingTriviaLength = skipTrivias s
+        let start = sourcePosition s
+        match readTokenKind s with
+        | TokenKind.Unknown -> ValueNone
+        | k ->
+        let end' = sourcePosition s
+
+        let trivia = {
+            leadingTriviaLength = leadingTriviaLength
+            leadingDocument = None
+            span = {
+                start = start
+                end' = end'
+            }
+            trailingTriviaLength = 0
+            trailingDocument = None
+        }
+        ValueSome {
+            kind = k
+            trivia = trivia
+        }
+
     open LuaChecker.Scanner
     let tokens s = [|
         match tokenKind s with
@@ -183,7 +214,7 @@ let parse p map source =
     | es -> Error <| List.rev es
 
 let roundTripTest printer parser map config expected =
-    let env = { config = config; printToken = printToken }
+    let env = { config = config; printToken = Printer.printToken }
     printer env expected
     |> String.concat ""
     |> parse parser map =? Ok((map (toEmptySpan, toEmptyTrivia) expected).kind, "")
@@ -352,7 +383,7 @@ let missingFunctionName() =
     ]
 
 let withMissingTokenProperty printer parser (NonNegativeInt removeTokenIndex) syntax =
-    let env = { config = PrintConfig.defaultConfig; printToken = printToken }
+    let env = { config = PrintConfig.defaultConfig; printToken = Printer.printToken }
     let completeSource = printer env syntax |> String.concat ""
     let tokens = sourceToTokens completeSource |> ResizeArray
     if tokens.Count <> 0 then removeTokenIndex % tokens.Count |> tokens.RemoveAt

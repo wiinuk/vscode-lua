@@ -452,29 +452,6 @@ let skipTrivias s =
     else
         0
 
-let leadingTriviaAndToken s =
-    let leadingTriviaLength = skipTrivias s
-    let start = sourcePosition s
-    match readTokenKind s with
-    | TokenKind.Unknown -> ValueNone
-    | k ->
-    let end' = sourcePosition s
-
-    let trivia = {
-        leadingTriviaLength = leadingTriviaLength
-        leadingDocument = None
-        span = {
-            start = start
-            end' = end'
-        }
-        trailingTriviaLength = 0
-        trailingDocument = None
-    }
-    ValueSome {
-        kind = k
-        trivia = trivia
-    }
-
 let takeTrivia s =
     if s.currentTokenStructure.hasValue then
         let s = &s.currentTokenStructure

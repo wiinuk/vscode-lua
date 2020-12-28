@@ -1,4 +1,5 @@
-﻿namespace LuaChecker.Primitives
+namespace LuaChecker.Primitives
+open System.Diagnostics.CodeAnalysis
 
 [<Struct>]
 type The<'T> = | The
@@ -12,6 +13,7 @@ type HEmpty = | HEmpty = 0uy
 
 [<AutoOpen>]
 module HEmpty =
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let (|HEmpty|) (x: HEmpty) = x
     let HEmpty = HEmpty.HEmpty
 

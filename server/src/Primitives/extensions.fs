@@ -1,5 +1,5 @@
 namespace LuaChecker
-open System.Collections.Concurrent
+open System.Diagnostics.CodeAnalysis
 
 module Array =
     /// alias of `System.Array.Empty()`
@@ -14,6 +14,7 @@ module Map =
         else ValueNone
 
 module Seq =
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline tryPickV chooser (xs: #seq<_>) =
         use e = xs.GetEnumerator()
         let mutable result = ValueNone

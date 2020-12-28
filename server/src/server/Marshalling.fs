@@ -9,6 +9,7 @@ open LuaChecker.Text.Json
 open LuaChecker.TypeSystem
 open LuaChecker.TypedSyntaxes
 open System
+open System.Diagnostics.CodeAnalysis
 module S = LuaChecker.Syntaxes
 module D = LuaChecker.Syntax.Documents
 type private L = LuaChecker.LeafFlags
@@ -87,9 +88,7 @@ let showParseError (Messages m) = function
     | P.RequireFieldSep -> m.RequireFieldSep
     | P.RequireAnyField -> m.RequireAnyField
     | P.RequireAnyStat -> m.RequireAnyStat
-    | P.RequireAnyToken -> m.RequireAnyToken
     | P.RequireBinaryOp -> m.RequireBinaryOp
-    | P.RequireFunctionCall -> m.RequireFunctionCall
     | P.RequireLiteral -> m.RequireLiteral
     | P.RequireName -> m.RequireName
     | P.RequireString -> m.RequireString
@@ -136,15 +135,6 @@ let showFieldKey k =
     |> String.concat ""
 
 let showSpan { start = s; end' = e } = sprintf "(%d, %d)" s e
-let showTagName { Token.kind = D.Tag(_, { kind = tail }) } =
-    match tail with
-    | D.ClassTag _ -> "@class"
-    | D.FeatureTag _ -> "@_Feature"
-    | D.FieldTag _ -> "@field"
-    | D.GenericTag _ -> "@generic"
-    | D.GlobalTag _ -> "@global"
-    | D.TypeTag _ -> "@type"
-    | D.UnknownTag(D.Annotated(Name n, _), _) -> "@" + n.kind
 
 let showLocation context (Location(path, { start = s; end' = e })) =
     sprintf "%s(%d, %d)" (showRelativePath context path) s e
@@ -262,6 +252,7 @@ let marshalDiagnosticKindToTags = function
     | K.TypeTagParentSyntaxNotFound -> Defined [|DiagnosticTag.Unnecessary|]
     | _ -> Undefined
 
+[<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
 let inline marshalCollisionInfoToRelatedInfo locations showSummary context (name, d1, d2, ds) =
     Defined [|
         for d in d1::d2::ds do

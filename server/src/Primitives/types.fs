@@ -1,5 +1,6 @@
-﻿namespace LuaChecker.Primitives
+namespace LuaChecker.Primitives
 open System.Collections.Concurrent
+open System.Diagnostics.CodeAnalysis
 
 
 [<Struct>]
@@ -21,8 +22,10 @@ module Local =
     let get x = x._contents
     let set x v = x._contents <- v
     let create (_: Scope<'S>) (x: 'T): Local<'S,'T> = { _contents = x }
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline modify f x = set x (f (get x))
 
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let run (scope: 'Scope byref when 'Scope :> ILocalScope<_> and 'Scope : struct) = scope.Invoke Scope
     let runNotStruct (scope: 'Scope when 'Scope :> ILocalScope<_> and 'Scope : not struct) = scope.Invoke Scope
 
@@ -51,13 +54,9 @@ module Pool =
         if pool.items.Count < pool.maxCount then
             pool.items.Add x
 
+    [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]
     let inline using pool scope =
         let x = rentManual pool
         let r = scope x
         returnManual pool x
         r
-
-    let inline usingProtected pool scope =
-        let x = rentManual pool
-        try scope x
-        finally returnManual pool x
