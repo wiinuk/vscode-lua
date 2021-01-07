@@ -78,6 +78,7 @@ module rec TypeExtensions =
             match t.kind with
             | ParameterType id -> addIfFlesh id ids
             | NamedType(_, ts) -> for t in ts do type' ids t
+            | LiteralType _ -> ()
             | InterfaceType fs -> fields ids fs
             | VarType v ->
                 if addVar v ids then
@@ -107,6 +108,7 @@ module rec TypeExtensions =
             match t.kind with
             | ParameterType id -> getNewId ids id |> ParameterType |> Type.withEntity t
             | NamedType(n, ts) -> NamedType(n, List.map (type' ids) ts) |> Type.withEntity t
+            | LiteralType _ -> t
             | InterfaceType fs -> fields ids fs |> InterfaceType |> Type.withEntity t
             | VarType r ->
                 if addVar r ids then
@@ -208,6 +210,7 @@ module rec TypeExtensions =
         let type' env t =
             match t.kind with
             | NamedType(c, ts) -> NamedType(c, List.map (type' env) ts) |> Type.withEntity t
+            | LiteralType _ -> t
             | InterfaceType fs -> fs |> Map.map (fun _ -> type' env) |> InterfaceType |> Type.withEntity t
 
             // simple (type('0: 10..): ('0, string)) = (number, string)
@@ -302,6 +305,7 @@ module rec TypeExtensions =
 
         let type' env t = trivia env t <| function
             | NamedType(c, ts) -> NamedType(c, List.map (type' env) ts)
+            | LiteralType _ as t -> t
             | InterfaceType fs -> InterfaceType <| Map.map (fun _ -> type' env) fs
             | ParameterType _ as t -> t
             | TypeAbstraction(ps, t) -> TypeAbstraction(List.map (typeParameter env) ps, type' env t)

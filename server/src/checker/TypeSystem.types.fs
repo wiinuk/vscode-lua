@@ -276,6 +276,8 @@ type Type = Token<Type', Location list>
 type Type' =
     ///<summary>e.g. `number` `table&lt;number, ?v&gt;` `fun(): ()`</summary>
     | NamedType of TypeConstant * Type list
+    /// e.g. `nil` `false` `-0.5` `"text"`
+    | LiteralType of S.LiteralKind
     /// e.g. `{ x: number }`
     | InterfaceType of fields: Map<FieldKey, Type>
 
@@ -651,6 +653,7 @@ type TypeExtensions =
             then b.AppendNamedTypeApply(t, ts, &options, &state)
             else b.AppendOperandTypeApplyOrNamedTypeApply(t, ts, &options, &state)
 
+        | LiteralType x -> b.AppendLiteral x
         | InterfaceType fields -> b.Append(fields, &options, &state)
         | ParameterType(TypeParameterId(x, k) as p) ->
             b.AppendIndexedName(getOrCreateFleshParameterName p "TFree" &state)

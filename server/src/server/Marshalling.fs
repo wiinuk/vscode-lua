@@ -677,6 +677,13 @@ let namedTypeSemantics (this: _ byref) typeConstant = function
     else
         ValueNone
 
+let literalTypeSemantics = function
+    | S.Nil
+    | S.True
+    | S.False -> struct(T.``struct``, M.Empty)
+    | S.String _ -> T.string, M.Empty
+    | S.Number _ -> T.number, M.Empty
+
 let isSuperLike (lower, upper) super =
 
     // `number..` `(1 | 2)..`
@@ -722,6 +729,9 @@ let rec typeSemantics (this: _ byref) { Token.kind = type' } typeParameters type
 
     // `fun(…) -> (…)` `nil` `table<…,…>`
     | NamedType(typeConstant, _) as t -> namedTypeSemantics &this typeConstant t
+
+    // `nil` `false` `-0.5` `"text"`
+    | LiteralType k -> literalTypeSemantics k |> ValueSome
 
     // `{ x: …, … }`
     | InterfaceType _ -> ValueSome(T.``class``, M.Empty)

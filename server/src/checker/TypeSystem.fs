@@ -3,6 +3,7 @@ module rec LuaChecker.TypeSystem
 open Cysharp.Text
 open System.Collections.Generic
 open System.Threading
+open type System.Double
 module S = Syntaxes
 
 
@@ -155,6 +156,7 @@ module Type =
         match t.kind with
         | NamedType(_, []) -> vars
         | NamedType(_, ts) -> List.fold (freeVars' env) vars ts
+        | LiteralType _ -> vars
         | InterfaceType fs -> Map.fold (fun vs _ t -> freeVars' env vs t) vars fs
 
         | VarType r ->
@@ -191,6 +193,7 @@ module Type =
         match t.kind with
         | NamedType(_, []) -> t
         | NamedType(n, ts) -> NamedType(n, List.map (apply vs) ts) |> withEntity t
+        | LiteralType _ -> t
         | InterfaceType fs -> Map.map (fun _ -> apply vs) fs |> InterfaceType |> withEntity t
         | VarType r ->
             match addVar r vs with
@@ -216,6 +219,7 @@ module Type =
     let assign vs t =
         match t.kind with
         | NamedType(_, ts) -> for t in ts do assign vs t
+        | LiteralType _ -> ()
         | InterfaceType fs -> for kv in fs do assign vs kv.Value
         | VarType r ->
             match Assoc.tryFind r vs with
@@ -249,6 +253,7 @@ module Type =
     let instantiate' vs t =
         match t.kind with
         | NamedType(n, ts) -> NamedType(n, List.map (instantiate' vs) ts) |> withEntity t
+        | LiteralType _ -> t
         | InterfaceType fs -> Map.map (fun _ v -> instantiate' vs v) fs |> InterfaceType |> withEntity t
         | VarType r ->
             match addVar r vs with
@@ -278,6 +283,7 @@ module Type =
             | NamedKind _ -> k
             | FunKind(_, k) -> k
 
+        | LiteralType _
         | InterfaceType _ -> types.system.valueKind
         | TypeAbstraction(_, t) -> kind types t
         | ParameterType(TypeParameterId(_, k))
@@ -325,6 +331,7 @@ let occur env r t =
         | Assigned t -> occur env r t
 
     | NamedType(_, ts) -> List.exists (occur env r) ts
+    | LiteralType _ -> false
     | InterfaceType fs -> Map.exists (fun _ t -> occur env r t) fs
     | ParameterType _ -> false
     | TypeAbstraction([], t) -> occur env r t
@@ -421,6 +428,16 @@ let unify types env1 env2 t1 t2 =
         match ts1, ts2 with
         | [], [] -> ValueNone
         | _ -> unifyList types env1 env2 t1 t2 ts1 ts2
+
+    | LiteralType v1, LiteralType v2 ->
+        let equalsER =
+            match v1, v2 with
+            | S.Number v1, S.Number v2 -> v1 = v2 || (IsNaN v1 && IsNaN v2)
+            | _ -> v1 = v2
+
+        if not equalsER
+        then ValueSome(TypeMismatch(t1, t2))
+        else ValueNone
 
     | InterfaceType fs1, InterfaceType fs2 ->
         if Map.count fs1 <> Map.count fs2 then ValueSome <| missingFieldError fs1 fs2 else
@@ -545,7 +562,8 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 =
         | _ -> ValueNone
 
     | InterfaceType _
-    | NamedType _ ->
+    | NamedType _
+    | LiteralType _ ->
 
         // c1 内を探索するので循環チェックが必要
         match tryAddVisitedVar env1 (r1, c1) t2 with
