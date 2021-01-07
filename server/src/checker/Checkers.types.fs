@@ -95,8 +95,6 @@ type TypeCache = {
     stringOrLowerConstraint: Constraints'
     /// ..(number | string)
     numberOrStringOrLowerConstraint: Constraints'
-    /// ..(string | table)
-    stringOrTableOrLowerConstraint: Constraints'
     /// boolean..
     booleanOrUpperConstraint: Constraints'
     /// number..
@@ -107,30 +105,33 @@ type TypeCache = {
 module TypeCache =
     module private Constraints =
         /// e.g. `..(10 | 11)`
-        let tagOrLower upperBound = TagSpaceConstraint(lowerBound = TagSpace.empty, upperBound = upperBound)
+        let tagOrLower upperBound = UnionConstraint(lowerBound = TypeSet.empty, upperBound = TypeSet upperBound)
         /// e.g. `(10 | 11)..`
-        let tagOrUpper lowerBound = TagSpaceConstraint(lowerBound = lowerBound, upperBound = TagSpace.full)
+        let tagOrUpper lowerBound = UnionConstraint(lowerBound = TypeSet lowerBound, upperBound = UniversalTypeSet)
 
     /// type(displayName: lowerBound..upperBound) -> displayName
     let private tagSpaceTypeAbs types displayName (lowerBound, upperBound) =
         let b = TypeParameterId.createNext types.valueKind
-        let c = TagSpaceConstraint(lowerBound = lowerBound, upperBound = upperBound) |> Constraints.makeWithEmptyLocation
+        let c = UnionConstraint(lowerBound = lowerBound, upperBound = upperBound) |> Constraints.makeWithEmptyLocation
         TypeAbstraction([TypeParameter(displayName, b, c)], ParameterType b |> Type.makeWithEmptyLocation)
 
     /// type(displayName: lowerBound..) -> displayName
     let private tagOrUpperTypeAbs types displayName lowerBound =
-        tagSpaceTypeAbs types displayName (lowerBound, TagSpace.full)
+        tagSpaceTypeAbs types displayName (lowerBound, UniversalTypeSet)
 
     let create types = {
-        nilOrUpperMultiElementConstraint = tagOrUpperTypeAbs types "nil" TagSpace.nil |> Type.makeWithEmptyLocation |> MultiElementTypeConstraint
-        booleanOrLowerConstraint = Constraints.tagOrLower TagSpace.allBoolean
-        numberOrLowerConstraint = Constraints.tagOrLower TagSpace.allNumber
-        stringOrLowerConstraint = Constraints.tagOrLower TagSpace.allString
-        numberOrStringOrLowerConstraint = Constraints.tagOrLower <| TagSpace.allString + TagSpace.allNumber
-        stringOrTableOrLowerConstraint = Constraints.tagOrLower <| TagSpace.allString + TagSpace.allTable
-        booleanOrUpperConstraint = Constraints.tagOrUpper TagSpace.allBoolean
-        numberOrUpperConstraint = Constraints.tagOrUpper TagSpace.allNumber
-        stringOrUpperConstraint = Constraints.tagOrUpper TagSpace.allString
+        nilOrUpperMultiElementConstraint =
+            tagOrUpperTypeAbs types "nil" (TypeSet [Type.makeWithEmptyLocation types.nil])
+            |> Type.makeWithEmptyLocation
+            |> MultiElementTypeConstraint
+
+        booleanOrLowerConstraint = Constraints.tagOrLower [Type.makeWithEmptyLocation types.boolean]
+        numberOrLowerConstraint = Constraints.tagOrLower [Type.makeWithEmptyLocation types.number]
+        stringOrLowerConstraint = Constraints.tagOrLower [Type.makeWithEmptyLocation types.string]
+        numberOrStringOrLowerConstraint = Constraints.tagOrLower [Type.makeWithEmptyLocation types.string; Type.makeWithEmptyLocation types.number]
+        booleanOrUpperConstraint = Constraints.tagOrUpper [Type.makeWithEmptyLocation types.boolean]
+        numberOrUpperConstraint = Constraints.tagOrUpper [Type.makeWithEmptyLocation types.number]
+        stringOrUpperConstraint = Constraints.tagOrUpper [Type.makeWithEmptyLocation types.string]
     }
 
 type TopEnv = {

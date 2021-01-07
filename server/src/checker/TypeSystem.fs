@@ -3,8 +3,8 @@ module rec LuaChecker.TypeSystem
 open Cysharp.Text
 open System.Collections.Generic
 open System.Threading
-open type System.Double
 module S = Syntaxes
+module VOption = ValueOption
 
 
 module TypeParameterId =
@@ -43,12 +43,14 @@ module Constraints =
 
     let ofInterfaceType fields = InterfaceConstraint fields
     /// v..
-    let literal1 v = TagSpaceConstraint(lowerBound = TagSpace.ofLiteral v, upperBound = TagSpace.full)
-    let freeVars' level vars c =
+    let literal1 location v = UnionConstraint(lowerBound = TypeSet [Type.makeWithLocation location <| LiteralType v], upperBound = UniversalTypeSet)
+    let freeVars' env vars c =
         match c.kind with
-        | InterfaceConstraint fs -> Map.fold (fun vars _ t -> Type.freeVars' level vars t) vars fs
-        | MultiElementTypeConstraint t -> Type.freeVars' level vars t
-        | TagSpaceConstraint _ -> vars
+        | InterfaceConstraint fs -> Map.fold (fun vars _ t -> Type.freeVars' env vars t) vars fs
+        | MultiElementTypeConstraint t -> Type.freeVars' env vars t
+        | UnionConstraint(lower, upper) ->
+            let vars = TypeSet.toList lower |> List.fold (Type.freeVars' env) vars
+            TypeSet.toList upper |> List.fold (Type.freeVars' env) vars
 
     let apply vs c =
         match c.kind with
@@ -58,7 +60,10 @@ module Constraints =
         | MultiElementTypeConstraint t ->
             Type.apply vs t |> MultiElementTypeConstraint
 
-        | TagSpaceConstraint _ as t -> t
+        | UnionConstraint(lower, upper) ->
+            let lower = TypeSet.map (Type.apply vs) lower
+            let upper = TypeSet.map (Type.apply vs) upper
+            UnionConstraint(lower, upper)
 
         |> withEntity c
 
@@ -70,7 +75,10 @@ module Constraints =
         | MultiElementTypeConstraint t ->
             Type.instantiate' vs t |> MultiElementTypeConstraint
 
-        | TagSpaceConstraint _ as t -> t
+        | UnionConstraint(lower, upper) ->
+            let lower = TypeSet.map (Type.instantiate' vs) lower
+            let upper = TypeSet.map (Type.instantiate' vs) upper
+            UnionConstraint(lower, upper)
 
         |> withEntity c
 
@@ -235,7 +243,10 @@ module Type =
                 | MultiElementTypeConstraint t -> assign vs t
                 | InterfaceConstraint fs ->
                     for kv in fs do assign vs kv.Value
-                | TagSpaceConstraint _ -> ()
+
+                | UnionConstraint(lower, upper) ->
+                    for t in TypeSet.toList lower do assign vs t
+                    for t in TypeSet.toList upper do assign vs t
 
             assign vs t
 
@@ -288,6 +299,130 @@ module Type =
         | TypeAbstraction(_, t) -> kind types t
         | ParameterType(TypeParameterId(_, k))
         | VarType { varKind = k } -> k
+
+module TypeSet =
+    type TypeKey =
+        | LiteralKey of S.LiteralKind
+        | NamedKey of TypeConstant * TypeKey list
+
+    let normalize = function
+        | TypeSet((_::_::_) as ts) ->
+            let rec comparable t =
+                match t.kind with
+                | LiteralType _ -> true
+                | NamedType(_, ts) -> List.forall comparable ts
+                | _ -> false
+
+            let rec key t =
+                match t.kind with
+                | LiteralType k -> LiteralKey k
+                | NamedType(t, ts) -> NamedKey(t, List.map key ts)
+                | _ -> failwith ""
+
+            let comparableTypes, ts = List.partition comparable ts
+            let sortedTypes = List.sortBy key comparableTypes
+            sortedTypes @ ts
+            |> TypeSet
+
+        | ts -> ts
+
+    exception TypeComparisonException of Type * Type
+
+    // TODO:
+    ///<summary>t1 ⊆ t2</summary>
+    ///<exception cref="TypeComparisonException" />
+    let isSubsetOrRaise types t1 t2 =
+        match t1.kind, t2.kind with
+        | NamedType(k1, ts1), NamedType(k2, ts2) ->
+            if k1 <> k2 then false else
+            let rec aux = function
+                | [], [] -> true
+                | t1::ts1, t2::ts2 ->
+                    if isSubsetOrRaise types t1 t2 then aux (ts1, ts2)
+                    else false
+
+                | _ -> false
+            aux (ts1, ts2)
+
+        | LiteralType k1, LiteralType k2 ->
+            Syntax.LiteralKind.equalsER k1 k2
+
+        | NamedType _, LiteralType _ -> false
+
+        | LiteralType k1, NamedType(c2, _) ->
+            match k1 with
+
+            // nil ⊆ nil
+            | S.Nil -> false
+
+            // true ⊆ boolean
+            | S.True | S.False -> c2 = types.booleanConstant
+
+            // 1 ⊆ number
+            | S.Number _ -> c2 = types.numberConstant
+
+            // 'a' ⊆ string
+            | S.String _ -> c2 = types.stringConstant
+
+        | _ -> raise <| TypeComparisonException(t1, t2)
+
+    ///<exception cref="TypeComparisonException" />
+    let equalsOrRaise types t1 t2 = isSubsetOrRaise types t1 t2 && isSubsetOrRaise types t2 t1
+
+    /// ts1 ⊆ ts2
+    let isSubset types ts1 ts2 =
+        try
+            match ts1, ts2 with
+            | _, UniversalTypeSet -> Ok true
+            | UniversalTypeSet, TypeSet _ -> Ok false
+
+            | TypeSet ts1, TypeSet ts2 ->
+
+            ts1
+            |> List.forall (fun t1 ->
+                List.exists (isSubsetOrRaise types t1) ts2
+            )
+            |> Ok
+        with
+        | TypeComparisonException(t1, t2) -> Error <| TypeMismatch(t1, t2)
+
+    let union types ts1 ts2 =
+        let rec add ts1 t2 =
+            match List.tryRemove (equalsOrRaise types t2) ts1 with
+            | ValueSome(t, ts1) -> ts1 @ [Type.makeWithLocation (t.trivia @ t2.trivia) t2.kind]
+            | _ -> ts1 @ [t2]
+
+        try
+            match ts1, ts2 with
+            | UniversalTypeSet, _ | _, UniversalTypeSet -> Ok UniversalTypeSet
+
+            | TypeSet ts1, TypeSet ts2 ->
+
+            List.fold add ts1 ts2
+            |> TypeSet
+            |> normalize
+            |> Ok
+        with
+        | TypeComparisonException(t1, t2) ->
+            Error <| TypeMismatch(t1, t2)
+
+    let intersect types ts1 ts2 =
+        try
+            match ts1, ts2 with
+            | UniversalTypeSet, ts | ts, UniversalTypeSet -> Ok ts
+            | TypeSet ts1, TypeSet ts2 ->
+                ts1
+                |> List.choose (fun t1 ->
+                    match List.tryFind (equalsOrRaise types t1) ts2 with
+                    | Some t2 -> Type.makeWithLocation (t1.trivia @ t2.trivia) t2.kind |> Some
+                    | _ -> None
+                )
+                |> TypeSet
+                |> normalize
+                |> Ok
+        with
+        | TypeComparisonException(t1, t2) ->
+            Error <| TypeMismatch(t1, t2)
 
 module MultiType =
     let minLength types m =
@@ -343,7 +478,9 @@ let occur env r t =
                 Map.exists (fun _ t -> occur env r t) fs
 
             | MultiElementTypeConstraint t -> occur env r t
-            | TagSpaceConstraint _ -> false
+            | UnionConstraint(lower, upper) ->
+                TypeSet.toList lower |> List.exists (occur env r) ||
+                TypeSet.toList upper |> List.exists (occur env r)
         ) ps ||
         occur env r t
 
@@ -430,14 +567,9 @@ let unify types env1 env2 t1 t2 =
         | _ -> unifyList types env1 env2 t1 t2 ts1 ts2
 
     | LiteralType v1, LiteralType v2 ->
-        let equalsER =
-            match v1, v2 with
-            | S.Number v1, S.Number v2 -> v1 = v2 || (IsNaN v1 && IsNaN v2)
-            | _ -> v1 = v2
-
-        if not equalsER
-        then ValueSome(TypeMismatch(t1, t2))
-        else ValueNone
+        if Syntax.LiteralKind.equalsER v1 v2
+        then ValueNone
+        else ValueSome(TypeMismatch(t1, t2))
 
     | InterfaceType fs1, InterfaceType fs2 ->
         if Map.count fs1 <> Map.count fs2 then ValueSome <| missingFieldError fs1 fs2 else
@@ -613,29 +745,39 @@ let unifyConstraints types env1 env2 (c1, r1, t1) (c2, r2, t2) =
         | ValueSome e -> Error e
         | _ -> Ok c1
 
-    | TagSpaceConstraint(l1, u1), TagSpaceConstraint(l2, u2) ->
-        if l1 = l2 && u1 = u2 then Ok c1 else
-
+    | UnionConstraint(l1, u1), UnionConstraint(l2, u2) ->
         // unify
         //     ( ( 1 | 'a' )..( 1 | 2 | 3 | 4 | 'a' | 'b' ) )
         //     ( ( 1 | 2 | 3 | 'x' )..( 1 | 2 | 3 | 4 | 5 | 'x' | 'y' ) )
         // = ( ( 1 | 2 | 3 | 'a' | 'x' )..( 1 | 2 | 3 | 4 ) )
         // = Error
-        let l = TagSpace.union l1 l2
-        let u = TagSpace.intersect u1 u2
-        if TagSpace.isSubset l u
-        then
+
+        // unifyConstraints `..(number | nil)` `..number` => `..number`
+        let l = TypeSet.union types.system l1 l2
+        match l with
+        | Error e -> Error e
+        | Ok l ->
+
+        match TypeSet.intersect types.system u1 u2 with
+        | Error e -> Error e
+        | Ok u ->
+
+        match TypeSet.isSubset types.system l u with
+        | Error e -> Error e
+
+        | Ok true ->
             let location = c1.trivia @ c2.trivia
-            TagSpaceConstraint(l, u) |> Constraints.makeWithLocation location |> Ok
-        else
+            UnionConstraint(l, u) |> Constraints.makeWithLocation location |> Ok
+
+        | Ok false ->
             ConstraintMismatch(c1, c2) |> Error
 
-    | TagSpaceConstraint(l1, u1), InterfaceConstraint _ -> unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, u1) (c2, r2, t2)
-    | InterfaceConstraint _, TagSpaceConstraint(l2, u2) -> unifyTagSpaceAndInterfaceConstraint types env2 env1 c2 (l2, u2) (c1, r1, t1)
+    | UnionConstraint(l1, u1), InterfaceConstraint _ -> unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, u1) (c2, r2, t2)
+    | InterfaceConstraint _, UnionConstraint(l2, u2) -> unifyTagSpaceAndInterfaceConstraint types env2 env1 c2 (l2, u2) (c1, r1, t1)
 
     | InterfaceConstraint _, MultiElementTypeConstraint _
-    | TagSpaceConstraint _, MultiElementTypeConstraint _
-    | MultiElementTypeConstraint _, (InterfaceConstraint _ | TagSpaceConstraint _)
+    | UnionConstraint _, MultiElementTypeConstraint _
+    | MultiElementTypeConstraint _, (InterfaceConstraint _ | UnionConstraint _)
         -> Error(ConstraintMismatch(c1, c2))
 
 let unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2) =
@@ -665,7 +807,12 @@ let unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2) =
 
 let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) =
     match types.stringTableTypes with
-    | _::_ when TagSpace.isSubset l1 TagSpace.allString ->
+    | _::_ ->
+        let stringType = TypeSet [Type.makeWithEmptyLocation types.system.string]
+        match TypeSet.isSubset types.system l1 stringType with
+        | Error _
+        | Ok false -> Error <| ConstraintMismatch(c1, c2)
+        | Ok true ->
 
         // `("a").upper`
         // "a": ?x: "a"..
@@ -679,7 +826,7 @@ let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) 
         let rec aux = function
             | [] ->
                 let location = c1.trivia @ c2.trivia
-                TagSpaceConstraint(l1, TagSpace.allString)
+                UnionConstraint(l1, stringType)
                 |> Constraints.makeWithLocation location
                 |> Ok
 
@@ -694,8 +841,7 @@ let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) 
 
 let typeToSpace { system = types } = function
     | { kind = NamedType(t, _) } ->
-        if t = types.nilConstant then ValueSome TagSpace.nil
-        elif t = types.booleanConstant then ValueSome TagSpace.allBoolean
+        if t = types.booleanConstant then ValueSome TagSpace.allBoolean
         elif t = types.numberConstant then ValueSome TagSpace.allNumber
         elif t = types.stringConstant then ValueSome TagSpace.allString
         elif t = types.fnConstant then ValueSome TagSpace.allFunction
@@ -754,26 +900,13 @@ let matchConstraints types env1 env2 (c1, r1, t1) t2 =
 
         ValueNone
 
-    | TagSpaceConstraint(lowerBound = lb; upperBound = ub), NamedType _ ->
-        match typeToSpace types t2 with
-        | ValueSome space ->
-            if TagSpace.isSubset lb space && TagSpace.isSubset space ub then
-                ValueNone
-            else
-                let e =
-                    match TagSpace.difference1 lb space with
-                    | ValueSome e -> e
-                    | _ -> TagSpace.difference1 space ub |> ValueOption.defaultValue TagElement.AllThread
-
-                TagSpaceConstraintMismatch(
-                    expectedLowerBound = lb,
-                    expectedUpperBound = ub,
-                    actualType = t2,
-                    requireElement = e
-                )
-                |> ValueSome
-
-        | _-> ValueSome <| ConstraintAndTypeMismatch(c1, t2)
+    | UnionConstraint(lowerBound = lb; upperBound = ub), NamedType _ ->
+        let space = TypeSet [t2]
+        match TypeSet.isSubset types.system lb space, TypeSet.isSubset types.system space ub with
+        | Ok true, Ok true -> ValueNone
+        | _ ->
+            ConstraintAndTypeMismatch(c1, t2)
+            |> ValueSome
 
     // unify (?t1...ce) ()
     | MultiElementTypeConstraint _, Type.IsEmpty types true -> ValueNone
@@ -818,7 +951,11 @@ module Scheme =
                     |> MultiElementTypeConstraint
                     |> Constraints.makeWithLocation c.trivia
 
-                | TagSpaceConstraint _ -> c
+                | UnionConstraint(lower, upper) ->
+                    let lower = TypeSet.map (Type.apply env) lower
+                    let upper = TypeSet.map (Type.apply env) upper
+                    UnionConstraint(lower, upper)
+                    |> Constraints.makeWithLocation c.trivia
 
             TypeParameter(n, p, c)
         )
@@ -922,7 +1059,11 @@ module Scheme =
                     |> MultiElementTypeConstraint
                     |> Constraints.makeWithLocation c.trivia
 
-                | TagSpaceConstraint _ -> c
+                | UnionConstraint(lower, upper) ->
+                    let lower = TypeSet.map (Type.instantiate' env) lower
+                    let upper = TypeSet.map (Type.instantiate' env) upper
+                    UnionConstraint(lower, upper)
+                    |> Constraints.makeWithLocation c.trivia
 
             v.target <- Var(level, c)
 

@@ -540,6 +540,30 @@ module TagSpace =
         TagSpaceExtensions.Append(&b, s)
         b.ToString()
 
+[<Struct>]
+type TypeSet =
+    | TypeSet of Type list
+    | UniversalTypeSet
+
+module TypeSet =
+    let empty = TypeSet []
+    let isEmpty = function
+        | TypeSet [] -> true
+        | _ -> false
+
+    let isUniversal = function
+        | UniversalTypeSet -> true
+        | _ -> false
+
+    let toList = function
+        | UniversalTypeSet -> []
+        | TypeSet ts -> ts
+
+    let map mapping = function
+        | UniversalTypeSet
+        | TypeSet [] as t -> t
+        | TypeSet ts -> List.map mapping ts |> TypeSet
+
 type Constraints = Token<Constraints', Location list>
 [<DebuggerDisplay "{_DebuggerDisplay,nq}"; StructuredFormatDisplay "{_DebuggerDisplay}">]
 type Constraints' =
@@ -547,7 +571,7 @@ type Constraints' =
     | InterfaceConstraint of Map<FieldKey, Type>
     | MultiElementTypeConstraint of Type
     /// e.g. `'a : (10 | "a" | table)..` `'a : ..number`
-    | TagSpaceConstraint of lowerBound: TagSpace * upperBound: TagSpace
+    | UnionConstraint of lowerBound: TypeSet * upperBound: TypeSet
 with
     [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
     member private x._DebuggerDisplay =
@@ -571,14 +595,12 @@ type ConstraintsExtensions =
         match c with
         | InterfaceConstraint fs -> FieldsExtensions.Append(&b, fs, &options, &state)
         | MultiElementTypeConstraint t -> b.Append(t.kind, &options, &state)
-        | TagSpaceConstraint(lower, upper) ->
-            if lower = upper then b.Append(lower) else
-
-            if not <| TagSpace.isEmpty lower then
-                b.Append(lower)
+        | UnionConstraint(lower, upper) ->
+            if not <| TypeSet.isEmpty lower then
+                b.AppendTypeSet(lower, &options, &state)
             b.Append ".."
-            if not <| TagSpace.isFull upper then
-                b.Append(upper)
+            if not <| TypeSet.isUniversal upper then
+                b.AppendTypeSet(upper, &options, &state)
 
     [<Extension>]
     static member AppendTagElement(b: _ byref, x) =
@@ -590,6 +612,24 @@ type ConstraintsExtensions =
         | TagElement.AllTable -> b.Append "table"
         | TagElement.AllFunction -> b.Append "function"
         | TagElement.AllThread -> b.Append "thread"
+
+    [<Extension>]
+    static member AppendTypeSet(b: _ byref, typeSet, options: _ inref, state: _ byref) =
+        match typeSet with
+        | UniversalTypeSet -> b.Append "unknown"
+        | TypeSet ts ->
+
+        match ts with
+        | [] -> b.Append "never"
+        | [t] -> b.Append(t.kind, &options, &state)
+        | t::ts ->
+
+        b.Append '('
+        b.Append(t.kind, &options, &state)
+        for t in ts do
+            b.Append " | "
+            b.Append(t.kind, &options, &state)
+        b.Append ')'
 
 [<Extension>]
 type FieldsExtensions =
@@ -879,7 +919,6 @@ type MultiTypeExtensions =
 type Scheme = Type
 
 type TypeSystem = {
-    nilConstant: TypeConstant
     /// `nil`
     nil: Type'
     booleanConstant: TypeConstant

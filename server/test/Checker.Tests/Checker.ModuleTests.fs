@@ -42,7 +42,7 @@ let errorFromExternalModule() =
         Error [
             error (15, 21) <| K.ExternalModuleError(
                 toDocumentPath "lib1.lua",
-                error (7, 11) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "aa", Constraints.tagOrLower TagSpace.allNumber))
+                error (7, 11) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "aa", Constraints.tagOrLower [types.number]))
             )
         ]
     ]
@@ -296,8 +296,8 @@ let updateCheck() =
     ] =? [
         Ok <| type0 types.string
         Error [
-            error (7, 10) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "a", Constraints.tagOrLower TagSpace.allNumber))
-            error (13, 16) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "b", Constraints.tagOrLower TagSpace.allNumber))
+            error (7, 10) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "a", Constraints.tagOrLower [types.number]))
+            error (13, 16) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "b", Constraints.tagOrLower [types.number]))
         ]
     ]
 

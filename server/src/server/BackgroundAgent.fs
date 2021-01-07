@@ -93,6 +93,8 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
         buffer = buffer
         lineMap = lineMap
         typeSystemEnv = typeEnv
+        stringSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation typeEnv.system.string]
+        numberSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation typeEnv.system.number]
         lastLine = 0
         lastStartChar = 0
     }
