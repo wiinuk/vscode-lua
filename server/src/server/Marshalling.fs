@@ -121,9 +121,6 @@ let showUnifyError (Messages m) = function
     | KindMismatch(x1, x2) ->
         String.Format(m.KindMismatch, Kind.show x1, Kind.show x2)
 
-    | TagSpaceConstraintMismatch(x1, x2, x3, x4) ->
-        String.Format(m.TagSpaceConstraintMismatch, TagSpace.show x1, TagSpace.show x2, Type.show x3, TagElement.show x4)
-
 let showSeverity (Messages m) = function
     | Severity.Error -> m.Error
     | Severity.Info -> m.Info
@@ -288,7 +285,6 @@ let marshalUnifyErrorToRelatedInformation (Messages m as context) = function
             (locationsToRelatedInformation context m.ConstraintsSource c.trivia)
             (locationsToRelatedInformation context m.TypeSource t.trivia)
 
-    | TagSpaceConstraintMismatch(_, _, actualType, _) -> locationsToRelatedInformation context m.ActualTypeSource actualType.trivia
     | _ -> upcast []
 
 let marshalDiagnosticKindToRelatedInformation (Messages m as context) path document = function

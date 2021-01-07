@@ -491,7 +491,6 @@ type UnifyError =
     | KindMismatch of Kind * Kind
     | ConstraintMismatch of Constraints * Constraints
     | ConstraintAndTypeMismatch of Constraints * Type
-    | TagSpaceConstraintMismatch of expectedLowerBound: TagSpace * expectedUpperBound: TagSpace * actualType: Type * requireElement: TagElement
 
 let unifyKindList (all1, all2) (ks1, ks2) =
     let rec aux = function
@@ -838,18 +837,6 @@ let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) 
         aux types.stringTableTypes
 
     | _ -> Error(ConstraintMismatch(c1, c2))
-
-let typeToSpace { system = types } = function
-    | { kind = NamedType(t, _) } ->
-        if t = types.booleanConstant then ValueSome TagSpace.allBoolean
-        elif t = types.numberConstant then ValueSome TagSpace.allNumber
-        elif t = types.stringConstant then ValueSome TagSpace.allString
-        elif t = types.fnConstant then ValueSome TagSpace.allFunction
-        elif t = types.tableConstant then ValueSome TagSpace.allTable
-        elif t = types.threadConstant then ValueSome TagSpace.allThread
-        else ValueNone
-
-    | _ -> ValueNone
 
 let matchConstraints types env1 env2 (c1, r1, t1) t2 =
     if Constraints.isAny c1 then ValueNone else

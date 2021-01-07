@@ -339,23 +339,6 @@ let unifyRecursiveConstraint() =
     unify t1 t2 =? ValueNone
 
 [<Fact>]
-let tagSpaceIsSubset() =
-    let ofNumbers = TagSpace.ofNumbers
-
-    TagSpace.isSubset (ofNumbers []) TagSpace.allNumber =? true
-    TagSpace.isSubset (ofNumbers []) (ofNumbers []) =? true
-    TagSpace.isSubset (ofNumbers []) (ofNumbers [1.]) =? true
-    TagSpace.isSubset (ofNumbers [1.]) (ofNumbers []) =? false
-    TagSpace.isSubset (ofNumbers [1.;2.]) (ofNumbers [1.;2.]) =? true
-    TagSpace.isSubset (ofNumbers [1.]) (ofNumbers [1.;2.]) =? true
-    TagSpace.isSubset (ofNumbers [1.;2.]) (ofNumbers [1.]) =? false
-    TagSpace.isSubset (ofNumbers [1.;2.]) (ofNumbers [1.;3.]) =? false
-    TagSpace.isSubset TagSpace.allNumber (ofNumbers []) =? false
-    TagSpace.isSubset (ofNumbers [1.;2.]) TagSpace.allNumber =? true
-    TagSpace.isSubset TagSpace.allNumber (ofNumbers [1.;2.]) =? false
-    TagSpace.isSubset TagSpace.allNumber TagSpace.allNumber =? true
-
-[<Fact>]
 let typesIsSubset() =
     let ofNumbers = List.map Type.numberLiteralType
     let isSubset t1 t2 = TypeSet.isSubset types' (TypeSet t1) (TypeSet t2) |> Result.defaultWith (failwithf "%A")
@@ -385,10 +368,6 @@ let unifyAbstractionAndTagSpaceConstraint() =
     let a = Type.newVar 2
 
     unify with1T a =? ValueNone
-
-[<Fact>]
-let stringTypeToTagSpace() =
-    typeToSpace typeEnv' types.string =? ValueSome TagSpace.allString
 
 [<Fact>]
 let unifyStringSpaceConstraintInMulti() =

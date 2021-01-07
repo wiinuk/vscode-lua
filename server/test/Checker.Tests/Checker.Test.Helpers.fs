@@ -16,11 +16,6 @@ module rec TypeExtensions =
     let stringKeyInterfaceType fs = fs |> Seq.map (fun (k, t) -> FieldKey.String k, t) |> Map
     let withEmptyLocation x = { kind = x; trivia = [] }
 
-    module TagSpace =
-        let ofNumbers xs = xs |> Seq.map (Number >> TagSpace.ofLiteral) |> Seq.fold (+) TagSpace.empty
-        let ofStrings xs = xs |> Seq.map (String >> TagSpace.ofLiteral) |> Seq.fold (+) TagSpace.empty
-        let true' = TagSpace.ofLiteral True
-
     module Type =
         let empty = types'.empty |> Type.makeWithEmptyLocation
         let literalType v = LiteralType v |> Type.makeWithEmptyLocation
@@ -436,7 +431,6 @@ module rec TypeExtensions =
             | TypeMismatch(t1, t2) -> TypeMismatch(Scheme.normalize t1, Scheme.normalize t2)
             | UndefinedField(t, k) -> UndefinedField(Scheme.normalize t, k)
 
-            | TagSpaceConstraintMismatch _
             | KindMismatch _ as x -> x
 
     module DiagnosticKind =

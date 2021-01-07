@@ -125,11 +125,6 @@
           <xsd:documentation>string -&gt; string -&gt; string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
-      <xsd:element name="TagSpaceConstraintMismatch" type="pattern-5">
-        <xsd:annotation>
-          <xsd:documentation>expectedLowerBound: string -&gt; expectedUpperBound: string -&gt; actualType: string -&gt; requireElement: string -&gt; string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
       <xsd:element name="ParseError" type="pattern-2">
         <xsd:annotation>
           <xsd:documentation>string -&gt; string</xsd:documentation>
