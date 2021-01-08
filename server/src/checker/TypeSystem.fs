@@ -424,35 +424,6 @@ module TypeSet =
         | TypeComparisonException(t1, t2) ->
             Error <| TypeMismatch(t1, t2)
 
-module MultiType =
-    let minLength types m =
-        let rec multi visited min m =
-            match m.kind with
-            | Type.IsEmpty types true -> min
-            | Type.Cons types (ValueSome(_, m)) -> multi visited (min + 1) m
-            | Type.MultiVar types (ValueSome r) ->
-                if containsVar r visited then min else
-                let visited = r::visited
-
-                match r.target with
-                | Assigned m -> multi visited min m
-                | Var(_, c) -> constraints min c
-
-            | Type.MultiParameter types (ValueSome _) -> min
-
-            // without multi kind
-            | _ -> min
-
-        and constraints min = function
-
-            // `?m...number`
-            | { kind = MultiElementTypeConstraint _ } -> min
-
-            // `?m...` `?m...: { k: t, … }`
-            | _ -> min
-
-        multi [] 0 m
-
 let occur env r t =
     match t.kind with
     | VarType r' ->

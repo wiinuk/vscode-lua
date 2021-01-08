@@ -223,15 +223,18 @@ module private rec IterateRange =
         ) ||.
         funcBody &v &env x4
 
-    let localFunctionStat (v: _ byref) (env: _ inref) (x1, x2) =
-        name &v &env x1 ||. (
-            intersecting &env x2 &&
-            let env = extendByTypeParameterOwner env x1
-            funcBody &v &env x2
+    let localFunctionStat (v: _ byref) (env: _ inref) (x1, x2, x3) =
+        tags &v &env x1 ||.
+        name &v &env x2 ||. (
+            intersecting &env x3 &&
+            let env = extendByTypeParameterOwner env x2
+            funcBody &v &env x3
         )
 
-    let localStat (v: _ byref) (env: _ inref) (x1, x2) =
-        nameList1 &v &env x1 ||. expList &v &env x2
+    let localStat (v: _ byref) (env: _ inref) (x1, x2, x3) =
+        tags &v &env x1 ||.
+        nameList1 &v &env x2 ||.
+        expList &v &env x3
 
     let stat (v: _ byref) (env: _ inref) x =
         let struct(span, (leadingTags, trailingTags)) = x.trivia
@@ -249,8 +252,8 @@ module private rec IterateRange =
             | For(x1, x2, x3, x4, x5) -> forStat &v &env (x1, x2, x3, x4, x5)
             | ForIn(x1, x2, x3) -> forInStat &v &env (x1, x2, x3)
             | FunctionDecl(x1, x2, x3, x4) -> functionDeclStat &v &env (x1, x2, x3, x4)
-            | LocalFunction(x1, x2) -> localFunctionStat &v &env (x1, x2)
-            | Local(x1, x2) -> localStat &v &env (x1, x2)
+            | LocalFunction(x1, x2, x3) -> localFunctionStat &v &env (x1, x2, x3)
+            | Local(x1, x2, x3) -> localStat &v &env (x1, x2, x3)
         ) ||.
         tags &v &env trailingTags
 
