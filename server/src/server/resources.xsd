@@ -240,16 +240,6 @@
           <xsd:documentation>string</xsd:documentation>
         </xsd:annotation>
       </xsd:element>
-      <xsd:element name="GenericTagParentSyntaxNotFound" type="pattern-1">
-        <xsd:annotation>
-          <xsd:documentation>string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
-      <xsd:element name="TypeTagParentSyntaxNotFound" type="pattern-1">
-        <xsd:annotation>
-          <xsd:documentation>string</xsd:documentation>
-        </xsd:annotation>
-      </xsd:element>
       <xsd:element name="Info" type="pattern-1">
         <xsd:annotation>
           <xsd:documentation>string</xsd:documentation>

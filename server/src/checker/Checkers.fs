@@ -308,12 +308,12 @@ module private Helpers =
     let checkLeadingGlobalTags env syntaxShape syntax =
         match Syntax.firstTrivia syntaxShape syntax with
         | ValueSome t -> DocumentCheckers.statementLevelTags env (leadingDocumentSpan t) (leadingDocuments env t)
-        | _ -> Token.make Span.empty []
+        | _ -> Token.make Span.empty [], []
 
     let checkTrailingGlobalTags env syntaxShape syntax =
         match Syntax.lastTrivia syntaxShape syntax with
         | ValueSome t -> DocumentCheckers.statementLevelTags env (trailingDocumentSpan t) (trailingDocuments env t)
-        | _ -> Token.make Span.empty []
+        | _ -> Token.make Span.empty [], []
 
     let trySetSchemeInstantiationInfo scheme tvs instantiated = function
         | { kind = T.Variable(T.Var(k, s, r, n, t, info)) } as e ->
@@ -432,6 +432,13 @@ module private Helpers =
         | _ -> leadingTags, trainlingTags
 
     let statSpan { trivia = struct(s, _) } = s
+
+    let valueTypeToMultiType env t l =
+        if isValueKind env t then
+            let (Types types) = env
+            types.cons(t, types.empty |@ l) |@ l
+        else
+            t
 
 let literalType (Types types) x location = types.literal(x, location)
 
@@ -1096,12 +1103,12 @@ let functionCall (Types types as env) x =
         withSpan x.trivia <| T.CallWithSelf(self, name, args), resultType
 
 let stat env state x =
-    let leadingTags = checkLeadingGlobalTags env Syntax.stat x
+    let struct(leadingTags, modifierTags) = checkLeadingGlobalTags env Syntax.stat x
 
     let span = x.trivia
     let struct(s, env, state) =
         match x.kind with
-        | Local(_, names, values) -> local env state span (names, values)
+        | Local(_, names, values) -> local env state span (modifierTags, names, values)
         | Assign(vars, _, values) -> assign env state (vars, values)
         | FunctionCall call -> functionCallStat env state span call
         | Do(_, body, _) -> doStat env state body
@@ -1113,7 +1120,7 @@ let stat env state x =
         | FunctionDecl(keyword, name, body) -> functionDecl env state (keyword, name, body)
         | LocalFunction(_, functionKeyword, var, body) -> localFunction env state (functionKeyword, var, body)
 
-    let trailingTags = checkTrailingGlobalTags env Syntax.stat x
+    let struct(trailingTags, _) = checkTrailingGlobalTags env Syntax.stat x
 
     // 文を囲むタグを含むように span を拡張する
     let span = Span.merge leadingTags.trivia span
@@ -1124,7 +1131,8 @@ let stat env state x =
     struct(s, env, state)
 
 // `local name,… = value,…`
-let local env state span (names, values) =
+let local env state span (modifierTags, names, values) =
+    let annotation = DocumentCheckers.parseTagsToType env modifierTags
     let struct(values, valuesType) =
         match values with
         | None -> [], types(env).empty |@ sourceLocation env span
@@ -1135,6 +1143,13 @@ let local env state span (names, values) =
 
     let namesOverflow = newMultiVarType (enterTypeScope env) TypeNames.multiOverflow |@ sourceLocation env span
     let struct(nameAndTypes, namesType) = nameListNoExtend (enterTypeScope env) namesOverflow (SepBy.toNonEmptyList names.kind)
+
+    // 注釈型と名前の型を単一化
+    match annotation with
+    | ValueNone -> ()
+    | ValueSome(_, annotationType) ->
+        let annotationType = valueTypeToMultiType env annotationType namesType.trivia
+        reportIfUnifyError env names.trivia namesType annotationType
 
     // 両辺の型を単一化
     reportIfUnifyError env names.trivia namesType valuesType
@@ -1157,11 +1172,16 @@ let local env state span (names, values) =
             extend location S.Local I.Variable R.Definition n.kind t env
         ) env
 
+    let modifierTags =
+        match annotation with
+        | ValueSome(tags, _) -> tags
+        | ValueNone -> Token.make Span.empty []
+
     let names' =
         nameAndTypes2
         |> NonEmptyList.map (fun struct(n, t) -> makeVar S.Local I.Variable R.Definition n t)
 
-    let stat = T.Local(names', values)
+    let stat = T.Local(modifierTags, names', values)
     struct(stat, env, state)
 
 // var,… = value,…
@@ -1381,7 +1401,7 @@ let localFunction env state (functionKeyword, Name { kind = name; trivia = nameT
 
 let lastStat env state lastStatAndSemicolon =
     let x, _ = lastStatAndSemicolon
-    let leadingTags = checkLeadingGlobalTags env Syntax.lastStat lastStatAndSemicolon
+    let struct(leadingTags, _) = checkLeadingGlobalTags env Syntax.lastStat lastStatAndSemicolon
 
     let struct(x', state) =
         match x.kind with
@@ -1401,7 +1421,7 @@ let lastStat env state lastStatAndSemicolon =
             let stat = T.Return return'
             stat, { state with isImplicitReturn = false }
 
-    let trailingTags = checkTrailingGlobalTags env Syntax.lastStat lastStatAndSemicolon
+    let struct(trailingTags, _) = checkTrailingGlobalTags env Syntax.lastStat lastStatAndSemicolon
 
     // 文を囲むタグを含むように span を拡張する
     let span = x.trivia
@@ -1412,7 +1432,7 @@ let lastStat env state lastStatAndSemicolon =
     struct(x', state)
 
 let block env state { kind = x; trivia = s } =
-    let leadingTags = DocumentCheckers.statementLevelTags env (leadingDocumentSpan s) (leadingDocuments env s)
+    let struct(leadingTags, _) = DocumentCheckers.statementLevelTags env (leadingDocumentSpan s) (leadingDocuments env s)
 
     let stats, struct(env, state) =
         x.stats

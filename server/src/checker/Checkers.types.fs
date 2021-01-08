@@ -37,8 +37,6 @@ type DiagnosticKind =
     | RequireMultiType
     | DuplicateTag of otherTagName: string * otherTagSpan: Span
     | FieldParentTagNotFound
-    | GenericTagParentSyntaxNotFound
-    | TypeTagParentSyntaxNotFound
 
 and Diagnostic = Diagnostic of Span * Severity * DiagnosticKind
 module Diagnostic =

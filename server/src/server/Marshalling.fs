@@ -188,7 +188,6 @@ let rec showDiagnosticKind (Messages m & context) = function
     | K.DuplicateFieldKey(k, otherFieldSpan) -> String.Format(m.DuplicateFieldKey, showFieldKey k, showSpan otherFieldSpan)
     | K.DuplicateTag(otherTagName, otherTagSpan) -> String.Format(m.DuplicateTag, otherTagName, otherTagSpan)
     | K.FieldParentTagNotFound -> m.FieldParentTagNotFound
-    | K.GenericTagParentSyntaxNotFound -> m.GenericTagParentSyntaxNotFound
     | K.GlobalNameCollision(n, d1, d2, ds) ->
         String.Format(
             m.GlobalNameCollision,
@@ -216,7 +215,6 @@ let rec showDiagnosticKind (Messages m & context) = function
     | K.RequireMultiType -> m.RequireMultiType
     | K.TypeArityMismatch(expected, actual) -> String.Format(m.TypeArityMismatch, expected, actual)
     | K.TypeNameNotFound x -> String.Format(m.TypeNameNotFound, x)
-    | K.TypeTagParentSyntaxNotFound -> m.TypeTagParentSyntaxNotFound
 
     | K.UndeterminedGlobalVariableEnvironment(modulePath, globals) ->
         let globals =
@@ -243,9 +241,7 @@ let marshalDiagnosticKindToTags = function
     | K.DuplicateFieldKey _
     | K.UnrecognizedFeatureName _
     | K.DuplicateTag _
-    | K.FieldParentTagNotFound _
-    | K.GenericTagParentSyntaxNotFound
-    | K.TypeTagParentSyntaxNotFound -> Defined [|DiagnosticTag.Unnecessary|]
+    | K.FieldParentTagNotFound _ -> Defined [|DiagnosticTag.Unnecessary|]
     | _ -> Undefined
 
 [<SuppressMessage("UnusedMemberAssemblyAnalyzer", "AA0001:MemberUnused")>]

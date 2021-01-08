@@ -47,8 +47,6 @@
     <RequireMultiType>RequireMultiType</RequireMultiType>
     <DuplicateTag>DuplicateTag({0}, {1})</DuplicateTag>
     <FieldParentTagNotFound>FieldParentTagNotFound</FieldParentTagNotFound>
-    <GenericTagParentSyntaxNotFound>GenericTagParentSyntaxNotFound</GenericTagParentSyntaxNotFound>
-    <TypeTagParentSyntaxNotFound>TypeTagParentSyntaxNotFound</TypeTagParentSyntaxNotFound>
     <Info>Info</Info>
     <Warning>Warning</Warning>
     <Error>Error</Error>
