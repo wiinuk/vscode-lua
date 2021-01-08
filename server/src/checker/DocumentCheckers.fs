@@ -535,12 +535,38 @@ module private Type =
         let constrainedTypeSign = D.ConstrainedType(typeSign, withOperatorSemantics sep, fieldsSign)
         t', constrainedTypeSign
 
-    let ofTypeSign env t =
+    let reportKindMismatchAndNewMissingType (TypeEnv types & env) span (expectedKind, actualKind) =
+        let error =
+            if actualKind = types.system.multiKind then K.UnexpectedMultiType
+            elif expectedKind = types.system.multiKind then K.RequireMultiType
+            else K.UnifyError(KindMismatch(actualKind, expectedKind))
+
+        reportError env span error
+
+        newVarType env TypeNames.lostByError expectedKind
+        |> Type.makeWithLocation (sourceLocation env span)
+
+    let ofTypeSignCore env expectedKind t =
         let mutable env = {
             TypeResolveEnv.env = env
             implicitVariadicParameterType = None
         }
-        typeSign &env t
+        let struct(t', typeSign) = typeSignOrMultiType &env t
+
+        let t' =
+            match expectedKind with
+            | ValueNone -> t'
+            | ValueSome expectedKind ->
+
+            let (TypeEnv types) = env.env
+            let kind = Type.kind types t'
+            if kind = expectedKind then t' else
+            reportKindMismatchAndNewMissingType env.env t.trivia (expectedKind, kind)
+
+        struct(t', typeSign)
+
+    let ofTypeSign env t =
+        ofTypeSignCore env (ValueSome(types(env).valueKind)) t
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Constraints =
@@ -1123,11 +1149,11 @@ module private Helpers =
 
             | _ -> modifierTagsRev <- tag::modifierTagsRev
 
-    let typeTagToType env = function
+    let typeTagToType env expectedKind = function
         | ValueSome struct(modifierTags, ({ kind = D.Tag(at, ({ kind = D.TypeTag(``type``, typeSign) } as typeTagTail)) } as typeTag)) ->
             let env' = enterTypeScope env
             let struct(env', modifierTags) = extendTypeEnvFromGenericTags (toPendingValues modifierTags) env'
-            let struct(t, typeSign) = Type.ofTypeSign env' typeSign
+            let struct(t, typeSign) = Type.ofTypeSignCore env' expectedKind typeSign
             let t = Scheme.generalize env.rare.typeLevel t
 
             let typeTagTail =
@@ -1159,7 +1185,7 @@ module private Helpers =
 
         | _ -> ValueNone
 
-let findTypeTag env span struct(ds, es) =
+let findTypeTag (Types types & env) span struct(ds, es) =
     reportParseErrors env span es
 
     let mutable modifierTagsRev = []
@@ -1167,13 +1193,13 @@ let findTypeTag env span struct(ds, es) =
     for { kind = D.Document(_, tags) } in ds do
         findLastTypeTag env &modifierTagsRev &lastTypeTag tags
 
-    typeTagToType env lastTypeTag
+    typeTagToType env (ValueSome types.valueKind) lastTypeTag
 
 let parseTagsToType env tags =
     let mutable modifierTagsRev = []
     let mutable lastTypeTag = ValueNone
     findLastTypeTag env &modifierTagsRev &lastTypeTag tags
-    typeTagToType env lastTypeTag
+    typeTagToType env ValueNone lastTypeTag
 
 let statementLevelTags env span struct(ds, es) =
     reportParseErrors env span es
