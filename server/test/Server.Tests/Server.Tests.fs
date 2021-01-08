@@ -556,3 +556,8 @@ type Tests(fixture: TestsFixture, output: ITestOutputHelper) =
             ]
         ]
     }
+    [<Fact>]
+    member _.isolatedTagSemantics() = async {
+        let! r = semanticTokenFullResponseData "---@generic Isolated"
+        r =? data []
+    }

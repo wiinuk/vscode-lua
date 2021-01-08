@@ -535,12 +535,38 @@ module private Type =
         let constrainedTypeSign = D.ConstrainedType(typeSign, withOperatorSemantics sep, fieldsSign)
         t', constrainedTypeSign
 
-    let ofTypeSign env t =
+    let reportKindMismatchAndNewMissingType (TypeEnv types & env) span (expectedKind, actualKind) =
+        let error =
+            if actualKind = types.system.multiKind then K.UnexpectedMultiType
+            elif expectedKind = types.system.multiKind then K.RequireMultiType
+            else K.UnifyError(KindMismatch(actualKind, expectedKind))
+
+        reportError env span error
+
+        newVarType env TypeNames.lostByError expectedKind
+        |> Type.makeWithLocation (sourceLocation env span)
+
+    let ofTypeSignCore env expectedKind t =
         let mutable env = {
             TypeResolveEnv.env = env
             implicitVariadicParameterType = None
         }
-        typeSign &env t
+        let struct(t', typeSign) = typeSignOrMultiType &env t
+
+        let t' =
+            match expectedKind with
+            | ValueNone -> t'
+            | ValueSome expectedKind ->
+
+            let (TypeEnv types) = env.env
+            let kind = Type.kind types t'
+            if kind = expectedKind then t' else
+            reportKindMismatchAndNewMissingType env.env t.trivia (expectedKind, kind)
+
+        struct(t', typeSign)
+
+    let ofTypeSign env t =
+        ofTypeSignCore env (ValueSome(types(env).valueKind)) t
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module private Constraints =
@@ -1111,33 +1137,7 @@ module private Helpers =
 
         List.rev lastClass.tagsRev
 
-    let processRemainingModifierTags env modifierTags =
-        for { kind = D.Tag(_, tail) } as tag in modifierTags do
-            match tail.kind with
-
-            // 親構文への注釈
-            | D.FeatureTag(_, (D.Annotated(Name { kind = featureName } as name, _))) ->
-                reportInfo env (Name.measure name) <| DiagnosticKind.UnrecognizedFeatureName featureName
-
-            | D.GenericTag _ ->
-                reportInfo env tag.trivia DiagnosticKind.GenericTagParentSyntaxNotFound
-
-            // TODO: 親構文を修飾する @type を実装する
-            | D.TypeTag _ ->
-                reportInfo env tag.trivia DiagnosticKind.TypeTagParentSyntaxNotFound
-
-            | D.ClassTag _
-            | D.FieldTag _
-            | D.GlobalTag _
-            | D.UnknownTag _
-                -> ()
-
-let findTypeTag env span struct(ds, es) =
-    reportParseErrors env span es
-
-    let mutable modifierTagsRev = []
-    let mutable lastTypeTag = ValueNone
-    for { kind = D.Document(_, tags) } in ds do
+    let findLastTypeTag env (modifierTagsRev: _ byref) (lastTypeTag: _ byref) (tags: _ list) =
         for { kind = D.Tag(_, tail) } as tag in tags do
             match tail.kind with
             | D.TypeTag _ ->
@@ -1149,41 +1149,57 @@ let findTypeTag env span struct(ds, es) =
 
             | _ -> modifierTagsRev <- tag::modifierTagsRev
 
-    match lastTypeTag with
-    | ValueSome(modifierTags, ({ kind = D.Tag(at, ({ kind = D.TypeTag(``type``, typeSign) } as typeTagTail)) } as typeTag)) ->
-        let env' = enterTypeScope env
-        let struct(env', modifierTags) = extendTypeEnvFromGenericTags (toPendingValues modifierTags) env'
-        let struct(t, typeSign) = Type.ofTypeSign env' typeSign
-        let t = Scheme.generalize env.rare.typeLevel t
+    let typeTagToType env expectedKind = function
+        | ValueSome struct(modifierTags, ({ kind = D.Tag(at, ({ kind = D.TypeTag(``type``, typeSign) } as typeTagTail)) } as typeTag)) ->
+            let env' = enterTypeScope env
+            let struct(env', modifierTags) = extendTypeEnvFromGenericTags (toPendingValues modifierTags) env'
+            let struct(t, typeSign) = Type.ofTypeSignCore env' expectedKind typeSign
+            let t = Scheme.generalize env.rare.typeLevel t
 
-        let typeTagTail =
-            D.TypeTag(
-                ``type`` |> withKeywordSemantics,
-                typeSign
-            )
-            |> Token.make typeTagTail.trivia
+            let typeTagTail =
+                D.TypeTag(
+                    ``type`` |> withKeywordSemantics,
+                    typeSign
+                )
+                |> Token.make typeTagTail.trivia
 
-        let typeTag =
-            D.Tag(
-                withKeywordSemantics at,
-                typeTagTail
-            )
-            |> Token.make typeTag.trivia
+            let typeTag =
+                D.Tag(
+                    withKeywordSemantics at,
+                    typeTagTail
+                )
+                |> Token.make typeTag.trivia
 
-        let modifierTags = chooseConvertedValues modifierTags
+            let modifierTags = chooseConvertedValues modifierTags
 
-        let span =
-            match modifierTags with
-            | [] -> typeTag.trivia
-            | t::_ -> Span.merge t.trivia typeTag.trivia
+            let span =
+                match modifierTags with
+                | [] -> typeTag.trivia
+                | t::_ -> Span.merge t.trivia typeTag.trivia
 
-        let tags =
-            modifierTags @ [typeTag]
-            |> Token.make span
+            let tags =
+                modifierTags @ [typeTag]
+                |> Token.make span
 
-        ValueSome struct(tags, t)
+            ValueSome struct(tags, t)
 
-    | _ -> ValueNone
+        | _ -> ValueNone
+
+let findTypeTag (Types types & env) span struct(ds, es) =
+    reportParseErrors env span es
+
+    let mutable modifierTagsRev = []
+    let mutable lastTypeTag = ValueNone
+    for { kind = D.Document(_, tags) } in ds do
+        findLastTypeTag env &modifierTagsRev &lastTypeTag tags
+
+    typeTagToType env (ValueSome types.valueKind) lastTypeTag
+
+let parseTagsToType env requiredKind tags =
+    let mutable modifierTagsRev = []
+    let mutable lastTypeTag = ValueNone
+    findLastTypeTag env &modifierTagsRev &lastTypeTag tags
+    typeTagToType env requiredKind lastTypeTag
 
 let statementLevelTags env span struct(ds, es) =
     reportParseErrors env span es
@@ -1224,5 +1240,6 @@ let statementLevelTags env span struct(ds, es) =
 
         lastClass <- ValueNone
     ]
-    processRemainingModifierTags env (List.rev modifierTagsRev)
-    tags |> Token.make (Span.list Source.measure tags)
+    let tags = tags |> Token.make (Span.list Source.measure tags)
+    let modifierTags = List.rev modifierTagsRev
+    struct(tags, modifierTags)

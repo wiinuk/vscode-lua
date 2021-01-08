@@ -7,6 +7,7 @@ open LuaChecker.TypeSystem
 open LuaChecker.Primitives
 module T = LuaChecker.TypedSyntaxes
 module D = LuaChecker.Syntax.Documents
+module VOption = ValueOption
 type private I = LuaChecker.IdentifierKind
 type private S = LuaChecker.IdentifierScope
 type private R = LuaChecker.IdentifierRepresentation
@@ -308,12 +309,12 @@ module private Helpers =
     let checkLeadingGlobalTags env syntaxShape syntax =
         match Syntax.firstTrivia syntaxShape syntax with
         | ValueSome t -> DocumentCheckers.statementLevelTags env (leadingDocumentSpan t) (leadingDocuments env t)
-        | _ -> Token.make Span.empty []
+        | _ -> Token.make Span.empty [], []
 
     let checkTrailingGlobalTags env syntaxShape syntax =
         match Syntax.lastTrivia syntaxShape syntax with
         | ValueSome t -> DocumentCheckers.statementLevelTags env (trailingDocumentSpan t) (trailingDocuments env t)
-        | _ -> Token.make Span.empty []
+        | _ -> Token.make Span.empty [], []
 
     let trySetSchemeInstantiationInfo scheme tvs instantiated = function
         | { kind = T.Variable(T.Var(k, s, r, n, t, info)) } as e ->
@@ -433,6 +434,13 @@ module private Helpers =
 
     let statSpan { trivia = struct(s, _) } = s
 
+    let valueTypeToMultiType env t l =
+        if isValueKind env t then
+            let (Types types) = env
+            types.cons(t, types.empty |@ l) |@ l
+        else
+            t
+
 let literalType (Types types) x location = types.literal(x, location)
 
 let binaryExpType (Types types & TypeCache typeCache as env) (e1, t1) op (e2, t2) =
@@ -550,7 +558,7 @@ let exp env x =
         literal x.trivia (literalType env k <| sourceLocation env l.trivia.span) l
 
     | Function(functionKeyword, body) ->
-        let struct(body, functionType) = funcBody (enterTypeScope env) functionKeyword None [] body
+        let struct(body, functionType) = funcBody (enterTypeScope env) ValueNone functionKeyword None [] body
         let functionType = Scheme.generalizeAndAssign env.rare.typeLevel functionType
         withSpan x.trivia <| T.Function body, functionType
 
@@ -817,7 +825,7 @@ let varArgParameter env dot3 =
         )
     struct(varArg, varArgType)
 
-let funcBody (Types types as env) functionKeyword name implicitParameters { kind = FuncBody(lb, parameters, rb, body, end'); trivia = t } =
+let funcBody (Types types as env) annotationType functionKeyword name implicitParameters { kind = FuncBody(lb, parameters, rb, body, end'); trivia = t } =
     let names, dot3, parameterListSpan =
         match parameters with
         | None -> NonEmptyList.tryOfList implicitParameters, None, Span.merge lb.trivia.span rb.trivia.span
@@ -853,6 +861,13 @@ let funcBody (Types types as env) functionKeyword name implicitParameters { kind
         | _ -> sourceLocation env functionKeyword.trivia.span
 
     let functionType = types.fn(parameterAndVarArgType, returnType) |@ location
+
+    // 注釈型と関数型を単一化
+    match annotationType with
+    | ValueNone -> ()
+    | ValueSome annotationType ->
+        reportIfUnifyError env functionKeyword.trivia.span functionType annotationType
+
     let env' =
         match name with
         | Some(location, scope, repr, name) -> extend location scope I.Variable repr name (Scheme.ofType functionType) env'
@@ -1096,12 +1111,12 @@ let functionCall (Types types as env) x =
         withSpan x.trivia <| T.CallWithSelf(self, name, args), resultType
 
 let stat env state x =
-    let leadingTags = checkLeadingGlobalTags env Syntax.stat x
+    let struct(leadingTags, modifierTags) = checkLeadingGlobalTags env Syntax.stat x
 
     let span = x.trivia
     let struct(s, env, state) =
         match x.kind with
-        | Local(_, names, values) -> local env state span (names, values)
+        | Local(_, names, values) -> local env state span (modifierTags, names, values)
         | Assign(vars, _, values) -> assign env state (vars, values)
         | FunctionCall call -> functionCallStat env state span call
         | Do(_, body, _) -> doStat env state body
@@ -1111,9 +1126,9 @@ let stat env state x =
         | For(_, var, _, start, _, stop, step, _, body, _) -> forStat env state (var, start, stop, step, body)
         | ForIn(_, names, _, exprs, _, body, _) -> forIn env state (names, exprs, body)
         | FunctionDecl(keyword, name, body) -> functionDecl env state (keyword, name, body)
-        | LocalFunction(_, functionKeyword, var, body) -> localFunction env state (functionKeyword, var, body)
+        | LocalFunction(_, functionKeyword, var, body) -> localFunction env state (modifierTags, functionKeyword, var, body)
 
-    let trailingTags = checkTrailingGlobalTags env Syntax.stat x
+    let struct(trailingTags, _) = checkTrailingGlobalTags env Syntax.stat x
 
     // 文を囲むタグを含むように span を拡張する
     let span = Span.merge leadingTags.trivia span
@@ -1124,7 +1139,8 @@ let stat env state x =
     struct(s, env, state)
 
 // `local name,… = value,…`
-let local env state span (names, values) =
+let local env state span (modifierTags, names, values) =
+    let annotation = DocumentCheckers.parseTagsToType env ValueNone modifierTags
     let struct(values, valuesType) =
         match values with
         | None -> [], types(env).empty |@ sourceLocation env span
@@ -1135,6 +1151,13 @@ let local env state span (names, values) =
 
     let namesOverflow = newMultiVarType (enterTypeScope env) TypeNames.multiOverflow |@ sourceLocation env span
     let struct(nameAndTypes, namesType) = nameListNoExtend (enterTypeScope env) namesOverflow (SepBy.toNonEmptyList names.kind)
+
+    // 注釈型と名前の型を単一化
+    match annotation with
+    | ValueNone -> ()
+    | ValueSome(_, annotationType) ->
+        let annotationType = valueTypeToMultiType env annotationType namesType.trivia
+        reportIfUnifyError env names.trivia namesType annotationType
 
     // 両辺の型を単一化
     reportIfUnifyError env names.trivia namesType valuesType
@@ -1157,11 +1180,16 @@ let local env state span (names, values) =
             extend location S.Local I.Variable R.Definition n.kind t env
         ) env
 
+    let modifierTags =
+        match annotation with
+        | ValueSome(tags, _) -> tags
+        | ValueNone -> Token.make Span.empty []
+
     let names' =
         nameAndTypes2
         |> NonEmptyList.map (fun struct(n, t) -> makeVar S.Local I.Variable R.Definition n t)
 
-    let stat = T.Local(names', values)
+    let stat = T.Local(modifierTags, names', values)
     struct(stat, env, state)
 
 // var,… = value,…
@@ -1348,7 +1376,7 @@ let functionDecl env state (functionKeyword, { kind = FuncName(var, path, method
         | None ->
             // `function a.f(vs…) return r end` =
             // `a.f = function(vs…) return r end`
-            let struct(body', functionType) = funcBody env functionKeyword None [] body
+            let struct(body', functionType) = funcBody env ValueNone functionKeyword None [] body
             unifyDiagnosticsAt env body pathType functionType
             None, body'
 
@@ -1361,7 +1389,7 @@ let functionDecl env state (functionKeyword, { kind = FuncName(var, path, method
             // `a.b`: ('b: { f: (fun('b, ?vs...): ?r) })
             let pathType = memberType env pathType methodName
             let implicitSelf = Syntax.Name { kind = "self"; trivia = colon.trivia }
-            let struct(body', functionType) = funcBody env functionKeyword None [implicitSelf] body
+            let struct(body', functionType) = funcBody env ValueNone functionKeyword None [implicitSelf] body
             reportIfUnifyError env (Name.measure methodName) pathType functionType
 
             let self = makeVar S.Member I.Method R.Reference methodName functionType
@@ -1370,18 +1398,22 @@ let functionDecl env state (functionKeyword, { kind = FuncName(var, path, method
     let stat = T.FunctionDecl(var', path', self', body')
     stat, env, state
 
-let localFunction env state (functionKeyword, Name { kind = name; trivia = nameTrivia } & var, body) =
+let localFunction (Types types & env) state (modifierTags, functionKeyword, Name { kind = name; trivia = nameTrivia } & var, body) =
+    let annotation = DocumentCheckers.parseTagsToType env (ValueSome types.valueKind) modifierTags
+    let modifierTags = annotation |> VOption.map (fun struct(ts, _) -> ts) |> VOption.defaultWith (fun _ -> Token.make Span.empty [])
+    let annotationType = annotation |> VOption.map (fun struct(_, t) -> t)
+
     let env' = enterTypeScope env
     let nameLocation = Some <| Location(env.rare.noUpdate.filePath, nameTrivia.span)
-    let struct(body, functionType) = funcBody env' functionKeyword (Some(nameLocation, S.Local, R.Definition, name)) [] body
+    let struct(body, functionType) = funcBody env' annotationType functionKeyword (Some(nameLocation, S.Local, R.Definition, name)) [] body
     let functionScheme = Scheme.generalizeAndAssign env.rare.typeLevel functionType
     let env = extend nameLocation S.Local I.Variable R.Definition name functionScheme env
-    let stat = T.LocalFunction(makeVar S.Local I.Variable R.Definition var functionScheme, body)
+    let stat = T.LocalFunction(modifierTags, makeVar S.Local I.Variable R.Definition var functionScheme, body)
     stat, env, state
 
 let lastStat env state lastStatAndSemicolon =
     let x, _ = lastStatAndSemicolon
-    let leadingTags = checkLeadingGlobalTags env Syntax.lastStat lastStatAndSemicolon
+    let struct(leadingTags, _) = checkLeadingGlobalTags env Syntax.lastStat lastStatAndSemicolon
 
     let struct(x', state) =
         match x.kind with
@@ -1401,7 +1433,7 @@ let lastStat env state lastStatAndSemicolon =
             let stat = T.Return return'
             stat, { state with isImplicitReturn = false }
 
-    let trailingTags = checkTrailingGlobalTags env Syntax.lastStat lastStatAndSemicolon
+    let struct(trailingTags, _) = checkTrailingGlobalTags env Syntax.lastStat lastStatAndSemicolon
 
     // 文を囲むタグを含むように span を拡張する
     let span = x.trivia
@@ -1412,7 +1444,7 @@ let lastStat env state lastStatAndSemicolon =
     struct(x', state)
 
 let block env state { kind = x; trivia = s } =
-    let leadingTags = DocumentCheckers.statementLevelTags env (leadingDocumentSpan s) (leadingDocuments env s)
+    let struct(leadingTags, _) = DocumentCheckers.statementLevelTags env (leadingDocumentSpan s) (leadingDocuments env s)
 
     let stats, struct(env, state) =
         x.stats

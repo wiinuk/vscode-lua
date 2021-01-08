@@ -450,7 +450,6 @@ let isolatedGenericTag() =
     ---@generic Isolated
     "
     =? [
-        info (8, 25) K.GenericTagParentSyntaxNotFound
     ]
 
 [<Fact>]
@@ -896,3 +895,149 @@ let nilAnnotation() =
     return --[[---@type nil]](42), 10
     "
     =? multi [types.nil; types.number]
+
+[<Fact>]
+let localTypeAnnotation() =
+    chunkResult id "
+    ---@type string
+    local name = 'a'
+    return name
+    "
+    =? multi [types.string]
+
+[<Fact>]
+let localTypeAnnotationTypeMismatch() =
+    chunkDiagnostics id "
+    ---@type string
+    local name = 10
+    "
+    =? [
+        error (31, 35) <| K.UnifyError(ConstraintAndTypeMismatch(Constraints.numberOrUpper 10., types.string))
+    ]
+
+[<Fact>]
+let localTypeAnnotationSingle() =
+    chunkResult id "
+    ---@type (string,)
+    local name = 'a'
+    return name
+    "
+    =? multi [types.string]
+
+[<Fact>]
+let localTypeAnnotationMulti() =
+    chunkResult id "
+    ---@type (string, number)
+    local name, id = 'a', 10
+    return name, id
+    "
+    =? multi [types.string; types.number]
+
+[<Fact>]
+let localTypeAnnotationMultiTypeMismatch() =
+    chunkDiagnostics id "
+    ---@type (string, boolean)
+    local name, id = 'a', 10
+    "
+    =? [
+        error (42, 50) <| K.UnifyError(ConstraintAndTypeMismatch(Constraints.numberOrUpper 10., types.boolean))
+    ]
+
+[<Fact>]
+let localTypeAnnotationMultiTypeKind() =
+    chunkDiagnostics id "
+    ---@type (string, string)
+    local name = 'a'
+    "
+    =? [
+        error (41, 45) <| K.UnifyError(ConstraintAndTypeMismatch(Constraints.literalsOrUpper [S.Nil], types.string))
+    ]
+
+[<Fact>]
+let localTypeAnnotationSingleTypeKind() =
+    chunkDiagnostics id "
+    ---@type string
+    local name1, name2 = 'a', 'b'
+    "
+    =? [
+        error (31, 43) <| K.UnifyError(TypeMismatch(multi [types.string], multi []))
+    ]
+
+[<Fact>]
+let localTypeAnnotationTypeVariable() =
+    chunkResult id "
+    ---@type _
+    local name = 'a'
+    return name
+    "
+    =? multi [types.string]
+
+[<Fact>]
+let localTypeAnnotationTypeVariableEq() =
+    chunkResult id "
+    ---@global Name string
+
+    ---@type (T, T)
+    local name1, name2 = Name, Name
+    return name1, name2
+    "
+    =? multi [types.string; types.string]
+
+[<Fact>]
+let localTypeAnnotationTypeVariableEqDiagnostics() =
+    chunkDiagnostics id "
+    ---@global Name string
+    ---@global Id number
+
+    ---@type (T, T)
+    local name1, name2 = Name, Id
+    "
+    =? [
+        error (84, 96) <| K.UnifyError(TypeMismatch(types.string, types.number))
+    ]
+
+[<Fact>]
+let localTypeAnnotationTypeVariableScopeDiagnostics() =
+    chunkDiagnostics id "
+    ---@global Name string
+    ---@global Id number
+
+    ---@type T
+    local name = Name
+    ---@type T
+    local id = Id
+
+    return name, id
+    "
+    =? [
+        error (116, 118) <| K.UnifyError(TypeMismatch(types.string, types.number))
+    ]
+
+[<Fact>]
+let localTypeAnnotationTypeVariableScope2() =
+    chunkResult id "
+    ---@global Name string
+    ---@global Id number
+
+    ---@type T
+    local name = Name
+
+    local function getId()
+        ---@type T
+        local id = Id
+        return id
+    end
+
+    return name, getId()
+    "
+    =? multi [types.string; types.number]
+
+[<Fact>]
+let localFunctionTypeAnnotationDiagnostics() =
+    chunkDiagnostics id "
+    ---@type fun(): string
+    local function f() end
+    "
+    =? [
+        error (51, 54) <| K.UnifyError(ConstraintAndTypeMismatch(Constraints.literalsOrUpper [S.Nil], types.string))
+    ]
