@@ -450,7 +450,6 @@ let isolatedGenericTag() =
     ---@generic Isolated
     "
     =? [
-        info (8, 25) K.GenericTagParentSyntaxNotFound
     ]
 
 [<Fact>]
@@ -899,10 +898,28 @@ let nilAnnotation() =
 
 [<Fact>]
 let localTypeAnnotation() =
+    chunkResult id "
+    ---@type string
+    local name = 'a'
+    return name
+    "
+    =? multi [types.string]
+
+[<Fact>]
+let localTypeAnnotationTypeMismatch() =
     chunkDiagnostics id "
     ---@type string
     local name = 10
     "
     =? [
-        error (0, 0) <| K.UnrecognizedFeatureName ""
+        error (31, 35) <| K.UnifyError(ConstraintAndTypeMismatch(Constraints.numberOrUpper 10., types.string))
     ]
+
+[<Fact>]
+let localTypeAnnotationSingle() =
+    chunkResult id "
+    ---@type (string,)
+    local name = 'a'
+    return name
+    "
+    =? multi [types.string]
