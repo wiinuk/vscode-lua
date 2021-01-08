@@ -1195,11 +1195,11 @@ let findTypeTag (Types types & env) span struct(ds, es) =
 
     typeTagToType env (ValueSome types.valueKind) lastTypeTag
 
-let parseTagsToType env tags =
+let parseTagsToType env requiredKind tags =
     let mutable modifierTagsRev = []
     let mutable lastTypeTag = ValueNone
     findLastTypeTag env &modifierTagsRev &lastTypeTag tags
-    typeTagToType env ValueNone lastTypeTag
+    typeTagToType env requiredKind lastTypeTag
 
 let statementLevelTags env span struct(ds, es) =
     reportParseErrors env span es

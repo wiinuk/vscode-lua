@@ -1039,5 +1039,5 @@ let localFunctionTypeAnnotationDiagnostics() =
     local function f() end
     "
     =? [
-        error (0, 0) K.RequireMultiType
+        error (51, 54) <| K.UnifyError(ConstraintAndTypeMismatch(Constraints.literalsOrUpper [S.Nil], types.string))
     ]

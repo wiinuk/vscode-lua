@@ -87,7 +87,7 @@ type Stat' =
     | For of Var * start: Exp * stop: Exp * step: Exp option * Block
     | ForIn of VarList * Exp NonEmptyList * Block
     | FunctionDecl of Var * path: Var list * self: Var option * FuncBody
-    | LocalFunction of Var * FuncBody
+    | LocalFunction of modifierTags: Tags * Var * FuncBody
     | Local of modifierTags: Tags * VarList * value: Exp list
 
 type Block = Token<Block', struct(Span * NeighbourTags)>
