@@ -896,3 +896,13 @@ let nilAnnotation() =
     return --[[---@type nil]](42), 10
     "
     =? multi [types.nil; types.number]
+
+[<Fact>]
+let localTypeAnnotation() =
+    chunkDiagnostics id "
+    ---@type string
+    local name = 10
+    "
+    =? [
+        error (0, 0) <| K.UnrecognizedFeatureName ""
+    ]
