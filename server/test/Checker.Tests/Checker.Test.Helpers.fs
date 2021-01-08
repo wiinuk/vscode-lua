@@ -16,13 +16,11 @@ module rec TypeExtensions =
     let stringKeyInterfaceType fs = fs |> Seq.map (fun (k, t) -> FieldKey.String k, t) |> Map
     let withEmptyLocation x = { kind = x; trivia = [] }
 
-    module TagSpace =
-        let ofNumbers xs = xs |> Seq.map (Number >> TagSpace.ofLiteral) |> Seq.fold (+) TagSpace.empty
-        let ofStrings xs = xs |> Seq.map (String >> TagSpace.ofLiteral) |> Seq.fold (+) TagSpace.empty
-        let true' = TagSpace.ofLiteral True
-
     module Type =
         let empty = types'.empty |> Type.makeWithEmptyLocation
+        let literalType v = LiteralType v |> Type.makeWithEmptyLocation
+        let numberLiteralType n = n |> Number |> literalType
+        let stringLiteralType n = n |> String |> literalType
         let interfaceType fs = stringKeyInterfaceType fs |> InterfaceType |> Type.makeWithEmptyLocation
         let newVarWithFields level fs = Type.newVarWith "" level types'.valueKind (Constraints.ofFields fs) |> Type.makeWithEmptyLocation
         let newValueVarWith level c = Type.newVarWith "" level types'.valueKind c |> Type.makeWithEmptyLocation
@@ -72,12 +70,15 @@ module rec TypeExtensions =
             match c.kind with
             | MultiElementTypeConstraint t -> type' ids t
             | InterfaceConstraint fs -> fields ids fs
-            | TagSpaceConstraint _ -> ()
+            | UnionConstraint(l, u) ->
+                for t in TypeSet.toList l do type' ids t
+                for t in TypeSet.toList u do type' ids t
 
         and type' ids t =
             match t.kind with
             | ParameterType id -> addIfFlesh id ids
             | NamedType(_, ts) -> for t in ts do type' ids t
+            | LiteralType _ -> ()
             | InterfaceType fs -> fields ids fs
             | VarType v ->
                 if addVar v ids then
@@ -107,6 +108,7 @@ module rec TypeExtensions =
             match t.kind with
             | ParameterType id -> getNewId ids id |> ParameterType |> Type.withEntity t
             | NamedType(n, ts) -> NamedType(n, List.map (type' ids) ts) |> Type.withEntity t
+            | LiteralType _ -> t
             | InterfaceType fs -> fields ids fs |> InterfaceType |> Type.withEntity t
             | VarType r ->
                 if addVar r ids then
@@ -138,7 +140,7 @@ module rec TypeExtensions =
             match c.kind with
             | InterfaceConstraint fs -> fields ids fs |> InterfaceConstraint |> Constraints.withEntity c
             | MultiElementTypeConstraint t -> type' ids t |> MultiElementTypeConstraint |> Constraints.withEntity c
-            | TagSpaceConstraint _ -> c
+            | UnionConstraint(l, u) -> UnionConstraint(TypeSet.map (type' ids) l, TypeSet.map (type' ids) u) |> Constraints.withEntity c
 
         and fields ids fs = Map.map (fun _ -> type' ids) fs
 
@@ -152,25 +154,29 @@ module rec TypeExtensions =
         let trySimpleConstraint' = function
             | MultiElementTypeConstraint e ->
                 match e with
-                | { kind = NamedType(t, []) } when t = types'.nilConstant ->
+                | { kind = LiteralType Nil } ->
                     // ...nil => ()
                     ValueSome types'.empty
                 | _ -> ValueNone
 
-            | TagSpaceConstraint(lower, upper) ->
-                if TagSpace.isFull upper then
+            | UnionConstraint(lower, upper) ->
+                let (<=..) t1 t2 = TypeSet.isSubset types' t1 t2 |> Result.defaultValue false
+                let (=.) t1 t2 = let t = TypeSet [withEmptyLocation t2] in t1 <=.. t && t <=.. t1
+                let (<=.) t1 t2 = t1 <=.. TypeSet [withEmptyLocation t2]
+
+                if TypeSet.isUniversal upper then
 
                     // x.. (x <= nil) => nil
                     // x.. (x <= boolean) => boolean
                     // x.. (x <= number) => number
                     // x.. (x <= string) => string
-                    if TagSpace.isSubset lower TagSpace.nil then
+                    if lower <=. types'.nil then
                         ValueSome types'.nil
-                    elif TagSpace.isSubset lower TagSpace.allBoolean then
+                    elif lower <=. types'.boolean then
                         ValueSome types'.boolean
-                    elif TagSpace.isSubset lower TagSpace.allNumber then
+                    elif lower <=. types'.number then
                         ValueSome types'.number
-                    elif TagSpace.isSubset lower TagSpace.allString then
+                    elif lower <=. types'.string then
                         ValueSome types'.string
 
                     else
@@ -181,13 +187,13 @@ module rec TypeExtensions =
                 // l..boolean
                 // l..number
                 // l..string
-                if upper = TagSpace.nil then
+                if upper =. types'.nil then
                     ValueSome types'.nil
-                elif upper = TagSpace.allBoolean then
+                elif upper =. types'.boolean then
                     ValueSome types'.boolean
-                elif upper = TagSpace.allNumber then
+                elif upper =. types'.number then
                     ValueSome types'.number
-                elif upper = TagSpace.allString then
+                elif upper =. types'.string then
                     ValueSome types'.string
 
                 else
@@ -203,11 +209,17 @@ module rec TypeExtensions =
             match c.kind with
             | InterfaceConstraint fs -> fs |> Map.map (fun _ -> type' env) |> InterfaceConstraint |> Constraints.withEntity c
             | MultiElementTypeConstraint t -> type' env t |> MultiElementTypeConstraint |> Constraints.withEntity c
-            | TagSpaceConstraint _ -> c
+            | UnionConstraint(l, u) ->
+                UnionConstraint(
+                    TypeSet.map (type' env) l,
+                    TypeSet.map (type' env) u
+                )
+                |> Constraints.withEntity c
 
         let type' env t =
             match t.kind with
             | NamedType(c, ts) -> NamedType(c, List.map (type' env) ts) |> Type.withEntity t
+            | LiteralType _ -> t
             | InterfaceType fs -> fs |> Map.map (fun _ -> type' env) |> InterfaceType |> Type.withEntity t
 
             // simple (type('0: 10..): ('0, string)) = (number, string)
@@ -302,6 +314,7 @@ module rec TypeExtensions =
 
         let type' env t = trivia env t <| function
             | NamedType(c, ts) -> NamedType(c, List.map (type' env) ts)
+            | LiteralType _ as t -> t
             | InterfaceType fs -> InterfaceType <| Map.map (fun _ -> type' env) fs
             | ParameterType _ as t -> t
             | TypeAbstraction(ps, t) -> TypeAbstraction(List.map (typeParameter env) ps, type' env t)
@@ -319,7 +332,11 @@ module rec TypeExtensions =
         let constraints env c = trivia env c <| function
             | InterfaceConstraint fs -> Map.map (fun _ -> type' env) fs |> InterfaceConstraint
             | MultiElementTypeConstraint t -> type' env t |> MultiElementTypeConstraint
-            | TagSpaceConstraint _ as c -> c
+            | UnionConstraint(l, u) ->
+                UnionConstraint(
+                    TypeSet.map (type' env) l,
+                    TypeSet.map (type' env) u
+                )
 
         let typeParameter (struct(_, reduced) as env) (TypeParameter(x, id, c)) =
             if x <> "" then reduced := true
@@ -328,17 +345,22 @@ module rec TypeExtensions =
     module Constraints =
         let withLocation l c = { c with trivia = l }
         let ofFields fs = fs |> stringKeyInterfaceType |> Constraints.ofInterfaceType |> Constraints.makeWithEmptyLocation
-        let ofSpace(lowerBound, upperBound) = TagSpaceConstraint(lowerBound = lowerBound, upperBound = upperBound) |> Constraints.makeWithEmptyLocation
+        let ofSpace(lowerBound, upperBound) = UnionConstraint(lowerBound = TypeSet lowerBound, upperBound = TypeSet upperBound) |> Constraints.makeWithEmptyLocation
         /// tag..
-        let tagOrUpper lowerBound = ofSpace(lowerBound, TagSpace.full)
+        let tagOrUpper lowerBound = UnionConstraint(TypeSet lowerBound, UniversalTypeSet) |> Constraints.makeWithEmptyLocation
         /// (lowerBound1 | lowerBound2 | …)..
-        let literalsOrUpper lowerBounds = tagOrUpper (lowerBounds |> List.map TagSpace.ofLiteral |> List.fold (+) TagSpace.empty)
+        let literalsOrUpper lowerBounds =
+            let lowerBounds =
+                lowerBounds
+                |> List.map (Type.literalType >> List.singleton)
+                |> List.fold (fun ts1 ts2 -> TypeSet.union types' ts1 (TypeSet ts2) |> Result.defaultWith (failwithf "%A")) TypeSet.empty
+            UnionConstraint(lowerBounds, UniversalTypeSet) |> Constraints.makeWithEmptyLocation
         /// x..
-        let numberOrUpper lowerBound = lowerBound |> Seq.singleton |> TagSpace.ofNumbers |> tagOrUpper
+        let numberOrUpper lowerBound = lowerBound |> Number |> Type.literalType |> List.singleton |> tagOrUpper
         /// x..
-        let stringOrUpper lowerBound = lowerBound |> Seq.singleton |> TagSpace.ofStrings |> tagOrUpper
+        let stringOrUpper lowerBound = lowerBound |> String |> Type.literalType |> List.singleton |> tagOrUpper
         /// ..tag
-        let tagOrLower upperBound = ofSpace(TagSpace.empty, upperBound)
+        let tagOrLower upperBound = ofSpace([], upperBound)
         let multiElementType et = MultiElementTypeConstraint et |> Constraints.makeWithEmptyLocation
 
         let renumberParameters c =
@@ -409,7 +431,6 @@ module rec TypeExtensions =
             | TypeMismatch(t1, t2) -> TypeMismatch(Scheme.normalize t1, Scheme.normalize t2)
             | UndefinedField(t, k) -> UndefinedField(Scheme.normalize t, k)
 
-            | TagSpaceConstraintMismatch _
             | KindMismatch _ as x -> x
 
     module DiagnosticKind =

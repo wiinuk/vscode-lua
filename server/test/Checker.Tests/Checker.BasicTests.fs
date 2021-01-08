@@ -31,7 +31,7 @@ let typeMismatch() =
     local b = a.x + ""
     """
     |> chunkDiagnostics id =? [
-        error (90, 92) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "", Constraints.tagOrLower TagSpace.allNumber))
+        error (90, 92) <| K.UnifyError(ConstraintMismatch(Constraints.stringOrUpper "", Constraints.tagOrLower [types.number]))
     ]
 
 [<Fact>]
@@ -519,7 +519,7 @@ let recursiveConstraint2MissingFieldError() =
     =? List.map Diagnostic.normalize [
         RequireField(
             Map [
-                FieldKey.String "_h", scheme1With (types.valueKind, Constraints.ofSpace(TagSpace.ofNumbers [5.], TagSpace.allNumber)) <| fun t1 -> t1
+                FieldKey.String "_h", scheme1With (types.valueKind, Constraints.ofSpace([Type.numberLiteralType 5.], [types.number])) <| fun t1 -> t1
                 FieldKey.String "area", scheme1With
                     (types.valueKind, Constraints.ofFields ["_h", types.number; "_w", types.number]) (fun t1 ->
                         [t1] ->. [types.number]
@@ -583,14 +583,14 @@ let ifAndReturnTagSpaceConstraint() =
     =?
 
     // type(a: (123 | "ok")..) -> a
-    scheme1With (types.valueKind, Constraints.tagOrUpper (TagSpace.ofStrings ["ok"] + TagSpace.ofNumbers [123.])) id
+    scheme1With (types.valueKind, Constraints.literalsOrUpper [S.String "ok"; S.Number 123.]) id
 
 [<Fact(DisplayName = "'ok' or 123")>]
 let orOperatorTyping() =
     chunkScheme id "return 'ok' or 123"
     =?
     // type(a: ("ok" | 123)..) -> a
-    scheme1With (types.valueKind, Constraints.tagOrUpper (TagSpace.ofStrings ["ok"] + TagSpace.ofNumbers [123.])) id
+    scheme1With (types.valueKind, Constraints.literalsOrUpper [S.String "ok"; S.Number 123.]) id
 
 [<Fact>]
 let localGeneralize() =
@@ -599,7 +599,7 @@ let localGeneralize() =
     return x, x
     "
     =?
-    let c = Constraints.tagOrUpper (TagSpace.ofStrings ["ok"] + TagSpace.ofNumbers [123.])
+    let c = Constraints.literalsOrUpper [S.String "ok"; S.Number 123.]
     let t = type1With (fun o -> { o with t = { o.t with normalize = id }; p0 = { o.p0 with c = fun _ -> c } }) id
     multi [t; t]
     |> Scheme.normalize
@@ -613,9 +613,9 @@ let localGeneralizeAndUnion() =
     return x2, x3
     "
     =?
-    let s = TagSpace.ofStrings ["ok"] + TagSpace.ofNumbers [123.]
-    let c1 = Constraints.tagOrUpper (s + TagSpace.true')
-    let c2 = Constraints.tagOrUpper (s + TagSpace.nil)
+    let s = [S.String "ok"; S.Number 123.]
+    let c1 = Constraints.literalsOrUpper [yield! s; S.True]
+    let c2 = Constraints.literalsOrUpper [yield! s; S.Nil]
     let t1 = type1With (fun c -> { c with t = { c.t with normalize = id }; p0 = { c.p0 with c = fun _ -> c1 } }) id
     let t2 = type1With (fun c -> { c with t = { c.t with normalize = id }; p0 = { c.p0 with c = fun _ -> c2 } }) id
     multi [
@@ -633,10 +633,20 @@ let typeLocation() =
     "
     |> snd
     =? [
-        ConstraintMismatch(
-            Constraints.stringOrUpper "a" |> Constraints.withLocation [location "C:/dir/file.lua" (15, 18)],
-            Constraints.tagOrLower TagSpace.allNumber |> Constraints.withLocation [location "C:/dir/file.lua" (48, 49)]
-        )
+        let c =
+            Constraints.tagOrUpper [
+                LiteralType(S.String "a")
+                |> Type.makeWithLocation [location "C:/dir/file.lua" (15, 18)]
+            ]
+            |> Constraints.withLocation [location "C:/dir/file.lua" (15, 18)]
+
+        let t =
+            Constraints.tagOrLower [
+                types.number
+            ]
+            |> Constraints.withLocation [location "C:/dir/file.lua" (48, 49)]
+
+        ConstraintMismatch(c, t)
         |> K.UnifyError
         |> error (46, 47)
     ]
@@ -864,7 +874,7 @@ let resultRestError1() =
     return f(function() return 1 end)
     "
     =? [
-        ConstraintMismatch(C.literalsOrUpper [S.Nil], C.tagOrLower TagSpace.allNumber)
+        ConstraintMismatch(C.literalsOrUpper [S.Nil], C.tagOrLower [types.number])
         |> K.UnifyError
         |> error (72, 97)
     ]
@@ -876,7 +886,7 @@ let resultRestError2() =
     return f(function() return 1, 'a' end)
     "
     =? [
-        ConstraintMismatch(C.stringOrUpper "a", C.tagOrLower TagSpace.allNumber)
+        ConstraintMismatch(C.stringOrUpper "a", C.tagOrLower [types.number])
         |> K.UnifyError
         |> error (72, 102)
     ]
@@ -895,7 +905,7 @@ let localMultiTyping() =
     // nil, (type(zn: (nil | 10)..) -> zn)
     =? multi [
         types.nil
-        type1WithConstraints (C.tagOrUpper (TagSpace.nil + TagSpace.ofNumbers [10.])) id
+        type1WithConstraints (C.literalsOrUpper [S.Nil; S.Number 10.]) id
     ]
 
 [<Fact>]
@@ -914,7 +924,7 @@ let returnTypeOfDifferentLengthBinaryOp() =
     ---@global x boolean
     if x then return 1 / 2 end
     "
-    =? type1WithConstraints (C.tagOrUpper (TagSpace.allNumber + TagSpace.nil)) (fun r ->
+    =? type1WithConstraints (C.tagOrUpper [Type.literalType S.Nil; types.number]) (fun r ->
         multi [r]
     )
 
@@ -1110,6 +1120,15 @@ let loopAndInnerBreakAndReturn() =
         end
     end
     return f()
+    "
+    =? multi [
+        types.number
+    ]
+
+[<Fact>]
+let add10() =
+    chunkResult id "
+    return 10 + 10
     "
     =? multi [
         types.number

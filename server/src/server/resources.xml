@@ -24,7 +24,6 @@
     <KindMismatch>KindMismatch({0}, {1})</KindMismatch>
     <ConstraintMismatch>ConstraintMismatch({0}, {1})</ConstraintMismatch>
     <ConstraintAndTypeMismatch>ConstraintAndTypeMismatch({0}, {1})</ConstraintAndTypeMismatch>
-    <TagSpaceConstraintMismatch>TagSpaceConstraintMismatch({0}, {1}, {2}, {3})</TagSpaceConstraintMismatch>
     <ParseError>ParseError({0})</ParseError>
     <UnifyError>UnifyError({0})</UnifyError>
     <ReturnValueIgnored>ReturnValueIgnored</ReturnValueIgnored>

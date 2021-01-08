@@ -7,7 +7,6 @@ open System.Collections.Concurrent
 let standardTypeSystem =
     let valueKind = NamedKind "value"
     let multiKind = NamedKind "multi"
-    let nilConstant = TypeConstant("nil", valueKind)
     let booleanConstant = TypeConstant("boolean", valueKind)
     let numberConstant = TypeConstant("number", valueKind)
     let stringConstant = TypeConstant("string", valueKind)
@@ -26,11 +25,14 @@ let standardTypeSystem =
         | Syntaxes.String x -> x
 
     /// type(x: tag..): x
-    let tagOrUpperConstraint lowerBound = TagSpaceConstraint(lowerBound = lowerBound, upperBound = TagSpace.full)
+    let tagOrUpperConstraint lowerBound = UnionConstraint(lowerBound = lowerBound, upperBound = UniversalTypeSet)
 
     /// e.g. `type(x: 10..): x`
     let makeLiteral x = fun location ->
-        TagSpace.ofLiteral x
+        LiteralType x
+        |> Type.makeWithLocation location
+        |> List.singleton
+        |> TypeSet
         |> tagOrUpperConstraint
         |> Constraints.makeWithLocation location
         |> Type.newVarWith (literalNaming x) 1000000 valueKind
@@ -64,8 +66,7 @@ let standardTypeSystem =
             literalCache.Clear()
         literalCache.GetOrAdd(x, valueFactory = makeLiteralFunc) location
     {
-        nilConstant = nilConstant
-        nil = valueType0 nilConstant
+        nil = LiteralType Syntaxes.Nil
         booleanConstant = booleanConstant
         boolean = valueType0 booleanConstant
         numberConstant = numberConstant

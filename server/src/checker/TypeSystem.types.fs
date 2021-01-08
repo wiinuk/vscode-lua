@@ -276,6 +276,8 @@ type Type = Token<Type', Location list>
 type Type' =
     ///<summary>e.g. `number` `table&lt;number, ?v&gt;` `fun(): ()`</summary>
     | NamedType of TypeConstant * Type list
+    /// e.g. `nil` `false` `-0.5` `"text"`
+    | LiteralType of S.LiteralKind
     /// e.g. `{ x: number }`
     | InterfaceType of fields: Map<FieldKey, Type>
 
@@ -294,249 +296,29 @@ with
         TypeExtensions.Append(&b, x, &options, &state)
         b.ToString()
 
-[<RequireQualifiedAccess>]
-type TagElement =
-    | Literal of S.LiteralKind
-    | AllBoolean
-    | AllNumber
-    | AllString
-    | AllTable
-    | AllFunction
-    | AllThread
+[<Struct>]
+type TypeSet =
+    | TypeSet of Type list
+    | UniversalTypeSet
 
-module TagElement =
-    let show e =
-        use mutable b = ZString.CreateStringBuilder()
-        ConstraintsExtensions.AppendTagElement(&b, e)
-        b.ToString()
+module TypeSet =
+    let empty = TypeSet []
+    let isEmpty = function
+        | TypeSet [] -> true
+        | _ -> false
 
-[<System.Flags>]
-type TagSet =
-    | Empty         = 0b00000000uy
-    | Nil           = 0b00000001uy
-    | False         = 0b00000010uy
-    | True          = 0b00000100uy
-    | AllNumber     = 0b00001000uy
-    | AllString     = 0b00010000uy
-    | AllTable      = 0b00100000uy
-    | AllFunction   = 0b01000000uy
-    | AllThread     = 0b10000000uy
+    let isUniversal = function
+        | UniversalTypeSet -> true
+        | _ -> false
 
-[<DebuggerDisplay "{_DebuggerDisplay,nq}"; StructuredFormatDisplay "{_DebuggerDisplay}">]
-type TagSpace = {
-    tagSet: TagSet
-    numberElements: double Set
-    stringElements: string Set
-}
-with
-    [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
-    member private x._DebuggerDisplay =
-        use mutable b = ZString.CreateStringBuilder()
-        TagSpaceExtensions.Append(&b, x)
-        b.ToString()
+    let toList = function
+        | UniversalTypeSet -> []
+        | TypeSet ts -> ts
 
-    static member (+)(l, r) = TagSpace.union l r
-
-[<Extension>]
-type TagSpaceExtensions =
-    [<Extension>]
-    static member Append(b: _ byref, s) =
-        let isSingle = TagSpace.lexicalElementCount s <= 1
-
-        if not isSingle then b.Append '('
-        let xs = TagSpace.toElements s
-
-        let emptySymbol = '\u2205' // '∅' ( EMPTY SET )
-
-        match Set.count xs with
-        | 0 -> b.Append emptySymbol
-        | 1 -> b.AppendTagElement(Set.minElement xs)
-        | _ ->
-            use e = Set.toSeq(xs).GetEnumerator()
-            if e.MoveNext() then
-                b.AppendTagElement(e.Current)
-                while e.MoveNext() do
-                    b.Append " | "
-                    b.AppendTagElement(e.Current)
-            else
-                b.Append emptySymbol
-
-        if not isSingle then b.Append ')'
-
-module TagSpace =
-    module private TagSet =
-        let [<Literal>] AllBoolean = TagSet.True ||| TagSet.False
-        let [<Literal>] Full =
-            TagSet.Nil |||
-            TagSet.False |||
-            TagSet.True |||
-            TagSet.AllNumber |||
-            TagSet.AllString |||
-            TagSet.AllTable |||
-            TagSet.AllFunction |||
-            TagSet.AllThread
-
-    let private ofTagSet x = {
-        tagSet = x
-        numberElements = Set.empty
-        stringElements = Set.empty
-    }
-
-    let empty = ofTagSet TagSet.Empty
-    /// nil
-    let nil = ofTagSet TagSet.Nil
-    /// boolean
-    let allBoolean = ofTagSet TagSet.AllBoolean
-    /// number
-    let allNumber = ofTagSet TagSet.AllNumber
-    /// string
-    let allString = ofTagSet TagSet.AllString
-    /// table
-    let allTable = ofTagSet TagSet.AllTable
-    /// function
-    let allFunction = ofTagSet TagSet.AllFunction
-    /// thread
-    let allThread = ofTagSet TagSet.AllThread
-    let full = ofTagSet TagSet.Full
-
-    let ofLiteral = function
-        | S.Nil -> ofTagSet TagSet.Nil
-        | S.False -> ofTagSet TagSet.False
-        | S.True -> ofTagSet TagSet.True
-        | S.Number x -> { tagSet = TagSet.Empty; numberElements = Set.singleton x; stringElements = Set.empty }
-        | S.String x -> { tagSet = TagSet.Empty; numberElements = Set.empty; stringElements = Set.singleton x }
-
-    let containsAllBoolean s = s.tagSet &&& TagSet.AllBoolean = TagSet.AllBoolean
-    let containsAllNumber s = s.tagSet &&& TagSet.AllNumber = TagSet.AllNumber
-    let containsAllString s = s.tagSet &&& TagSet.AllString = TagSet.AllString
-
-    let isEmpty s = s.tagSet = TagSet.Empty && Set.isEmpty s.numberElements && Set.isEmpty s.stringElements
-    let isFull s = s.tagSet &&& TagSet.Full = TagSet.Full
-
-    /// isEmpty (s1 - s2)
-    let isSubset s1 s2 =
-        (s1.tagSet &&& ~~~s2.tagSet = TagSet.Empty) &&
-        (containsAllNumber s2 || Set.isSubset s1.numberElements s2.numberElements) &&
-        (containsAllString s2 || Set.isSubset s1.stringElements s2.stringElements)
-
-    let private popCount32 x =
-        let x = x - ((x >>> 1) &&& 0x55555555u)
-        let x = (x &&& 0x33333333u) + ((x >>> 2) &&& 0x33333333u)
-        let x = ((x + (x >>> 4)) &&& 0xF0F0F0Fu) * 16843009u >>> 24
-        int x
-
-    let lexicalElementCount s =
-        Set.count s.numberElements +
-        Set.count s.stringElements +
-        popCount32(uint32 s.tagSet)
-
-    /// normalize (string | "a" | "b" | 1) = (string | 1)
-    let normalize s =
-        let s =
-            if s.tagSet &&& TagSet.AllNumber = TagSet.AllNumber
-            then { s with numberElements = Set.empty }
-            else s
-
-        let s =
-            if s.tagSet &&& TagSet.AllString = TagSet.AllString
-            then { s with stringElements = Set.empty }
-            else s
-        s
-
-    let union s1 s2 = normalize {
-        tagSet = s1.tagSet ||| s2.tagSet
-        numberElements = s1.numberElements + s2.numberElements
-        stringElements = s1.stringElements + s2.stringElements
-    }
-    let intersect s1 s2 = normalize {
-        tagSet = s1.tagSet &&& s2.tagSet
-        numberElements = Set.intersect s1.numberElements s2.numberElements
-        stringElements = Set.intersect s1.stringElements s2.stringElements
-    }
-    let private has s x = s.tagSet &&& x = x
-    let toElements s = Set.ofSeq <| seq {
-        if has s TagSet.Nil then TagElement.Literal S.Nil
-        if containsAllBoolean s
-        then
-            TagElement.AllBoolean
-        else
-            if has s TagSet.False then TagElement.Literal S.False
-            if has s TagSet.True then TagElement.Literal S.True
-        if has s TagSet.AllNumber then TagElement.AllNumber
-        if has s TagSet.AllString then TagElement.AllString
-        if has s TagSet.AllTable then TagElement.AllTable
-        if has s TagSet.AllFunction then TagElement.AllFunction
-        if has s TagSet.AllThread then TagElement.AllThread
-        for x in s.numberElements do TagElement.Literal <| S.Number x
-        for x in s.stringElements do TagElement.Literal <| S.String x
-    }
-
-    let difference1 s1 s2 =
-        let notContainsNumber xs =
-            if not <| Set.contains 0. xs then 0. else
-
-            let x = Set.maxElement xs
-            let maxSafeInteger = 9007199254740991.
-            if not (System.Double.IsNaN x || System.Double.IsInfinity x || maxSafeInteger <= x) then round x + 1. else
-
-            let x = Set.minElement xs
-            let minSafeInteger = -9007199254740991.
-            if not (System.Double.IsNaN x || System.Double.IsInfinity x || x <= minSafeInteger) then round x - 1. else
-
-            Seq.initInfinite double |> Seq.find (fun x -> Set.contains x xs |> not)
-
-        let notContainsString xs =
-            if not <| Set.contains "a" xs then "a" else
-            Seq.initInfinite (fun x ->
-                let c = char (int 'a' + x)
-                if c <= 'z' then string c
-                else sprintf "a%d" <| x - (int 'z' - int 'a')
-            )
-            |> Seq.find (fun x -> Set.contains x xs |> not)
-
-        let diff1Numbers s1 s2 =
-            match containsAllNumber s1, containsAllNumber s2 with
-
-            // diff ( … | number | … ) ( … | number | … )
-            // diff ( … | 0 | 1 | 2 | … ) ( … | number | … )
-            | _, true -> ValueNone
-
-            // diff ( … | 0 | 1 | 2 | … ) ( … | 0 | 1 | 2 | … )
-            | false, _ ->
-                let ns = s1.numberElements - s2.numberElements
-                if Set.isEmpty ns then ValueNone
-                else Set.minElement ns |> S.Number |> TagElement.Literal |> ValueSome
-
-            // diff ( … | number | … ) ( … | 0 | 1 | 2 | … )
-            | true, _ ->
-                if Set.isEmpty s2.numberElements
-                then ValueSome TagElement.AllNumber
-                else notContainsNumber s2.numberElements |> S.Number |> TagElement.Literal |> ValueSome
-
-        let diff1Strings s1 s2 =
-            match containsAllString s1, containsAllString s2 with
-            | _, true -> ValueNone
-            | false, _ ->
-                let ss = s1.stringElements - s2.stringElements
-                if Set.isEmpty ss then ValueNone
-                else Set.minElement ss |> S.String |> TagElement.Literal |> ValueSome
-            | true, _ ->
-                if Set.isEmpty s2.numberElements
-                then ValueSome TagElement.AllString
-                else notContainsString s2.stringElements |> S.String |> TagElement.Literal |> ValueSome
-
-        match diff1Numbers s1 s2 with
-        | ValueSome _ as r -> r
-        | _ ->
-
-        match diff1Strings s1 s2 with
-        | ValueSome _ as r -> r
-        | _ -> ofTagSet (s1.tagSet &&& ~~~s2.tagSet) |> toElements |> Seq.tryHead |> Option.unbox
-
-    let show s =
-        use mutable b = ZString.CreateStringBuilder()
-        TagSpaceExtensions.Append(&b, s)
-        b.ToString()
+    let map mapping = function
+        | UniversalTypeSet
+        | TypeSet [] as t -> t
+        | TypeSet ts -> List.map mapping ts |> TypeSet
 
 type Constraints = Token<Constraints', Location list>
 [<DebuggerDisplay "{_DebuggerDisplay,nq}"; StructuredFormatDisplay "{_DebuggerDisplay}">]
@@ -545,7 +327,7 @@ type Constraints' =
     | InterfaceConstraint of Map<FieldKey, Type>
     | MultiElementTypeConstraint of Type
     /// e.g. `'a : (10 | "a" | table)..` `'a : ..number`
-    | TagSpaceConstraint of lowerBound: TagSpace * upperBound: TagSpace
+    | UnionConstraint of lowerBound: TypeSet * upperBound: TypeSet
 with
     [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
     member private x._DebuggerDisplay =
@@ -569,25 +351,30 @@ type ConstraintsExtensions =
         match c with
         | InterfaceConstraint fs -> FieldsExtensions.Append(&b, fs, &options, &state)
         | MultiElementTypeConstraint t -> b.Append(t.kind, &options, &state)
-        | TagSpaceConstraint(lower, upper) ->
-            if lower = upper then b.Append(lower) else
-
-            if not <| TagSpace.isEmpty lower then
-                b.Append(lower)
+        | UnionConstraint(lower, upper) ->
+            if not <| TypeSet.isEmpty lower then
+                b.AppendTypeSet(lower, &options, &state)
             b.Append ".."
-            if not <| TagSpace.isFull upper then
-                b.Append(upper)
+            if not <| TypeSet.isUniversal upper then
+                b.AppendTypeSet(upper, &options, &state)
 
     [<Extension>]
-    static member AppendTagElement(b: _ byref, x) =
-        match x with
-        | TagElement.Literal x -> b.AppendLiteral x
-        | TagElement.AllBoolean -> b.Append "boolean"
-        | TagElement.AllNumber -> b.Append "number"
-        | TagElement.AllString -> b.Append "string"
-        | TagElement.AllTable -> b.Append "table"
-        | TagElement.AllFunction -> b.Append "function"
-        | TagElement.AllThread -> b.Append "thread"
+    static member AppendTypeSet(b: _ byref, typeSet, options: _ inref, state: _ byref) =
+        match typeSet with
+        | UniversalTypeSet -> b.Append "unknown"
+        | TypeSet ts ->
+
+        match ts with
+        | [] -> b.Append "never"
+        | [t] -> b.Append(t.kind, &options, &state)
+        | t::ts ->
+
+        b.Append '('
+        b.Append(t.kind, &options, &state)
+        for t in ts do
+            b.Append " | "
+            b.Append(t.kind, &options, &state)
+        b.Append ')'
 
 [<Extension>]
 type FieldsExtensions =
@@ -651,6 +438,7 @@ type TypeExtensions =
             then b.AppendNamedTypeApply(t, ts, &options, &state)
             else b.AppendOperandTypeApplyOrNamedTypeApply(t, ts, &options, &state)
 
+        | LiteralType x -> b.AppendLiteral x
         | InterfaceType fields -> b.Append(fields, &options, &state)
         | ParameterType(TypeParameterId(x, k) as p) ->
             b.AppendIndexedName(getOrCreateFleshParameterName p "TFree" &state)
@@ -876,7 +664,6 @@ type MultiTypeExtensions =
 type Scheme = Type
 
 type TypeSystem = {
-    nilConstant: TypeConstant
     /// `nil`
     nil: Type'
     booleanConstant: TypeConstant

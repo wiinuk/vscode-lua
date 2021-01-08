@@ -5,6 +5,13 @@ open LuaChecker.Syntax
 open System.Text.RegularExpressions
 
 
+module LiteralKind =
+    open type System.Double
+    let equalsER v1 v2 =
+        match v1, v2 with
+        | Number v1, Number v2 -> v1 = v2 || (IsNaN v1 && IsNaN v2)
+        | _ -> v1 = v2
+
 module Token =
     let measure x = x.trivia.span
     let inline map mapping x = { kind = x.kind; trivia = mapping x.trivia }

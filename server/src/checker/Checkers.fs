@@ -504,9 +504,19 @@ let binaryExpType (Types types & TypeCache typeCache as env) (e1, t1) op (e2, t2
 let unaryExpType (Types types & TypeCache typeCache as env) op (e1, t1) =
     let l = sourceLocation env op.trivia.span
     match op.kind with
-    // type(a: ..(string | table), b: number..) -> fun(a) -> b
+    // type(k, v, a: ..(string | table<k, v>), b: number..) -> fun(a) -> b
     | Len ->
-        let a = newValueVarTypeWith env "a" (typeCache.stringOrTableOrLowerConstraint |@ l) |@ l
+        let k = newValueVarTypeWith env "k" Constraints.any |@ l
+        let v = newValueVarTypeWith env "v" Constraints.any |@ l
+        let stringOrTableOrLowerConstraint =
+            UnionConstraint(
+                lowerBound = TypeSet.empty,
+                upperBound = TypeSet [
+                    types.string |@ l
+                    types.table(k, v) |@ l
+                ]
+            )
+        let a = newValueVarTypeWith env "a" (stringOrTableOrLowerConstraint |@ l) |@ l
         let r = newValueVarTypeWith env "b" (typeCache.numberOrUpperConstraint |@ l) |@ l
         unifyDiagnosticsAt env e1 t1 a
         let t = types.fn(multiType1 env a l, multiType1 env r l) |@ l
@@ -976,7 +986,7 @@ let args (Types types as env) x =
     | StringArg(StringLiteral s) ->
         let location = sourceLocation env s.trivia.span
         let t =
-            let c = Constraints.literal1 (String s.kind) |@ location
+            let c = Constraints.literal1 location (String s.kind) |@ location
             newValueVarTypeWith env s.kind c |@ location
 
         let l = { kind = String s.kind; trivia = s.trivia }

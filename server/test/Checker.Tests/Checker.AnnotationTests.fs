@@ -8,6 +8,7 @@ open LuaChecker.Primitives
 open LuaChecker.Test
 open LuaChecker.TypeSystem
 type private K = LuaChecker.DiagnosticKind
+module S = Syntaxes
 
 
 [<Fact(DisplayName = "`--[[---@type string]](10)`")>]
@@ -607,7 +608,7 @@ let typeVariableAnnotation() =
     local x2 = id(7)
     return id
     "
-    =? scheme1With (types.valueKind, Constraints.tagOrUpper (TagSpace.ofNumbers [7.] + TagSpace.ofStrings ["a"])) (fun a ->
+    =? scheme1With (types.valueKind, Constraints.literalsOrUpper [S.Number 7.; S.String "a"]) (fun a ->
         [a] ->. [a]
     )
 
@@ -703,7 +704,7 @@ let recursiveClassDefinitionError3() =
     }
     "
     =? [
-        error (121, 217) <| K.UnifyError(ConstraintMismatch(Constraints.tagOrLower TagSpace.allString, Constraints.numberOrUpper 123.))
+        error (121, 217) <| K.UnifyError(ConstraintMismatch(Constraints.tagOrLower [types.string], Constraints.numberOrUpper 123.))
     ]
 
 let shapesSource = "

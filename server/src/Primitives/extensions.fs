@@ -49,3 +49,28 @@ module List =
         | [] -> xs
         | r::rs -> revAppend rs (r::xs)
 
+    let inline tryRemove predicate xs =
+        let mutable consumedRev = []
+        let mutable rest = xs
+        let mutable result = ValueNone
+        while
+            match rest with
+            | [] -> false
+            | x::xs ->
+                if predicate x then
+                    result <- ValueSome struct(x, revAppend consumedRev xs); false
+                else
+                    consumedRev <- x::consumedRev
+                    rest <- xs
+                    true
+            do ()
+        result
+
+module Result =
+    let defaultValue value = function
+        | Ok x -> x
+        | _ -> value
+
+    let inline defaultWith errorChunk = function
+        | Ok x -> x
+        | Error e -> errorChunk e

@@ -121,9 +121,6 @@ let showUnifyError (Messages m) = function
     | KindMismatch(x1, x2) ->
         String.Format(m.KindMismatch, Kind.show x1, Kind.show x2)
 
-    | TagSpaceConstraintMismatch(x1, x2, x3, x4) ->
-        String.Format(m.TagSpaceConstraintMismatch, TagSpace.show x1, TagSpace.show x2, Type.show x3, TagElement.show x4)
-
 let showSeverity (Messages m) = function
     | Severity.Error -> m.Error
     | Severity.Info -> m.Info
@@ -288,7 +285,6 @@ let marshalUnifyErrorToRelatedInformation (Messages m as context) = function
             (locationsToRelatedInformation context m.ConstraintsSource c.trivia)
             (locationsToRelatedInformation context m.TypeSource t.trivia)
 
-    | TagSpaceConstraintMismatch(_, _, actualType, _) -> locationsToRelatedInformation context m.ActualTypeSource actualType.trivia
     | _ -> upcast []
 
 let marshalDiagnosticKindToRelatedInformation (Messages m as context) path document = function
@@ -573,6 +569,8 @@ type CollectSemanticsVisitor = {
     buffer: int ResizeArray
     lineMap: LineMap
     typeSystemEnv: TypeEnv
+    stringSingleton: LuaChecker.TypeSet
+    numberSingleton: LuaChecker.TypeSet
     mutable lastLine: int
     mutable lastStartChar: int
 }
@@ -654,8 +652,8 @@ let namedTypeSemantics (this: _ byref) typeConstant = function
 
     let types = this.typeSystemEnv.system
 
-    // `boolean` `nil`
-    if typeConstant = types.booleanConstant || typeConstant = types.nilConstant then
+    // `boolean`
+    if typeConstant = types.booleanConstant then
         ValueSome(T.``struct``, M.Empty)
 
     // `number`
@@ -677,25 +675,34 @@ let namedTypeSemantics (this: _ byref) typeConstant = function
     else
         ValueNone
 
-let isSuperLike (lower, upper) super =
+let literalTypeSemantics = function
+    | S.Nil
+    | S.True
+    | S.False -> struct(T.``struct``, M.Empty)
+    | S.String _ -> T.string, M.Empty
+    | S.Number _ -> T.number, M.Empty
+
+let isSuperLike types (lower, upper) super =
+    let (<=.) t1 t2 = TypeSet.isSubset types t1 t2 |> Result.defaultValue false
 
     // `number..` `(1 | 2)..`
-    (TagSpace.isSubset lower super && TagSpace.isFull upper) ||
+    (lower <=. super && TypeSet.isUniversal upper) ||
 
     // `..number` `..(1 | 2)`
-    (TagSpace.isSubset upper super && TagSpace.isEmpty lower) ||
+    (upper <=. super && TypeSet.isEmpty lower) ||
 
     // `1..number` `1..(1 | 2)`
-    (TagSpace.isSubset lower super && TagSpace.isSubset upper super)
+    (lower <=. super && upper <=. super)
 
-let constraintsSemantics { Token.kind = constraints } =
+let constraintsSemantics (this: _ inref) { Token.kind = constraints } =
     match constraints with
     | InterfaceConstraint _ -> ValueSome struct(T.``interface``, M.Empty)
     | MultiElementTypeConstraint _ -> ValueNone
-    | TagSpaceConstraint(lower, upper) ->
+    | UnionConstraint(lower, upper) ->
+        let types = this.typeSystemEnv.system
         ValueSome (
-            if isSuperLike (lower, upper) TagSpace.allString then (T.string, M.Empty)
-            elif isSuperLike (lower, upper) TagSpace.allNumber then (T.number, M.Empty)
+            if isSuperLike types (lower, upper) this.stringSingleton then (T.string, M.Empty)
+            elif isSuperLike types (lower, upper) this.numberSingleton then (T.number, M.Empty)
             else (T.enum, M.Empty)
         )
 
@@ -723,23 +730,26 @@ let rec typeSemantics (this: _ byref) { Token.kind = type' } typeParameters type
     // `fun(…) -> (…)` `nil` `table<…,…>`
     | NamedType(typeConstant, _) as t -> namedTypeSemantics &this typeConstant t
 
+    // `nil` `false` `-0.5` `"text"`
+    | LiteralType k -> literalTypeSemantics k |> ValueSome
+
     // `{ x: …, … }`
     | InterfaceType _ -> ValueSome(T.``class``, M.Empty)
 
     // `a`
     | ParameterType id ->
         match findTypeParameterConstraints id typeParameters with
-        | Some c -> constraintsSemantics c
+        | Some c -> constraintsSemantics &this c
         | _ ->
 
         match resolveTypeParameterConstraints typeEnv id with
-        | ValueSome c -> constraintsSemantics c
+        | ValueSome c -> constraintsSemantics &this c
         | _ -> ValueNone
 
     // `?a`
     | VarType v ->
         match v.target with
-        | LuaChecker.Var(_, c) -> constraintsSemantics c
+        | LuaChecker.Var(_, c) -> constraintsSemantics &this c
         | Assigned t -> typeSemantics &this t typeParameters typeEnv
 
     // `type(t) -> …`

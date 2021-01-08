@@ -9,6 +9,7 @@ open LuaChecker.Syntax
 open LuaChecker.Test
 module T = TypedSyntaxes
 module C = Constraints
+module S = Syntaxes
 
 
 [<Fact>]
@@ -338,21 +339,23 @@ let unifyRecursiveConstraint() =
     unify t1 t2 =? ValueNone
 
 [<Fact>]
-let tagSpaceIsSubset() =
-    let ofNumbers = TagSpace.ofNumbers
+let typesIsSubset() =
+    let ofNumbers = List.map Type.numberLiteralType
+    let isSubset t1 t2 = TypeSet.isSubset types' (TypeSet t1) (TypeSet t2) |> Result.defaultWith (failwithf "%A")
+    let allNumber = [types.number]
 
-    TagSpace.isSubset (ofNumbers []) TagSpace.allNumber =? true
-    TagSpace.isSubset (ofNumbers []) (ofNumbers []) =? true
-    TagSpace.isSubset (ofNumbers []) (ofNumbers [1.]) =? true
-    TagSpace.isSubset (ofNumbers [1.]) (ofNumbers []) =? false
-    TagSpace.isSubset (ofNumbers [1.;2.]) (ofNumbers [1.;2.]) =? true
-    TagSpace.isSubset (ofNumbers [1.]) (ofNumbers [1.;2.]) =? true
-    TagSpace.isSubset (ofNumbers [1.;2.]) (ofNumbers [1.]) =? false
-    TagSpace.isSubset (ofNumbers [1.;2.]) (ofNumbers [1.;3.]) =? false
-    TagSpace.isSubset TagSpace.allNumber (ofNumbers []) =? false
-    TagSpace.isSubset (ofNumbers [1.;2.]) TagSpace.allNumber =? true
-    TagSpace.isSubset TagSpace.allNumber (ofNumbers [1.;2.]) =? false
-    TagSpace.isSubset TagSpace.allNumber TagSpace.allNumber =? true
+    isSubset (ofNumbers []) allNumber =? true
+    isSubset (ofNumbers []) (ofNumbers []) =? true
+    isSubset (ofNumbers []) (ofNumbers [1.]) =? true
+    isSubset (ofNumbers [1.]) (ofNumbers []) =? false
+    isSubset (ofNumbers [1.;2.]) (ofNumbers [1.;2.]) =? true
+    isSubset (ofNumbers [1.]) (ofNumbers [1.;2.]) =? true
+    isSubset (ofNumbers [1.;2.]) (ofNumbers [1.]) =? false
+    isSubset (ofNumbers [1.;2.]) (ofNumbers [1.;3.]) =? false
+    isSubset allNumber (ofNumbers []) =? false
+    isSubset (ofNumbers [1.;2.]) allNumber =? true
+    isSubset allNumber (ofNumbers [1.;2.]) =? false
+    isSubset allNumber allNumber =? true
 
 [<Fact>]
 let unifyAbstractionAndTagSpaceConstraint() =
@@ -367,10 +370,6 @@ let unifyAbstractionAndTagSpaceConstraint() =
     unify with1T a =? ValueNone
 
 [<Fact>]
-let stringTypeToTagSpace() =
-    typeToSpace typeEnv' types.string =? ValueSome TagSpace.allString
-
-[<Fact>]
 let unifyStringSpaceConstraintInMulti() =
     let r = MultiType.newVar 1
     let r1 = multi [stringT "ok"]
@@ -381,7 +380,7 @@ let unifyStringSpaceConstraintInMulti() =
     Scheme.normalize r
     =?
     // type(a: ("ok" | 123)..) -> (a,)
-    scheme1With (types.valueKind, Constraints.tagOrUpper (TagSpace.ofStrings ["ok"] + TagSpace.ofNumbers [123.])) (fun a -> multi [a])
+    scheme1With (types.valueKind, Constraints.literalsOrUpper [S.String "ok"; S.Number 123.]) (fun a -> multi [a])
 
 [<Fact(DisplayName = "unify (?es...(?x: 'a'..)) ()")>]
 let unifyElementTypeConstrainedMultiVarAndEmpty() =
@@ -418,3 +417,11 @@ let stringAsInterface() =
     let t1 = types.string
     let t2 = Type.newVarWithFields 1 ["upper", upperType]
     Type.unify typeEnv t1 t2 =? ValueNone
+
+[<Fact>]
+let unifyNumberLiteralAndNumberConstraint() =
+    /// 10..
+    let t1 = Type.newValueVarWith 1 (Constraints.numberOrUpper 10.)
+    /// ..number
+    let t2 = Type.newValueVarWith 1 (Constraints.tagOrLower [types.number])
+    unify t1 t2 =? ValueNone
