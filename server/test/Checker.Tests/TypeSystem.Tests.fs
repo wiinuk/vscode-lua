@@ -425,3 +425,16 @@ let unifyNumberLiteralAndNumberConstraint() =
     /// ..number
     let t2 = Type.newValueVarWith 1 (Constraints.tagOrLower [types.number])
     unify t1 t2 =? ValueNone
+
+[<Fact>]
+let unifyTableAndTableConstraint() =
+
+    /// `table<number, number>`
+    let t1 = types.table(types.number, types.number)
+
+    /// `?a: ..table<number, ?v>`
+    let t2 =
+        let v = Type.newValueVarWith 1 Constraints.any
+        Type.newValueVarWith 1 (Constraints.tagOrLower [types.table(types.number, v)])
+
+    unify t1 t2 =? ValueNone

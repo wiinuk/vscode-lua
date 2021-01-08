@@ -1133,3 +1133,10 @@ let add10() =
     =? multi [
         types.number
     ]
+
+[<Fact>]
+let tableLength() =
+    chunkResult id "
+    return #{1}
+    "
+    =? multi [types.number]
