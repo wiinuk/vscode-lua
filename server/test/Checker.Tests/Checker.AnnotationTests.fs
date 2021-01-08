@@ -1031,3 +1031,13 @@ let localTypeAnnotationTypeVariableScope2() =
     return name, getId()
     "
     =? multi [types.string; types.number]
+
+[<Fact>]
+let localFunctionTypeAnnotationDiagnostics() =
+    chunkDiagnostics id "
+    ---@type fun(): string
+    local function f() end
+    "
+    =? [
+        error (0, 0) K.RequireMultiType
+    ]
