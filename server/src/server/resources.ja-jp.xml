@@ -29,8 +29,6 @@
     <RequireMultiType>複型が必要です。`()` や `(number,)` や `(number, string, ...)` や `...` などが有効です</RequireMultiType>
     <DuplicateTag>タグ `{0}` が重複しています</DuplicateTag>
     <FieldParentTagNotFound>親タグ ( `@class` など ) がこのタグの前に必要です。このタグは無視されます</FieldParentTagNotFound>
-    <GenericTagParentSyntaxNotFound>親構文 ( `@class` など ) がこのタグの後に必要です。このタグは無視されます</GenericTagParentSyntaxNotFound>
-    <TypeTagParentSyntaxNotFound>親構文 ( `local` など ) がこのタグの後に必要です。このタグは無視されます</TypeTagParentSyntaxNotFound>
 
     <Error>エラー</Error>
     <Warning>警告</Warning>
