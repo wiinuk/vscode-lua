@@ -331,7 +331,7 @@ module private Helpers =
         | e -> struct(e, instantiated)
 
     let instantiate env struct(e, scheme) =
-        let struct(tvs, instantiated) = Scheme.instantiate env.rare.typeLevel scheme
+        let struct(tvs, instantiated) = Scheme.instantiate env.rare.noUpdate.typeSubst env.rare.typeLevel scheme
         match tvs with
         | _::_ -> trySetSchemeInstantiationInfo scheme tvs instantiated e
         | _ -> struct(e, instantiated)
@@ -389,10 +389,11 @@ module private Helpers =
                 newMultiVarType env TypeNames.lostByError |@ functionTypeLocations,
                 newMultiVarType env TypeNames.lostByError |@ functionTypeLocations
             ) |@ functionTypeLocations
-            |> Scheme.generalize env.rare.typeLevel
+            |> Scheme.generalize env.rare.noUpdate.typeSubst env.rare.typeLevel
 
         T.ancestorModulePaths = Set.empty
         T.additionalGlobalEnv = Env.empty
+        T.typeSubstitute = Subst.empty
     }
     let analyzeModuleFile env span modulePath moduleFile =
         match moduleFile.stage with
@@ -559,7 +560,7 @@ let exp env x =
 
     | Function(functionKeyword, body) ->
         let struct(body, functionType) = funcBody (enterTypeScope env) ValueNone functionKeyword None [] body
-        let functionType = Scheme.generalizeAndAssign env.rare.typeLevel functionType
+        let functionType = Scheme.generalizeAndAssign env.rare.noUpdate.typeSubst env.rare.typeLevel functionType
         withSpan x.trivia <| T.Function body, functionType
 
     | PrefixExp x -> prefixExp env x
@@ -1044,10 +1045,10 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
 
     // 戻り値型を求める
     let resultType =
-        let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.functionType
-        let typeEnv = typeEnv env
+        let struct(_, t) = Scheme.instantiate env.rare.noUpdate.typeSubst env.rare.typeLevel chunk.functionType
+        let (Types types) = env
         match t.kind with
-        | Type.Function typeEnv (ValueSome(_, r)) -> r
+        | Type.Function types (ValueSome(_, r)) -> r
         | _ -> t
 
     // モジュールの追加的グローバル環境を導入する
@@ -1168,7 +1169,7 @@ let local env state span (modifierTags, names, values) =
     let nameAndTypes2 =
         nameAndTypes
         |> NonEmptyList.map (fun struct(n, t) ->
-            let t = Scheme.generalizeAndAssign env.rare.typeLevel t
+            let t = Scheme.generalizeAndAssign env.rare.noUpdate.typeSubst env.rare.typeLevel t
             struct(n, t)
         )
 
@@ -1297,7 +1298,7 @@ let ifStat env state (cond, ifTrue, elseIfClauses, elseClause) =
 let forStat (TypeCache typeCache as env) state (Name { kind = name; trivia = { span = nameSpan } } & var, start, stop, step, body) =
     let env' = enterChunkLocal env
     let varL = sourceLocation env nameSpan
-    let struct(_, varV) = Scheme.instantiate env.rare.typeLevel (newValueVarTypeWith env TypeNames.forVar (typeCache.numberOrUpperConstraint |@ varL) |@ varL)
+    let struct(_, varV) = Scheme.instantiate env.rare.noUpdate.typeSubst env.rare.typeLevel (newValueVarTypeWith env TypeNames.forVar (typeCache.numberOrUpperConstraint |@ varL) |@ varL)
     let var = makeVar S.Local I.Variable R.Definition var varV
     let struct(start', startType) = exp env' start
     let startL = sourceLocation env start.trivia
@@ -1406,7 +1407,7 @@ let localFunction (Types types & env) state (modifierTags, functionKeyword, Name
     let env' = enterTypeScope env
     let nameLocation = Some <| Location(env.rare.noUpdate.filePath, nameTrivia.span)
     let struct(body, functionType) = funcBody env' annotationType functionKeyword (Some(nameLocation, S.Local, R.Definition, name)) [] body
-    let functionScheme = Scheme.generalizeAndAssign env.rare.typeLevel functionType
+    let functionScheme = Scheme.generalizeAndAssign env.rare.noUpdate.typeSubst env.rare.typeLevel functionType
     let env = extend nameLocation S.Local I.Variable R.Definition name functionScheme env
     let stat = T.LocalFunction(modifierTags, makeVar S.Local I.Variable R.Definition var functionScheme, body)
     stat, env, state
@@ -1484,6 +1485,7 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
 
     let additionalGlobalEnv = Local.create scope Env.empty
     let types = env.typeSystem
+    let subst = Subst.create()
     let env = {
         nameToDeclaration = Map.empty
         rare = {
@@ -1502,6 +1504,7 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
             noUpdate = {
                 types = types
                 typeCache = env.derivedTypes
+                typeSubst = subst
                 diagnostics = diagnostics
                 filePath = filePath
                 source = lazy fetchSourceContents fs source
@@ -1522,10 +1525,11 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
         reportIfUnifyError env x.trivia.span env.rare.returnType (nilOrUppers env [])
 
     let chunkFunctionType = types.fn(env.rare.varArgType, env.rare.returnType) |@ []
-    let functionScheme = Scheme.generalizeAndAssign chunkTypeLevel chunkFunctionType
+    let functionScheme = Scheme.generalizeAndAssign subst chunkTypeLevel chunkFunctionType
     let kind = {
         T.semanticTree = body
         T.functionType = functionScheme
+        T.typeSubstitute = Subst.toImmutable subst
         T.ancestorModulePaths = Local.get ancestorModulePaths
         T.additionalGlobalEnv = Local.get additionalGlobalEnv
     }

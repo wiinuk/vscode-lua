@@ -29,6 +29,7 @@
     <RequireMultiType>複型が必要です。`()` や `(number,)` や `(number, string, ...)` や `...` などが有効です</RequireMultiType>
     <DuplicateTag>タグ `{0}` が重複しています</DuplicateTag>
     <FieldParentTagNotFound>親タグ ( `@class` など ) がこのタグの前に必要です。このタグは無視されます</FieldParentTagNotFound>
+    <UnificationStackTooDeep>型推論の深さが上限に達しました。型注釈をつけると解決する場合があります</UnificationStackTooDeep>
 
     <Error>エラー</Error>
     <Warning>警告</Warning>

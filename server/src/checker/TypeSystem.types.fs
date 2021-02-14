@@ -5,6 +5,10 @@ open LuaChecker.TypeWriteHelpers
 open System.Diagnostics
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
+open System.Collections.Concurrent
+open Cysharp.Text
+open Cysharp.Text
+
 module Name = Syntax.Name
 module S = Syntaxes
 
@@ -74,15 +78,68 @@ module TypePrintScope =
 [<Struct>]
 type IndexedName = IndexedName of baseName: string * index: uint64
 
+type IReadonlySubst<'Right> =
+    abstract TryFind: Var<'K,'C> -> 'Right voption
+    abstract ToImmutable: unit -> 'Right Subst
+
+module Subst =
+    open System.Threading
+
+    let empty = ImmutableSubst Map.empty
+
+    let create() = { variableIdToRight = ref Map.empty }
+    let createOfSeq assigns =
+        let subst = create()
+        for v, r in assigns do
+            assign subst v r
+        subst
+
+    let tryFind (s: 'Subst when 'Subst :> IReadonlySubst<'R> and 'Subst : struct) var = s.TryFind var
+    let toImmutable (s: 'Subst when 'Subst :> IReadonlySubst<'R> and 'Subst : struct) = s.ToImmutable()
+
+    let (|Find|) s v =
+        match tryFind s v with
+        | ValueSome x -> Ok x
+        | _ -> Error v
+
+    let rec assign subst (Var(id = id) as var) right =
+        let location = &subst.variableIdToRight.contents
+        let oldMap = Volatile.Read &location
+        let newMap = Map.add id right oldMap
+        if not <| LanguagePrimitives.PhysicalEquality oldMap (Interlocked.CompareExchange(&location, newMap, oldMap)) then
+            assign subst var right
+
+[<Struct; NoEquality; NoComparison>]
+type MutableSubst<'Right> = private {
+    variableIdToRight: Map<int64,'Right> ref
+} with
+    interface IReadonlySubst<'Right> with
+        member x.TryFind (Var(id = id)) =
+            Map.tryFind id x.variableIdToRight.contents
+
+        member x.ToImmutable() = ImmutableSubst x.variableIdToRight.contents
+
+/// immutable
+[<Struct; NoEquality; NoComparison>]
+type Subst<'Right> = private ImmutableSubst of variableIdToRight: Map<int64,'Right> with
+    interface IReadonlySubst<'Right> with
+        member x.TryFind (Var(id = id)) =
+            let (ImmutableSubst xs) = x
+            Map.tryFind id xs
+
+        member x.ToImmutable() = x
+
 [<Struct>]
-type TypePrintState = {
+type TypePrintState<'Subst> = {
     style: TypePrintOptions
+    subst: 'Subst
     mutable nameToId: Assoc<IndexedName, TypeParameterId>
     mutable nameToVar: Assoc<IndexedName, VarTypeSite>
 }
 module TypePrintState =
-    let create style = {
+    let create subst style = {
         style = style
+        subst = subst
         nameToId = Assoc.empty
         nameToVar = Assoc.empty
     }
@@ -101,7 +158,7 @@ module private TypeWriteHelpers =
         | _ -> ValueNone
 
     let (|MultiVarType|) = function
-        | VarType({ varKind = IsMultiKind true } as r) -> ValueSome r
+        | VarType(Var(kind = IsMultiKind true) as r) -> ValueSome r
         | _ -> ValueNone
 
     let (|MultiParameterType|) = function
@@ -148,8 +205,8 @@ module private TypeWriteHelpers =
     let getOrCreateFleshParameterName (TypeParameterId(id, _) as p) baseName (state: _ byref) =
         getOrCreateFleshName p (uint64 id) baseName &state.nameToId
 
-    let getOrCreateFleshVarName r (state: _ byref) =
-        getOrCreateFleshName r (uint64 <| RuntimeHelpers.GetHashCode r) r.varDisplayName &state.nameToVar
+    let getOrCreateFleshVarName (Var(id = id; displayName = n) as r) (state: _ byref) =
+        getOrCreateFleshName r (uint64 id) n &state.nameToVar
 
 module TypeWriteOptions =
     let Default = {
@@ -173,18 +230,392 @@ module TypeWriteOptions =
         showId = true
     }
 
-type Var<'T,'Constraints> =
-    | Var of level: int * 'Constraints
-    | Assigned of 'T
+[<CustomEquality; CustomComparison>]
+type Var<'Kind,'Constraints> =
+    | Var of
+        id: int64 *
 
-[<ReferenceEquality; NoComparison>]
-type VarSite<'T,'Constraints,'K> = {
-    mutable target: Var<'T,'Constraints>
-    varKind: 'K
-    varDisplayName: string
-}
-type VarKindSite = VarSite<Kind, HEmpty, HEmpty>
-type VarTypeSite = VarSite<Type, Constraints, Kind>
+        // 代入がある場合無視する
+        displayName: string *
+        level: int *
+        kind: 'Kind *
+        constraints: 'Constraints
+
+with
+    member x.Equals(Var(id = y)) =
+        let (Var(id = x)) = x
+        x.Equals y
+
+    member x.CompareTo(Var(id = y)) =
+        let (Var(id = x)) = x
+        x.CompareTo y
+
+    override x.Equals y =
+        match y with
+        | :? Var<'Kind,'Constraints> as y -> x.Equals y
+        | _ -> false
+
+    override x.GetHashCode() =
+        let (Var(id = x)) = x
+        x.GetHashCode()
+
+    interface System.IEquatable<Var<'Kind,'Constraints>> with
+        member x.Equals y = x.Equals y
+
+    interface System.IComparable<Var<'Kind,'Constraints>> with
+        member x.CompareTo y = x.CompareTo y
+
+    interface System.IComparable with
+        member x.CompareTo y = x.CompareTo(y :?> Var<'Kind,'Constraints>)
+
+type VarKindSite = Var<HEmpty, HEmpty>
+type VarTypeSite = Var<Kind, Constraints>
+
+[<Extension>]
+type KindExtensions =
+    [<Extension>]
+    static member AppendKind(b: Utf16ValueStringBuilder byref, k, options: _ inref, state: _ byref) =
+        match k with
+        | NamedKind name -> b.Append name
+        | FunKind([], k) ->
+            b.Append "fun()"
+            if state.style.enableAllowStyleFunResult
+            then b.Append " -> "
+            else b.Append ": "
+            b.AppendKind(k, &options, &state)
+
+        | FunKind(k::ks, k') ->
+            b.Append "fun("
+            b.AppendKind(k, &options, &state)
+            for k in ks do
+                b.Append ", "
+                b.AppendKind(k, &options, &state)
+            b.Append ")"
+            if state.style.enableAllowStyleFunResult
+            then b.Append " -> "
+            else b.Append ": "
+            b.AppendKind(k', &options, &state)
+
+[<Extension>]
+type TypeExtensions =
+    [<Extension>]
+    static member AppendType(b: Utf16ValueStringBuilder byref, x, options: _ inref, state: _ byref) =
+        let style = state.style
+        match x with
+        | VarType r -> b.AppendVarType(r, &options, &state)
+        | NamedType(TypeConstant(_, (NamedKind "multi" | FunKind(_, NamedKind "multi"))), _) ->
+            b.AppendMulti(x, &options, &state)
+
+        | NamedType(TypeConstant("(fun)", _), [m1; m2]) ->
+            b.Append "fun"
+            b.AppendMulti(m1.kind, &options, &state, singleElementNoQuote = true)
+            if style.enableAllowStyleFunResult
+            then b.Append " -> "
+            else b.Append ": "
+            b.AppendMulti(m2.kind, &options, &state, singleElementNoWrap = true, singleElementNoQuote = true)
+
+        | NamedType(TypeConstant(name, _) as t, ts) ->
+            if style.disableTypeOperator || Name.isValid name
+            then b.AppendNamedTypeApply(t, ts, &options, &state)
+            else b.AppendOperandTypeApplyOrNamedTypeApply(t, ts, &options, &state)
+
+        | LiteralType x -> b.AppendLiteral x
+        | InterfaceType fields -> b.AppendFields(fields, &options, &state)
+        | ParameterType(TypeParameterId(x, k) as p) ->
+            b.AppendIndexedName(getOrCreateFleshParameterName p "TFree" &state)
+            if style.showId then
+                b.Append '\''; b.Append x
+            b.AppendKindMark(k, &options, &state)
+
+        | TypeAbstraction(ps, t) ->
+            match ps with
+            | [] when not style.showEmptyTypeAbstraction -> b.AppendType(t.kind, &options, &state)
+            | [] ->
+                b.Append "type()"
+                if style.enableAllowStyleFunResult
+                then b.Append " -> "
+                else b.Append ": "
+                b.AppendType(t.kind, &options, &state)
+            | (p::ps) as pps ->
+
+            for TypeParameter(name, p, _) in pps do
+                getOrCreateFleshParameterName p name &state |> ignore
+
+            b.Append "type("
+            b.AppendTypeParameter(p, &options, &state)
+            for p in ps do
+                b.Append ", "
+                b.AppendTypeParameter(p, &options, &state)
+            b.Append ")"
+            if style.enableAllowStyleFunResult
+            then b.Append " -> "
+            else b.Append ": "
+            b.AppendType(t.kind, &options, &state)
+
+    [<Extension>]
+    static member AppendVarType(b: _ byref, (Var(kind = kind) as r), options: _ inref, state: _ byref) =
+        if List.exists ((=) r) options.visitedVars then
+            b.Append "rec "
+            b.AppendVarIdAndQ(r, &state)
+            b.AppendKindMark(kind, &options, &state)
+        else
+            let options = { options with visitedVars = r::options.visitedVars }
+            match Subst.tryFind state.subst r with
+            | ValueSome t ->
+                if state.style.showAssign then
+                    b.Append "("
+                    b.AppendVarIdAndQ(r, &state)
+                    b.AppendKindMark(kind, &options, &state)
+
+                    b.Append " := "
+                    b.AppendType(t.kind, &options, &state)
+                    b.Append ')'
+                else
+                    b.AppendType(t.kind, &options, &state)
+
+            | ValueNone ->
+                let (Var(level = l; constraints = c)) = r
+
+                b.AppendVarIdAndQ(r, &state)
+                if state.style.showTypeLevel && l <> 0 then
+                    b.Append '('
+                    b.Append l
+                    b.Append ')'
+                b.AppendKindMark(kind, &options, &state)
+
+                if not <| InternalConstraints.isAny c then
+                    let (Var(kind = k)) = r
+
+                    match k with
+                    | IsMultiKind true -> ()
+                    | NamedKind _
+                    | FunKind _ -> b.Append ": "
+                    b.AppendConstraints(c.kind, &options, &state)
+
+    [<Extension>]
+    static member AppendVarIdAndQ(b: _ byref, (Var(id = id) as r), state: _ byref) =
+        b.Append '?'
+        b.AppendIndexedName(getOrCreateFleshVarName r &state)
+        if state.style.showId then
+            b.Append '\''
+            b.Append(uint64 id)
+
+    [<Extension>]
+    static member AppendLiteral(b: _ byref, x) =
+        match x with
+        | S.Nil -> b.Append "nil"
+        | S.True -> b.Append "true"
+        | S.False -> b.Append "false"
+        | S.Number x -> b.AppendNumberLiteral x
+        | S.String x -> b.AppendStringLiteral x
+
+    [<Extension>]
+    static member AppendNumberLiteral(b: _ byref, x) =
+        if System.Double.IsNaN x then b.Append "(0/0)" else
+        if System.Double.IsPositiveInfinity x then b.Append "(1/0)" else
+        if System.Double.IsNegativeInfinity x then b.Append "(-1/0)" else
+        b.Append(x, "G17")
+
+    [<Extension>]
+    static member AppendStringLiteral(b: _ byref, x) =
+        match x with
+        | null -> b.Append "nil"
+        | x ->
+            for x in Syntax.Printer.showString Syntax.Printer.PrintConfig.defaultConfig x do
+                b.Append x
+
+    /// "..." or ": kind" or ""
+    [<Extension>]
+    static member AppendKindMark(b: _ byref, kind, options: _ inref, state: _ byref) =
+        match kind with
+        | IsMultiKind true -> b.Append "..."
+        | _ ->
+            if state.style.showKind then
+                b.Append " :: "
+                b.AppendKind(kind, &options, &state)
+
+    [<Extension>]
+    static member AppendOperandTypeApplyOrNamedTypeApply(b: _ byref, (TypeConstant(name, _) as t), ts, options: _ inref, state: _ byref) =
+        match name with
+        | null
+        | "" -> b.AppendNamedTypeApply(t, ts, &options, &state)
+
+        // "((->): fun(value, value): value)<number, number>"
+        | _ when state.style.showKind ->
+            b.AppendNamedTypeApply(t, ts, &options, &state)
+
+        | _ ->
+
+        let opName = System.MemoryExtensions.AsSpan name
+        let opName =
+            if 2 <= opName.Length && opName.[0] = '(' && opName.[name.Length - 1] = ')'
+            then opName.Slice(1, opName.Length - 2)
+            else opName
+
+        match ts with
+
+        // "()" "(->)"
+        | [] -> b.Append name
+
+        // "t1 ? t2 : t3", "t1 * t2 * t3"
+        | t1::ts ->
+            let separatorCount = List.length ts
+            if opName.Length % separatorCount <> 0 then
+                b.AppendNamedTypeApply(t, t1::ts, &options, &state)
+            else
+                b.AppendType(t1.kind, &options, &state)
+                b.AppendOperatorTail(opName, ts, &options, &state)
+
+    [<Extension>]
+    static member AppendNamedTypeApply(b: _ byref, TypeConstant(name, kind), ts, options: _ inref, state: _ byref) =
+        b.Append name
+        if state.style.showKind then
+            b.Append " :: "
+            b.AppendKind(kind, &options, &state)
+
+        match ts with
+        | [] -> ()
+        | t::ts ->
+            b.Append '<'; b.AppendType(t.kind, &options, &state)
+            for t in ts do b.Append ", "; b.AppendType(t.kind, &options, &state)
+            b.Append '>'
+
+    [<Extension>]
+    static member AppendOperatorTail(b: _ byref, opName, ts, options: _ inref, state: _ byref) =
+        let separatorCount = List.length ts
+        let separatorLength = opName.Length / separatorCount
+        let mutable i = 0
+        for t in ts do
+            b.Append ' '
+            b.Append(opName.Slice(i * separatorLength, separatorLength))
+            b.Append ' '
+            b.AppendType(t.kind, &options, &state)
+            i <- i + 1
+
+[<Extension>]
+type ConstraintsExtensions =
+    [<Extension>]
+    static member AppendConstraints(b: _ byref, c, options: _ inref, state: _ byref) =
+        match c with
+        | InterfaceConstraint fs -> b.AppendFields(fs, &options, &state)
+        | MultiElementTypeConstraint t -> b.AppendType(t.kind, &options, &state)
+        | UnionConstraint(lower, upper) ->
+            if not <| TypeSet.isEmpty lower then
+                b.AppendTypeSet(lower, &options, &state)
+            b.Append ".."
+            if not <| TypeSet.isUniversal upper then
+                b.AppendTypeSet(upper, &options, &state)
+
+    [<Extension>]
+    static member AppendTypeSet(b: _ byref, typeSet, options: _ inref, state: _ byref) =
+        match typeSet with
+        | UniversalTypeSet -> b.Append "unknown"
+        | TypeSet ts ->
+
+        match ts with
+        | [] -> b.Append "never"
+        | [t] -> b.AppendType(t.kind, &options, &state)
+        | t::ts ->
+
+        b.Append '('
+        b.AppendType(t.kind, &options, &state)
+        for t in ts do
+            b.Append " | "
+            b.AppendType(t.kind, &options, &state)
+        b.Append ')'
+
+[<Extension>]
+type FieldsExtensions =
+    [<Extension>]
+    static member AppendFields(b: Utf16ValueStringBuilder byref, fields, options: _ inref, state: _ byref) =
+        b.Append "{ "
+        for kv in fields do
+            b.Append(kv.Key); b.Append ": "; b.AppendType(kv.Value.kind, &options, &state); b.Append "; "
+        b.Append '}'
+
+[<Extension>]
+type TypeParameterExtensions =
+    [<Extension>]
+    static member AppendTypeParameter(b: Utf16ValueStringBuilder byref, p, options: _ inref, state: _ byref) =
+        let (TypeParameter(n, (TypeParameterId(id, kind) as p), c)) = p
+
+        b.AppendIndexedName(getOrCreateFleshParameterName p n &state)
+        if state.style.showId then
+            b.Append '\''
+            b.Append id
+
+        match kind with
+        | IsMultiKind true ->
+            b.Append "..."
+            if not <| InternalConstraints.isAny c then
+                b.AppendConstraints(c.kind, &options, &state)
+
+        | NamedKind _
+        | FunKind _ ->
+            if not <| InternalConstraints.isAny c then
+                b.Append ": "
+                b.AppendConstraints(c.kind, &options, &state)
+
+    [<Extension>]
+    static member AppendIndexedName(b: _ byref, IndexedName(baseName, i)) =
+        b.Append baseName
+        match i with
+        | 0UL -> ()
+        | _ -> b.Append i
+
+[<Extension>]
+type MultiTypeExtensions =
+    [<Extension>]
+    static member AppendNoWrap(b: _ byref, m, options: _ inref, state: _ byref) =
+        match m with
+        | IsEmptyType true -> ()
+        | ConsType(ValueSome(t, { kind = IsEmptyType true })) -> b.AppendType(t.kind, &options, &state)
+        | ConsType(ValueSome(t1, m)) -> b.AppendType(t1.kind, &options, &state); b.AppendRest(m.kind, &options, &state)
+        | t -> b.AppendType(t, &options, &state)
+
+    [<Extension>]
+    static member AppendRest(b: _ byref, m, options: _ inref, state: _ byref) =
+        let rec isEmpty showAssign subst = function
+            | IsEmptyType true -> true
+            | MultiVarType(ValueSome(Subst.Find subst (Ok m))) -> if showAssign then false else isEmpty showAssign subst m.kind
+            | _ -> false
+
+        if not <| isEmpty state.style.showAssign state.subst m then b.Append ", "
+        b.AppendNoWrap(m, &options, &state)
+
+    [<Extension>]
+    static member AppendMulti
+        (
+        b: _ byref, m,
+        options: _ inref,
+        state: _ byref,
+        [<Optional; DefaultParameterValue(false)>] singleElementNoWrap: bool,
+        [<Optional; DefaultParameterValue(false)>] singleElementNoQuote: bool
+        ) =
+        let rec isSingle subst = function
+            // m... := m2
+            | MultiVarType(ValueSome(Subst.Find subst (Ok m))) -> isSingle subst m.kind
+            // ...et
+            | MultiVarType(ValueSome(Subst.Find subst (Error(Var(constraints = IsAnyConstraint true)))))
+            // 'm...
+            | MultiParameterType(ValueSome _)
+            // (t,)
+            | ConsType(ValueSome(_, { kind = IsEmptyType true }))
+            // 'm...et
+            | MultiVarType(ValueSome(Subst.Find subst (Error(Var(constraints = { kind = MultiElementTypeConstraint _ }))))) -> true
+            // ()
+            | IsEmptyType true
+            // (t, m)
+            | ConsType(ValueSome _) -> false
+
+            // without multi kind
+            | _ -> false
+
+        let isSingle = isSingle state.subst m
+        if not isSingle || not singleElementNoWrap then b.Append '('
+        b.AppendNoWrap(m, &options, &state)
+        if isSingle && not singleElementNoQuote then b.Append ','
+        if not isSingle || not singleElementNoWrap then b.Append ')'
 
 [<DebuggerDisplay "{_DebuggerDisplay,nq}"; StructuredFormatDisplay "{_DebuggerDisplay}">]
 type Kind =
@@ -203,38 +634,13 @@ with
     member private x._DebuggerDisplay =
         use mutable b = ZString.CreateStringBuilder()
         let options = TypeWriteOptions.Debugger
-        let mutable state = TypePrintState.create options
+        let mutable state = TypePrintState.create Subst.empty options
         let scope = TypePrintScope.empty
-        KindExtensions.Append(&b, x, &scope, &state)
+        b.AppendKind(x, &scope, &state)
         b.ToString()
 
-[<Extension>]
-type KindExtensions =
-    [<Extension>]
-    static member Append(b: Utf16ValueStringBuilder byref, k, options: _ inref, state: _ byref) =
-        match k with
-        | NamedKind name -> b.Append name
-        | FunKind([], k) ->
-            b.Append "fun()"
-            if state.style.enableAllowStyleFunResult
-            then b.Append " -> "
-            else b.Append ": "
-            b.Append(k, &options, &state)
-
-        | FunKind(k::ks, k') ->
-            b.Append "fun("
-            b.Append(k, &options, &state)
-            for k in ks do
-                b.Append ", "
-                b.Append(k, &options, &state)
-            b.Append ")"
-            if state.style.enableAllowStyleFunResult
-            then b.Append " -> "
-            else b.Append ": "
-            b.Append(k', &options, &state)
-
 [<Struct; CustomComparison; CustomEquality>]
-type TypeParameterId = TypeParameterId of int64 * Kind
+type TypeParameterId = TypeParameterId of id: int64 * kind: Kind
 with
     member x.Equals(TypeParameterId(y, _)) =
         let (TypeParameterId(x, _)) = x
@@ -264,10 +670,6 @@ with
 
 type TypeParameter = TypeParameter of displayName: string * TypeParameterId * Constraints
 
-module VarType =
-    let physicalEquality (v1: VarSite<_,_,_>) (v2: VarSite<_,_,_>) =
-        LanguagePrimitives.PhysicalEquality v1 v2
-
 [<Struct>]
 type TypeConstant = TypeConstant of name: string * Kind
 
@@ -291,9 +693,9 @@ with
     [<DebuggerBrowsable(DebuggerBrowsableState.Never)>]
     member private x._DebuggerDisplay =
         use mutable b = ZString.CreateStringBuilder()
-        let mutable state = TypePrintState.create TypeWriteOptions.Debugger
+        let mutable state = TypePrintState.create Subst.empty TypeWriteOptions.Debugger
         let options = { visitedVars = [] }
-        TypeExtensions.Append(&b, x, &options, &state)
+        b.AppendType(x, &options, &state)
         b.ToString()
 
 [<Struct>]
@@ -333,9 +735,9 @@ with
     member private x._DebuggerDisplay =
         use mutable b = ZString.CreateStringBuilder()
         let options = TypeWriteOptions.Debugger
-        let mutable state = TypePrintState.create options
+        let mutable state = TypePrintState.create Subst.empty options
         let scope = TypePrintScope.empty
-        ConstraintsExtensions.AppendConstraints(&b, x, &scope, &state)
+        b.AppendConstraints(x, &scope, &state)
         b.ToString()
 
 module internal InternalConstraints =
@@ -343,323 +745,6 @@ module internal InternalConstraints =
         match c.kind with
         | InterfaceConstraint fs -> Map.isEmpty fs
         | _ -> false
-
-[<Extension>]
-type ConstraintsExtensions =
-    [<Extension>]
-    static member AppendConstraints(b: _ byref, c, options: _ inref, state: _ byref) =
-        match c with
-        | InterfaceConstraint fs -> FieldsExtensions.Append(&b, fs, &options, &state)
-        | MultiElementTypeConstraint t -> b.Append(t.kind, &options, &state)
-        | UnionConstraint(lower, upper) ->
-            if not <| TypeSet.isEmpty lower then
-                b.AppendTypeSet(lower, &options, &state)
-            b.Append ".."
-            if not <| TypeSet.isUniversal upper then
-                b.AppendTypeSet(upper, &options, &state)
-
-    [<Extension>]
-    static member AppendTypeSet(b: _ byref, typeSet, options: _ inref, state: _ byref) =
-        match typeSet with
-        | UniversalTypeSet -> b.Append "unknown"
-        | TypeSet ts ->
-
-        match ts with
-        | [] -> b.Append "never"
-        | [t] -> b.Append(t.kind, &options, &state)
-        | t::ts ->
-
-        b.Append '('
-        b.Append(t.kind, &options, &state)
-        for t in ts do
-            b.Append " | "
-            b.Append(t.kind, &options, &state)
-        b.Append ')'
-
-[<Extension>]
-type FieldsExtensions =
-    [<Extension>]
-    static member Append(b: Utf16ValueStringBuilder byref, fields, options: _ inref, state: _ byref) =
-        b.Append "{ "
-        for kv in fields do
-            b.Append(kv.Key); b.Append ": "; TypeExtensions.Append(&b, kv.Value.kind, &options, &state); b.Append "; "
-        b.Append '}'
-
-[<Extension>]
-type TypeParameterExtensions =
-    [<Extension>]
-    static member Append(b: Utf16ValueStringBuilder byref, p, options: _ inref, state: _ byref) =
-        let (TypeParameter(n, (TypeParameterId(id, kind) as p), c)) = p
-
-        b.AppendIndexedName(getOrCreateFleshParameterName p n &state)
-        if state.style.showId then
-            b.Append '\''
-            b.Append id
-
-        match kind with
-        | IsMultiKind true ->
-            b.Append "..."
-            if not <| InternalConstraints.isAny c then
-                b.AppendConstraints(c.kind, &options, &state)
-
-        | NamedKind _
-        | FunKind _ ->
-            if not <| InternalConstraints.isAny c then
-                b.Append ": "
-                b.AppendConstraints(c.kind, &options, &state)
-
-    [<Extension>]
-    static member AppendIndexedName(b: _ byref, IndexedName(baseName, i)) =
-        b.Append baseName
-        match i with
-        | 0UL -> ()
-        | _ -> b.Append i
-
-[<Extension>]
-type TypeExtensions =
-    [<Extension>]
-    static member Append(b: _ byref, x, options: _ inref, state: _ byref) =
-        let style = state.style
-        match x with
-        | VarType r -> b.AppendVarType(r, &options, &state)
-        | NamedType(TypeConstant(_, (NamedKind "multi" | FunKind(_, NamedKind "multi"))), _) ->
-            b.AppendMulti(x, &options, &state)
-
-        | NamedType(TypeConstant("(fun)", _), [m1; m2]) ->
-            b.Append "fun"
-            b.AppendMulti(m1.kind, &options, &state, singleElementNoQuote = true)
-            if style.enableAllowStyleFunResult
-            then b.Append " -> "
-            else b.Append ": "
-            b.AppendMulti(m2.kind, &options, &state, singleElementNoWrap = true, singleElementNoQuote = true)
-
-        | NamedType(TypeConstant(name, _) as t, ts) ->
-            if style.disableTypeOperator || Name.isValid name
-            then b.AppendNamedTypeApply(t, ts, &options, &state)
-            else b.AppendOperandTypeApplyOrNamedTypeApply(t, ts, &options, &state)
-
-        | LiteralType x -> b.AppendLiteral x
-        | InterfaceType fields -> b.Append(fields, &options, &state)
-        | ParameterType(TypeParameterId(x, k) as p) ->
-            b.AppendIndexedName(getOrCreateFleshParameterName p "TFree" &state)
-            if style.showId then
-                b.Append '\''; b.Append x
-            b.AppendKindMark(k, &options, &state)
-
-        | TypeAbstraction(ps, t) ->
-            match ps with
-            | [] when not style.showEmptyTypeAbstraction -> b.Append(t.kind, &options, &state)
-            | [] ->
-                b.Append "type()"
-                if style.enableAllowStyleFunResult
-                then b.Append " -> "
-                else b.Append ": "
-                b.Append(t.kind, &options, &state)
-            | (p::ps) as pps ->
-
-            for TypeParameter(name, p, _) in pps do
-                getOrCreateFleshParameterName p name &state |> ignore
-
-            b.Append "type("
-            b.Append(p, &options, &state)
-            for p in ps do
-                b.Append ", "
-                b.Append(p, &options, &state)
-            b.Append ")"
-            if style.enableAllowStyleFunResult
-            then b.Append " -> "
-            else b.Append ": "
-            b.Append(t.kind, &options, &state)
-
-    [<Extension>]
-    static member AppendVarType(b: _ byref, ({ varKind = kind } as r), options: _ inref, state: _ byref) =
-        if List.exists (VarType.physicalEquality r) options.visitedVars then
-            b.Append "rec "
-            b.AppendVarIdAndQ(r, &state)
-            b.AppendKindMark(kind, &options, &state)
-        else
-            let options = { options with visitedVars = r::options.visitedVars }
-            match r.target with
-            | Assigned t ->
-                if state.style.showAssign then
-                    b.Append "("
-                    b.AppendVarIdAndQ(r, &state)
-                    b.AppendKindMark(kind, &options, &state)
-
-                    b.Append " := "
-                    b.Append(t.kind, &options, &state)
-                    b.Append ')'
-                else
-                    b.Append(t.kind, &options, &state)
-
-            | Var(l, c) ->
-                b.AppendVarIdAndQ(r, &state)
-                if state.style.showTypeLevel && l <> 0 then
-                    b.Append '('
-                    b.Append l
-                    b.Append ')'
-                b.AppendKindMark(kind, &options, &state)
-
-                if not <| InternalConstraints.isAny c then
-                    match r.varKind with
-                    | IsMultiKind true -> ()
-                    | NamedKind _
-                    | FunKind _ -> b.Append ": "
-                    b.AppendConstraints(c.kind, &options, &state)
-
-    [<Extension>]
-    static member AppendVarIdAndQ(b: _ byref, r, state: _ byref) =
-        b.Append '?'
-        b.AppendIndexedName(getOrCreateFleshVarName r &state)
-        if state.style.showId then
-            b.Append '\''
-            b.Append(RuntimeHelpers.GetHashCode r)
-
-    [<Extension>]
-    static member AppendLiteral(b: _ byref, x) =
-        match x with
-        | S.Nil -> b.Append "nil"
-        | S.True -> b.Append "true"
-        | S.False -> b.Append "false"
-        | S.Number x -> b.AppendNumberLiteral x
-        | S.String x -> b.AppendStringLiteral x
-
-    [<Extension>]
-    static member AppendNumberLiteral(b: _ byref, x) =
-        if System.Double.IsNaN x then b.Append "(0/0)" else
-        if System.Double.IsPositiveInfinity x then b.Append "(1/0)" else
-        if System.Double.IsNegativeInfinity x then b.Append "(-1/0)" else
-        b.Append(x, "G17")
-
-    [<Extension>]
-    static member AppendStringLiteral(b: _ byref, x) =
-        match x with
-        | null -> b.Append "nil"
-        | x ->
-            for x in Syntax.Printer.showString Syntax.Printer.PrintConfig.defaultConfig x do
-                b.Append x
-
-    /// "..." or ": kind" or ""
-    [<Extension>]
-    static member AppendKindMark(b: _ byref, kind, options: _ inref, state: _ byref) =
-        match kind with
-        | IsMultiKind true -> b.Append "..."
-        | _ ->
-            if state.style.showKind then
-                b.Append " :: "
-                b.Append(kind, &options, &state)
-
-    [<Extension>]
-    static member AppendOperandTypeApplyOrNamedTypeApply(b: _ byref, (TypeConstant(name, _) as t), ts, options: _ inref, state: _ byref) =
-        match name with
-        | null
-        | "" -> b.AppendNamedTypeApply(t, ts, &options, &state)
-
-        // "((->): fun(value, value): value)<number, number>"
-        | _ when state.style.showKind ->
-            b.AppendNamedTypeApply(t, ts, &options, &state)
-
-        | _ ->
-
-        let opName = System.MemoryExtensions.AsSpan name
-        let opName =
-            if 2 <= opName.Length && opName.[0] = '(' && opName.[name.Length - 1] = ')'
-            then opName.Slice(1, opName.Length - 2)
-            else opName
-
-        match ts with
-
-        // "()" "(->)"
-        | [] -> b.Append name
-
-        // "t1 ? t2 : t3", "t1 * t2 * t3"
-        | t1::ts ->
-            let separatorCount = List.length ts
-            if opName.Length % separatorCount <> 0 then
-                b.AppendNamedTypeApply(t, t1::ts, &options, &state)
-            else
-                b.Append(t1.kind, &options, &state)
-                b.AppendOperatorTail(opName, ts, &options, &state)
-
-    [<Extension>]
-    static member AppendNamedTypeApply(b: _ byref, TypeConstant(name, kind), ts, options: _ inref, state: _ byref) =
-        b.Append name
-        if state.style.showKind then
-            b.Append " :: "
-            b.Append(kind, &options, &state)
-
-        match ts with
-        | [] -> ()
-        | t::ts ->
-            b.Append '<'; b.Append(t.kind, &options, &state)
-            for t in ts do b.Append ", "; b.Append(t.kind, &options, &state)
-            b.Append '>'
-
-    [<Extension>]
-    static member AppendOperatorTail(b: _ byref, opName, ts, options: _ inref, state: _ byref) =
-        let separatorCount = List.length ts
-        let separatorLength = opName.Length / separatorCount
-        let mutable i = 0
-        for t in ts do
-            b.Append ' '
-            b.Append(opName.Slice(i * separatorLength, separatorLength))
-            b.Append ' '
-            b.Append(t.kind, &options, &state)
-            i <- i + 1
-
-[<Extension>]
-type MultiTypeExtensions =
-    [<Extension>]
-    static member AppendNoWrap(b: _ byref, m, options: _ inref, state: _ byref) =
-        match m with
-        | IsEmptyType true -> ()
-        | ConsType(ValueSome(t, { kind = IsEmptyType true })) -> b.Append(t.kind, &options, &state)
-        | ConsType(ValueSome(t1, m)) -> b.Append(t1.kind, &options, &state); b.AppendRest(m.kind, &options, &state)
-        | t -> b.Append(t, &options, &state)
-
-    [<Extension>]
-    static member AppendRest(b: _ byref, m, options: _ inref, state: _ byref) =
-        let rec isEmpty showAssign = function
-            | IsEmptyType true -> true
-            | MultiVarType(ValueSome { target = Assigned m }) -> if showAssign then false else isEmpty showAssign m.kind
-            | _ -> false
-
-        if not <| isEmpty state.style.showAssign m then b.Append ", "
-        b.AppendNoWrap(m, &options, &state)
-
-    [<Extension>]
-    static member AppendMulti
-        (
-        b: _ byref, m,
-        options: _ inref,
-        state: _ byref,
-        [<Optional; DefaultParameterValue(false)>] singleElementNoWrap: bool,
-        [<Optional; DefaultParameterValue(false)>] singleElementNoQuote: bool
-        ) =
-        let rec isSingle = function
-            // m... := m2
-            | MultiVarType(ValueSome { target = Assigned m }) -> isSingle m.kind
-            // ...et
-            | MultiVarType(ValueSome { target = Var(_, IsAnyConstraint true) })
-            // 'm...
-            | MultiParameterType(ValueSome _)
-            // (t,)
-            | ConsType(ValueSome(_, { kind = IsEmptyType true }))
-            // 'm...et
-            | MultiVarType(ValueSome { target = Var(_, { kind = MultiElementTypeConstraint _ }) }) -> true
-            // ()
-            | IsEmptyType true
-            // (t, m)
-            | ConsType(ValueSome _) -> false
-
-            // without multi kind
-            | _ -> false
-
-        let isSingle = isSingle m
-        if not isSingle || not singleElementNoWrap then b.Append '('
-        b.AppendNoWrap(m, &options, &state)
-        if isSingle && not singleElementNoQuote then b.Append ','
-        if not isSingle || not singleElementNoWrap then b.Append ')'
 
 type Scheme = Type
 

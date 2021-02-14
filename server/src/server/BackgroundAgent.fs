@@ -2,17 +2,14 @@
 module LuaChecker.Server.BackgroundAgent
 open LuaChecker
 open LuaChecker.Server.Log
+open LuaChecker.Server.Marshalling
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
 open System
 open System.Collections.Immutable
-open type Marshalling.CollectSemanticsVisitor
-open type Marshalling.MarshallingContext
-open type Marshalling.PrettyTokenVisitor
 open type ProjectAgent
 open type BackgroundAgent
 open type TypedSyntaxes.Chunk
-open type TypeSystem.TypeEnv
 type private M = Protocol.Methods
 
 
@@ -34,7 +31,7 @@ let publishDiagnostics agent projectAgent path version document diagnostics =
             documents = projectAgent.documents
             root = projectAgent.root
         }
-        Seq.toArray <| Marshalling.marshalDocumentDiagnostics context path document diagnostics
+        Seq.toArray <| marshalDocumentDiagnostics context path document diagnostics
 
     {
         uri = DocumentPath.toUri(path).ToString()
@@ -77,24 +74,19 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
 
     let range =
         match rangeOrFull with
-        | ValueSome range -> Marshalling.rangeToSpan lineMap range
+        | ValueSome range -> rangeToSpan lineMap range
         | _ ->
             let struct(span, _) = tree.semanticTree.trivia
             span
 
-    let initialGlobal = project.projectRare.initialGlobal
-    let typeEnv = {
-        system = initialGlobal.typeSystem
-        stringTableTypes =
-            tree.additionalGlobalEnv.stringMetaTableIndexType @
-            initialGlobal.initialGlobalEnv.stringMetaTableIndexType
-    }
+    let types = project.projectRare.initialGlobal.typeSystem
     let mutable this = {
         buffer = buffer
         lineMap = lineMap
-        typeSystemEnv = typeEnv
-        stringSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation typeEnv.system.string]
-        numberSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation typeEnv.system.number]
+        typeSystem = types
+        subst = tree.typeSubstitute
+        stringSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation types.string]
+        numberSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation types.number]
         lastLine = 0
         lastStartChar = 0
     }

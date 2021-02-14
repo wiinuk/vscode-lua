@@ -97,6 +97,7 @@ type Block' = {
 }
 type Chunk = {
     semanticTree: Block
+    typeSubstitute: Type Subst
     functionType: Scheme
     ancestorModulePaths: DocumentPath Set
     additionalGlobalEnv: Env

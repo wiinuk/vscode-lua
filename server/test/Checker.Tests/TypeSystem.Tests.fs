@@ -16,7 +16,7 @@ module S = Syntaxes
 let unifyVarAndNumber() =
     let t1 = Type.newVar 1
     unify t1 types.number =? ValueNone
-    Scheme.normalize t1 =? type0 types.number
+    Scheme.normalize subst' t1 =? type0 types.number
 
 [<Fact>]
 let unifyVarAndVar() =
@@ -24,7 +24,7 @@ let unifyVarAndVar() =
     let a = Type.newVar 1
     let b = Type.newVar 1
     unify a b =? ValueNone
-    ([a; b] ->. []) |> Scheme.normalize =? type1 (fun a -> [a; a] ->. [])
+    ([a; b] ->. []) |> Scheme.normalize subst' =? type1 (fun a -> [a; a] ->. [])
 
 [<Fact>]
 let unifyVarWithInterfaceAndInterface() =
@@ -45,7 +45,7 @@ let unifyVarWithInterfaceAndVarWithInterface() =
     unify a b =? ValueNone
 
     [a; b; ay; bx; bz] ->. []
-    |> Scheme.normalize
+    |> Scheme.normalize subst'
     =? forall2 (fun t0 t1 ->
         (Constraints.ofFields ["x", types.number; "y", types.string; "z", t1], Constraints.any),
         [t0; t0; types.string; types.number; t1] ->. []
@@ -55,7 +55,7 @@ let unifyVarWithInterfaceAndVarWithInterface() =
 let multi2VarSchemeRoundTrip() =
     // type 'a. fun('a, 'a): ()
     let t = type1 (fun a -> [a; a] ->. [])
-    let struct(_, t) = t |> Scheme.instantiate 1 in t |> Scheme.normalize =? type1 (fun a -> [a; a] ->. [])
+    let struct(_, t) = t |> Scheme.instantiate subst' 1 in t |> Scheme.normalize subst' =? type1 (fun a -> [a; a] ->. [])
 
 [<Fact>]
 let unifyVarAndInterface() =
@@ -63,7 +63,7 @@ let unifyVarAndInterface() =
     let t1 = Type.newVarWithFields 1 ["x", types.number]
     let t2 = Type.interfaceType ["x", Type.newVar 1]
     unify t1 t2 =? ValueNone
-    [t1; t2] ->. [] |> Scheme.normalize
+    [t1; t2] ->. [] |> Scheme.normalize subst'
         =?
         let t = Type.interfaceType ["x", types.number]
         type0 ([t; t] ->. [])
@@ -77,31 +77,37 @@ let unifyNumberAndVarWithInterface() =
 
 [<Fact>]
 let typedHitTest() =
-    let normalize _ t = Type.apply { visitedVars = []; other = [] } t |> Scheme.normalize
-    let getNormalizedType t _ _ = normalize () t
+    let normalize subst _ t = Type.apply { visitedVars = []; other = { varToTypeParameter = []; subst = subst } } t |> Scheme.normalize subst
+    let getNormalizedType subst t _ _ = normalize subst () t
 
-    let push this x = this := x::!this
+    let push this x =
+        let subst, xs = !this
+        this := subst, x::xs
+
+    let subst this = fst !this
     let visitor state = { new TypedSyntaxVisitorBase() with
         override _.Visit() = failwith ""
 
         override _.Var(T.Var(name = Name n; varType = t; leaf = l), e) =
-            push state (TokenKind.Name n.kind, n.trivia.span, getNormalizedType t l e)
-        override _.Reserved(T.ReservedVar(s, k, t, l), e) = push state (k, s.span, getNormalizedType t l e)
-        override _.Literal(x, t, _, _) = push state (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize 0 <| Scheme.normalize t)
+            push state (TokenKind.Name n.kind, n.trivia.span, getNormalizedType (subst state) t l e)
+        override _.Reserved(T.ReservedVar(s, k, t, l), e) = push state (k, s.span, getNormalizedType (subst state) t l e)
+        override _.Literal(x, t, _, _) =
+            let subst = subst state
+            push state (TokenKind.ofLiteralKind x.kind, x.trivia.span, normalize subst 0 <| Scheme.normalize subst t)
     }
 
     let test i source =
         match checkChunk id source with
         | Some s, [] ->
-            let result = ref []
+            let result = ref (s.typeSubstitute, [])
             let mutable visitor = polyVisitor <| visitor result
             if LuaChecker.Block.hitTest &visitor i s.semanticTree then
-                match !result with
+                match snd !result with
                 | [] -> failwith $"empty result: '{source}' @{i} -> []"
                 | [x] -> ValueSome x
                 | xs -> failwith $"multiple result: %A{xs}"
             else
-                match !result with
+                match snd !result with
                 | [] -> ValueNone
                 | xs -> failwith $"has result: %A{xs}"
 
@@ -235,16 +241,16 @@ let generalizeInterfaceConstraints() =
     let b = Type.newVar 1
     let a = Type.newVarWithFields 1 ["f", b]
 
-    Scheme.generalize 0 a
-    |> Scheme.normalize
+    Scheme.generalize subst' 0 a
+    |> Scheme.normalize subst'
     =? forall2 (fun t0 t1 -> (Constraints.ofFields ["f", t1], Constraints.any), t0)
 
 [<Fact(DisplayName = "generalize (fun(?m...?a): ()) = (type 'm...'a 'a. fun('m...): ())")>]
 let generalizeMultiTypeVarConstraint() =
     let a = Type.newVar 1
     let t = types.fn(MultiType.newVarWith 1 (ValueSome(MultiElementTypeConstraint a |> withEmptyLocation)), types.empty)
-    Scheme.generalize 0 t
-    |> Scheme.normalize
+    Scheme.generalize subst' 0 t
+    |> Scheme.normalize subst'
     =?
     forall2With (types.multiKind, types.valueKind) (fun m a ->
         (MultiElementTypeConstraint a |> withEmptyLocation, Constraints.any), types.fn(m, types.empty)
@@ -256,7 +262,7 @@ let generalizeWithLevel() =
     let a = Type.newVar 1
     let b = Type.newVar 0
     let t = [a] ->. [b]
-    Scheme.normalize t =? type1 (fun t0 -> [t0] ->. [b])
+    Scheme.normalize subst' t =? type1 (fun t0 -> [t0] ->. [b])
 
 [<Fact>]
 let adjustLevel() =
@@ -269,7 +275,7 @@ let adjustLevel() =
     // ?b(1) -> int
 
     match b with
-    | { kind = VarType { target = Assigned { kind = VarType { target = LuaChecker.Var(0, _) } } } } -> ()
+    | { kind = VarType(Subst.Find subst' (Ok { kind = VarType (Subst.Find subst' (Ok { kind = VarType(Var(level = 0)) })) })) } -> ()
     | b -> failwithf "%A" b
 
 [<Fact(DisplayName = "instantiate `type(a) -> type(b) -> fun(a, b) -> ()` = `fun(?x, ?y) -> ()`")>]
@@ -282,8 +288,8 @@ let instantiateScheme2() =
     /// type a b. fun(a, b): ()
     let t1 = type2 <| fun t1 t2 -> [t1; t2] ->. []
 
-    let struct(_, t) = Scheme.instantiate 1 t0
-    Scheme.normalize t =? t1
+    let struct(_, t) = Scheme.instantiate subst' 1 t0
+    Scheme.normalize subst' t =? t1
 
 [<Fact(DisplayName = "instantiate `{ f: type a. fun(a): () }` = `{ f: type a. fun(a): () }`")>]
 let instantiateSchemeField() =
@@ -291,10 +297,10 @@ let instantiateSchemeField() =
     let t0 = Type.interfaceType [
         "f", type1 <| fun t0 -> [t0] ->. []
     ]
-    let struct(_, t) = Scheme.instantiate 1 t0
-    Scheme.normalize t
+    let struct(_, t) = Scheme.instantiate subst' 1 t0
+    Scheme.normalize subst' t
     =?
-    Scheme.normalize t0
+    Scheme.normalize subst' t0
 
 [<Fact>]
 let unifyRecursiveFunctionType() =
@@ -302,7 +308,7 @@ let unifyRecursiveFunctionType() =
     let f() =
         let f = Type.newVar 1
         match f.kind with
-        | VarType r -> r.target <- Assigned([types.number] ->. [f])
+        | VarType r -> Subst.assign subst' r ([types.number] ->. [f])
         | _ -> ()
         f
 
@@ -310,7 +316,7 @@ let unifyRecursiveFunctionType() =
     let x() =
         let x = Type.newVar 1
         match x.kind with
-        | VarType r -> r.target <- Assigned([types.number] ->. [[types.number] ->. [x]])
+        | VarType r -> Subst.assign subst' r ([types.number] ->. [[types.number] ->. [x]])
         | _ -> ()
         x
 
@@ -318,7 +324,7 @@ let unifyRecursiveFunctionType() =
     let y() =
         let y = Type.newVar 1
         match y.kind with
-        | VarType r -> r.target <- Assigned([types.number] ->. [[types.string] ->. [y]])
+        | VarType r -> Subst.assign subst' r ([types.number] ->. [[types.string] ->. [y]])
         | _ -> ()
         y
 
@@ -332,8 +338,8 @@ let unifyRecursiveConstraint() =
 
     /// 'x: { f: fun(number): 'x }
     let gt = TypeAbstraction([TypeParameter("", xId, Constraints.ofFields ["f", [types.number] ->. [x]])], x) |> Type.makeWithEmptyLocation
-    let struct(_, t1) = Scheme.instantiate 0 gt
-    let struct(_, t2) = Scheme.instantiate 0 gt
+    let struct(_, t1) = Scheme.instantiate subst' 0 gt
+    let struct(_, t2) = Scheme.instantiate subst' 0 gt
 
     // unify (?x: { f: fun(number): ?x }) (?y: { f: fun(number): ?y })
     unify t1 t2 =? ValueNone
@@ -341,7 +347,7 @@ let unifyRecursiveConstraint() =
 [<Fact>]
 let typesIsSubset() =
     let ofNumbers = List.map Type.numberLiteralType
-    let isSubset t1 t2 = TypeSet.isSubset types' (TypeSet t1) (TypeSet t2) |> Result.defaultWith (failwithf "%A")
+    let isSubset t1 t2 = TypeSet.isSubset types' (TypeSet t1) (TypeSet t2)
     let allNumber = [types.number]
 
     isSubset (ofNumbers []) allNumber =? true
@@ -377,7 +383,7 @@ let unifyStringSpaceConstraintInMulti() =
     unify r r1 =? ValueNone
     unify r r2 =? ValueNone
 
-    Scheme.normalize r
+    Scheme.normalize subst' r
     =?
     // type(a: ("ok" | 123)..) -> (a,)
     scheme1With (types.valueKind, Constraints.literalsOrUpper [S.String "ok"; S.Number 123.]) (fun a -> multi [a])
@@ -395,8 +401,8 @@ let unifyElementTypeConstrainedMultiVarAndEmpty() =
 let unifyAssignedElementTypeConstrainedMultiVarAndEmpty() =
     let t1 =
         Type.newValueVarWith 1 (C.stringOrUpper "a")
-        |> Type.newAssigned
-        |> Type.newAssigned
+        |> Type.newAssigned subst'
+        |> Type.newAssigned subst'
         |> C.multiElementType
         |> Type.newMultiVarWith 1
 
@@ -425,3 +431,84 @@ let unifyNumberLiteralAndNumberConstraint() =
     /// ..number
     let t2 = Type.newValueVarWith 1 (Constraints.tagOrLower [types.number])
     unify t1 t2 =? ValueNone
+
+[<Fact>]
+let unifyTableAndTableConstraint() =
+
+    /// `table<number, number>`
+    let t1 = types.table(types.number, types.number)
+
+    /// `?a: ..table<number, ?v>`
+    let t2 =
+        let v = Type.newValueVarWith 1 Constraints.any
+        Type.newValueVarWith 1 (Constraints.tagOrLower [types.table(types.number, v)])
+
+    unify t1 t2 =? ValueNone
+
+[<Fact>]
+let unifyRecursiveSelfConstraintAndTypeAbstraction() =
+    let self = Var.newVar "self" 1 types.valueKind Constraints.any
+
+    let x =
+        Constraints.ofFields ["field", VarType self |> Type.makeWithEmptyLocation]
+        |> Type.newValueVarWith 1
+
+    // t1 = `?x: { field: ?self }`
+    let t1 = x
+
+    // t2 = `{ field: type(a) -> a }`
+    let t2 = Type.interfaceType [
+        "field", forall1 <| fun a -> Constraints.any, a
+    ]
+
+    // subst = [ ?self |-> ?x ]
+    let subst = Subst.create()
+    Subst.assign subst self x
+
+    Type.unify { system = types'; substitute = subst; stringTableTypes = [] } t1 t2 =? ValueNone
+
+[<Fact>]
+let unifyRecursiveType1() =
+
+    // t1 = `?self`
+    let self' = Var.newVar "self" 1 types.valueKind Constraints.any
+    let self = VarType self' |> Type.makeWithEmptyLocation
+
+    // t2 = `{ f: type(a) -> fun(a) -> a }`
+    let t2 = Type.interfaceType [
+        "f", forall1 <| fun a -> Constraints.any, [a] ->. [a]
+    ]
+
+    // subst = [?self |-> ?x1: { f: fun(?self) -> ?x2 }]
+    let subst = Subst.createOfSeq [
+        self', Type.newValueVarWith 1 <| Constraints.ofFields [ "f", [self] ->. [Type.newValueVarWith 1 Constraints.any] ]
+    ]
+
+    Type.unify { system = types'; substitute = subst; stringTableTypes = [] } self t2 =? ValueNone
+
+[<Fact>]
+let unifyRecursiveType() =
+
+    // t1 = `?self`
+    let self' = Var.newVar "self" 1 types.valueKind Constraints.any
+    let self = VarType self' |> Type.makeWithEmptyLocation
+
+    // t2 = `{ getGreeter: type(a) -> fun(a) -> a; greet: type(a) -> fun(a) -> () }`
+    let t2 = Type.interfaceType [
+        "getGreeter", forall1 <| fun a -> Constraints.any, [a] ->. [a]
+        "greet", forall1 <| fun a -> Constraints.any, [a] ->. []
+    ]
+
+    let greeter' = Var.newVar "greeter" 1 types.valueKind Constraints.any
+    let greeter = VarType greeter' |> Type.makeWithEmptyLocation
+
+    // subst = [
+    //     ?self |-> ?self2 extends { getGreeter: fun(?self) -> ?greeter }`
+    //     ?greeter |-> ?greeter2 extends { greet: fun(?greeter) -> () }
+    // ]
+    let subst = Subst.createOfSeq [
+        self', Type.newValueVarWith 1 <| Constraints.ofFields [ "getGreeter", [self] ->. [greeter] ]
+        greeter', Type.newValueVarWith 1 <| Constraints.ofFields [ "greet", [greeter] ->. [] ]
+    ]
+
+    Type.unify { system = types'; substitute = subst; stringTableTypes = [] } self t2 =? ValueNone

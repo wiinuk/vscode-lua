@@ -11,8 +11,13 @@ open System.Collections.Concurrent
 module rec TypeExtensions =
     type K = LuaChecker.DiagnosticKind
 
+    let subst' = Subst.create()
     let types' = standardTypeSystem
-    let typeEnv' = { system = types'; stringTableTypes = [] }
+    let typeEnv' = {
+        system = types'
+        stringTableTypes = []
+        substitute = subst'
+    }
     let stringKeyInterfaceType fs = fs |> Seq.map (fun (k, t) -> FieldKey.String k, t) |> Map
     let withEmptyLocation x = { kind = x; trivia = [] }
 
@@ -26,17 +31,26 @@ module rec TypeExtensions =
         let newValueVarWith level c = Type.newVarWith "" level types'.valueKind c |> Type.makeWithEmptyLocation
         let newMultiVarWith level c = Type.newVarWith "" level types'.multiKind c |> Type.makeWithEmptyLocation
         let newVar level = TypeSystem.Type.newVar "" level types'.valueKind |> Type.makeWithEmptyLocation
-        let newAssigned t =
-            VarType { target = Assigned t; varKind = Type.kind typeEnv' t; varDisplayName = "" }
+        let newAssigned subst t =
+            let var = Var.newVar "" 0 (Type.kind types' t) Constraints.any
+            Subst.assign subst var t
+            VarType var
             |> Type.makeWithEmptyLocation
 
-    type NormalizeState = {
+    type NormalizeState<'Subst> = {
+        subst: 'Subst
         mutable nextId: int64
         mutable ids: Map<TypeParameterId, TypeParameterId>
         mutable vs: VarTypeSite list
         mutable reduced: bool
     }
-    let newEmptyState() = { nextId = 0L; ids = Map.empty; vs = []; reduced = false }
+    let newEmptyState subst = {
+        subst = subst
+        nextId = 0L
+        ids = Map.empty
+        vs = []
+        reduced = false
+    }
     let clearVisitedVarsAndMultiVars s = s.vs <- []
 
     let fleshId s kind =
@@ -57,7 +71,7 @@ module rec TypeExtensions =
         id'
 
     let addVar v state =
-        if List.exists (VarType.physicalEquality v) state.vs then false else
+        if List.contains v state.vs then false else
         state.vs <- v::state.vs
         true
 
@@ -82,9 +96,11 @@ module rec TypeExtensions =
             | InterfaceType fs -> fields ids fs
             | VarType v ->
                 if addVar v ids then
-                    match v.target with
-                    | Assigned t -> type' ids t
-                    | LuaChecker.Var(_, c) -> constraints ids c
+                    match Subst.tryFind ids.subst v with
+                    | ValueSome t -> type' ids t
+                    | _ ->
+                        let (LuaChecker.Var(constraints = c)) = v
+                        constraints ids c
 
             | TypeAbstraction(ps, t) ->
                 for TypeParameter(_, id, c) in ps do
@@ -94,8 +110,8 @@ module rec TypeExtensions =
                 type' ids t
 
     module ParameterIdReplacers =
-        let toReducer collector replacer x =
-            let ids = newEmptyState()
+        let toReducer collector replacer subst x =
+            let ids = newEmptyState subst
             collector ids x
             clearVisitedVarsAndMultiVars ids
             ids.reduced <- false
@@ -112,15 +128,15 @@ module rec TypeExtensions =
             | InterfaceType fs -> fields ids fs |> InterfaceType |> Type.withEntity t
             | VarType r ->
                 if addVar r ids then
-                    match r.target with
-                    | Assigned t ->
+                    match Subst.tryFind ids.subst r with
+                    | ValueSome t ->
                         ids.reduced <- true
                         type' ids t
 
-                    | LuaChecker.Var(l, c) ->
+                    | _ ->
+                        let (LuaChecker.Var(id, n, l, k, c)) = r
                         let c = constraints ids c
-                        r.target <- LuaChecker.Var(l, c)
-                        t
+                        VarType(LuaChecker.Var(id, n, l, k, c)) |> Type.withEntity t
                 else
                     t
 
@@ -144,10 +160,11 @@ module rec TypeExtensions =
 
         and fields ids fs = Map.map (fun _ -> type' ids) fs
 
-    type SimplifierEnv<'pts,'visited,'reduced> = {
+    type SimplifierEnv<'pts,'visited,'reduced,'subst> = {
         pts: 'pts
         visited: 'visited
         reduced: 'reduced
+        subst: 'subst
     }
 
     module ConstraintSimplifiers =
@@ -160,7 +177,7 @@ module rec TypeExtensions =
                 | _ -> ValueNone
 
             | UnionConstraint(lower, upper) ->
-                let (<=..) t1 t2 = TypeSet.isSubset types' t1 t2 |> Result.defaultValue false
+                let (<=..) t1 t2 = try TypeSet.isSubset types' t1 t2 with _ -> false
                 let (=.) t1 t2 = let t = TypeSet [withEmptyLocation t2] in t1 <=.. t && t <=.. t1
                 let (<=.) t1 t2 = t1 <=.. TypeSet [withEmptyLocation t2]
 
@@ -252,26 +269,26 @@ module rec TypeExtensions =
                 match Assoc.tryFind r env.visited with
                 | ValueSome() -> t
                 | _ ->
+
                 let env = { env with visited = Assoc.add r () env.visited }
 
-                r.target <-
-                    match r.target with
-                    | Assigned t -> Assigned <| type' env t
-                    | LuaChecker.Var(l, c) ->
+                match Subst.tryFind env.subst r with
+                | ValueSome t -> type' env t
+                | _ ->
 
-                    match trySimpleConstraint c with
-                    | ValueSome t ->
-                        env.reduced := true
-                        Assigned t
+                let (LuaChecker.Var(id, n, l, k, c)) = r
+                match trySimpleConstraint c with
+                | ValueSome t ->
+                    env.reduced := true
+                    t
+                | _ -> LuaChecker.Var(id, n, l, k, constraints env c) |> VarType |> Type.withEntity t
 
-                    | _ -> LuaChecker.Var(l, constraints env c)
-                t
-
-        let toReducer simple x =
+        let toReducer simple subst x =
             let env = {
                 visited = Assoc.empty
                 pts = Assoc.empty
                 reduced = ref false
+                subst = subst
             }
             let x = simple env x
             if !env.reduced
@@ -279,34 +296,34 @@ module rec TypeExtensions =
             else ValueNone
 
     module Reducer =
-        let noop _ = ValueNone
-        let merge r1 r2 x =
-            match r1 x with
-            | ValueNone -> r2 x
+        let noop _ _ = ValueNone
+        let merge r1 r2 subst x =
+            match r1 subst x with
+            | ValueNone -> r2 subst x
             | ValueSome x as r ->
 
-            match r2 x with
+            match r2 subst x with
             | ValueNone -> r
             | r -> r
 
         let mergeMany rs = List.fold merge noop rs
 
-        let repeat maxRepeat reducer x =
+        let repeat maxRepeat reducer subst x =
             if maxRepeat <= 0 then x else
 
-            match reducer x with
-            | ValueSome x -> repeat (maxRepeat - 1) reducer x
+            match reducer subst x with
+            | ValueSome x -> repeat (maxRepeat - 1) reducer subst x
             | _ -> x
 
-        let once reducer x = reducer x |> ValueOption.defaultValue x
+        let once reducer subst x = reducer subst x |> ValueOption.defaultValue x
 
     module TriviaSimplifiers =
-        let toReducer simple x =
+        let toReducer simple subst x =
             let reduced = ref false
-            let x = simple struct([], reduced) x
+            let x = simple struct([], reduced, subst) x
             if !reduced then ValueSome x else ValueNone
 
-        let trivia struct(_, reduced) t f =
+        let trivia struct(_, reduced, _) t f =
             if t.trivia <> [] then
                 reduced := true
 
@@ -319,15 +336,15 @@ module rec TypeExtensions =
             | ParameterType _ as t -> t
             | TypeAbstraction(ps, t) -> TypeAbstraction(List.map (typeParameter env) ps, type' env t)
             | VarType r as t ->
-                let struct(vs, reduced) = env
+                let struct(vs, reduced, subst) = env
                 if List.contains r vs then t else
-                let env = struct(r::vs, reduced)
+                let env = struct(r::vs, reduced, subst)
 
-                r.target <-
-                    match r.target with
-                    | Assigned t -> Assigned <| type' env t
-                    | LuaChecker.Var(l, c) -> LuaChecker.Var(l, constraints env c)
-                t
+                match Subst.tryFind subst r with
+                | ValueSome t -> (type' env t).kind
+                | _ ->
+                    let (LuaChecker.Var(id, n, l, k, c)) = r
+                    LuaChecker.Var(id, n, l, k, constraints env c) |> VarType
 
         let constraints env c = trivia env c <| function
             | InterfaceConstraint fs -> Map.map (fun _ -> type' env) fs |> InterfaceConstraint
@@ -338,7 +355,7 @@ module rec TypeExtensions =
                     TypeSet.map (type' env) u
                 )
 
-        let typeParameter (struct(_, reduced) as env) (TypeParameter(x, id, c)) =
+        let typeParameter (struct(_, reduced, _) as env) (TypeParameter(x, id, c)) =
             if x <> "" then reduced := true
             TypeParameter("", id, constraints env c)
 
@@ -353,7 +370,7 @@ module rec TypeExtensions =
             let lowerBounds =
                 lowerBounds
                 |> List.map (Type.literalType >> List.singleton)
-                |> List.fold (fun ts1 ts2 -> TypeSet.union types' ts1 (TypeSet ts2) |> Result.defaultWith (failwithf "%A")) TypeSet.empty
+                |> List.fold (fun ts1 ts2 -> TypeSet.union types' ts1 (TypeSet ts2)) TypeSet.empty
             UnionConstraint(lowerBounds, UniversalTypeSet) |> Constraints.makeWithEmptyLocation
         /// x..
         let numberOrUpper lowerBound = lowerBound |> Number |> Type.literalType |> List.singleton |> tagOrUpper
@@ -363,22 +380,22 @@ module rec TypeExtensions =
         let tagOrLower upperBound = ofSpace([], upperBound)
         let multiElementType et = MultiElementTypeConstraint et |> Constraints.makeWithEmptyLocation
 
-        let renumberParameters c =
-            ParameterIdReplacers.toReducer ParameterIdCollectors.constraints ParameterIdReplacers.constraints c
+        let renumberParameters subst c =
+            ParameterIdReplacers.toReducer ParameterIdCollectors.constraints ParameterIdReplacers.constraints subst c
 
-        let simplifyTrivias = TriviaSimplifiers.toReducer TriviaSimplifiers.constraints
+        let simplifyTrivias c = TriviaSimplifiers.toReducer TriviaSimplifiers.constraints c
 
-        let normalize c =
+        let normalize subst c =
             c
             |> Reducer.repeat 100 (Reducer.mergeMany [
                 ConstraintSimplifiers.toReducer ConstraintSimplifiers.constraints
                 renumberParameters
-            ])
-            |> Reducer.once simplifyTrivias
+            ]) subst
+            |> Reducer.once simplifyTrivias subst
 
     module Scheme =
-        let renumberParameters t =
-            ParameterIdReplacers.toReducer ParameterIdCollectors.type' ParameterIdReplacers.type' t
+        let renumberParameters subst t =
+            ParameterIdReplacers.toReducer ParameterIdCollectors.type' ParameterIdReplacers.type' subst t
 
         let simplifyConstraints t =
             ConstraintSimplifiers.toReducer ConstraintSimplifiers.type' t
@@ -388,13 +405,13 @@ module rec TypeExtensions =
 
         /// normalize (type('123) -> (?a, ?b: ..string, '123)) =
         ///           (type('0, '1) -> ('1, string, '0))
-        let normalize t =
-            Scheme.generalize 0 t
+        let normalize subst t =
+            Scheme.generalize subst 0 t
             |> Reducer.repeat 100 (Reducer.mergeMany [
                 simplifyConstraints
                 renumberParameters
-            ])
-            |> Reducer.once simplifyTrivias
+            ]) subst
+            |> Reducer.once simplifyTrivias subst
 
     let scheme = function
         | [], t -> t
@@ -407,51 +424,52 @@ module rec TypeExtensions =
 
         let newVar level = newVarWith level ValueNone
 
-        let normalizeParameterId m =
-            let ids = newEmptyState()
+        let normalizeParameterId subst m =
+            let ids = newEmptyState subst
             ParameterIdCollectors.type' ids m
             ParameterIdReplacers.type' ids m
 
     module Declaration =
-        let normalize d = {
-            d with scheme = Scheme.normalize d.scheme
+        let normalize subst d = {
+            d with scheme = Scheme.normalize subst d.scheme
         }
 
     module UnifyError =
-        let normalize = function
+        let normalize subst = function
             | RequireField(actualFields, requireKey, requireType) ->
                 RequireField(
-                    Map.map (fun _ -> Scheme.normalize) actualFields,
+                    Map.map (fun _ -> Scheme.normalize subst) actualFields,
                     requireKey,
-                    Scheme.normalize requireType
+                    Scheme.normalize subst requireType
                 )
 
-            | ConstraintAndTypeMismatch(c, t) -> ConstraintAndTypeMismatch(Constraints.normalize c, Scheme.normalize t)
-            | ConstraintMismatch(c1, c2) -> ConstraintMismatch(Constraints.normalize c1, Constraints.normalize c2)
-            | TypeMismatch(t1, t2) -> TypeMismatch(Scheme.normalize t1, Scheme.normalize t2)
-            | UndefinedField(t, k) -> UndefinedField(Scheme.normalize t, k)
+            | ConstraintAndTypeMismatch(c, t) -> ConstraintAndTypeMismatch(Constraints.normalize subst c, Scheme.normalize subst t)
+            | ConstraintMismatch(c1, c2) -> ConstraintMismatch(Constraints.normalize subst c1, Constraints.normalize subst c2)
+            | TypeMismatch(t1, t2) -> TypeMismatch(Scheme.normalize subst t1, Scheme.normalize subst t2)
+            | UndefinedField(t, k) -> UndefinedField(Scheme.normalize subst t, k)
 
-            | KindMismatch _ as x -> x
+            | KindMismatch _
+            | UnificationStackTooDeep as x -> x
 
     module DiagnosticKind =
-        let normalize = function
-            | K.UnifyError u -> UnifyError.normalize u |> K.UnifyError
+        let normalize subst = function
+            | K.UnifyError u -> UnifyError.normalize subst u |> K.UnifyError
             | K.GlobalNameCollision(n, d1, d2, ds) ->
-                K.GlobalNameCollision(n, Declaration.normalize d1, Declaration.normalize d2, List.map Declaration.normalize ds)
+                K.GlobalNameCollision(n, Declaration.normalize subst d1, Declaration.normalize subst d2, List.map (Declaration.normalize subst) ds)
 
             | K.UndeterminedGlobalVariableEnvironment(x1, x2) ->
                 K.UndeterminedGlobalVariableEnvironment(
                     x1,
-                    Map.map (fun _ -> NonEmptyList.map Declaration.normalize) x2
+                    Map.map (fun _ -> NonEmptyList.map (Declaration.normalize subst)) x2
                 )
 
-            | K.ExternalModuleError(x1, x2) -> K.ExternalModuleError(x1, Diagnostic.normalize x2)
+            | K.ExternalModuleError(x1, x2) -> K.ExternalModuleError(x1, Diagnostic.normalize subst x2)
 
             | e -> e
 
     module Diagnostic =
-        let normalize (Diagnostic(span, sev, k)) =
-            Diagnostic(span, sev, DiagnosticKind.normalize k)
+        let normalize subst (Diagnostic(span, sev, k)) =
+            Diagnostic(span, sev, DiagnosticKind.normalize subst k)
 
 module Helpers =
     open TypeExtensions
@@ -503,6 +521,7 @@ module Helpers =
         luaExeDir: string option
         withTypeEnv: 'TypeEnv -> 'TypeEnv
         initialGlobalModulePaths: string list
+        typeSubst: unit -> Type MutableSubst
     }
     module ProjectConfig =
         let defaultValue = {
@@ -512,7 +531,9 @@ module Helpers =
             luaExeDir = None
             withTypeEnv = id
             initialGlobalModulePaths = ["./standard.d.lua"]
+            typeSubst = fun _ -> subst'
         }
+
     type SourceConfig = {
         path: string
         source: string
@@ -522,6 +543,13 @@ module Helpers =
         sources: SourceConfig list
         projectConfig: ProjectConfig<'TypeEnv>
     }
+    module CheckConfig =
+        let defaultValue = {
+            path = "C:/dir/file.lua"
+            sources = []
+            projectConfig = ProjectConfig.defaultValue
+        }
+
     let checkCached project path =
         match Project.tryFind path project with
         | ValueNone -> None, Seq.empty, project
@@ -577,12 +605,12 @@ module Helpers =
 
     /// `fun(…) -> $x` => $x
     let (|FunctionReturnType|_|) = function
-        | Type.Function typeEnv' (ValueSome(_, r)) -> r |> Some
+        | Type.Function types' (ValueSome(_, r)) -> r |> Some
         | _ -> None
 
     /// `()` => nil | `($x, …)` => $x
     let (|MultiToValueType|) = function
-        | Type.Cons typeEnv' (ValueSome(t, _)) -> t
+        | Type.Cons types' (ValueSome(t, _)) -> t
         | _ -> types'.nil |> Type.makeWithEmptyLocation
 
     let (|FunctionReturnType1|_|) = function
@@ -605,8 +633,8 @@ module Helpers =
         | TypeAbstraction(ps, t) -> TypeAbstraction(ps, functionReturnTypeRec t) |> Type.makeWithEmptyLocation
         | _ -> t
 
-    let chunkReturnType1 t = t.functionType |> functionReturnType1Rec |> Scheme.normalize
-    let chunkReturnType t = t.functionType |> functionReturnTypeRec |> Scheme.normalize
+    let chunkReturnType1 t = t.functionType |> functionReturnType1Rec |> Scheme.normalize t.typeSubstitute
+    let chunkReturnType t = t.functionType |> functionReturnTypeRec |> Scheme.normalize t.typeSubstitute
 
     let projectActionsToScheme withConfig =
         projectActions withConfig >> List.map (function
@@ -619,23 +647,21 @@ module Helpers =
         projectActions withConfig actions
         |> List.map (function
             | CheckResult(Some x, [], _) -> Ok <| chunkReturnType1 x
-            | CheckResult(_, es, _) -> Error <| List.map Diagnostic.normalize es
+            | CheckResult(x, es, _) ->
+                let subst = x |> Option.map (fun x -> x.typeSubstitute) |> Option.defaultValue Subst.empty
+                Error <| List.map (Diagnostic.normalize subst) es
             | _ -> Error []
         )
 
     let projectSchemeAndDiagnostics withConfig actions =
         projectActions withConfig actions
         |> List.map (function
-            | CheckResult(Some x, es, _) -> chunkReturnType1 x, List.map Diagnostic.normalize es
+            | CheckResult(Some x, es, _) -> chunkReturnType1 x, List.map (Diagnostic.normalize x.typeSubstitute) es
             | r -> failwithf "%A" r
         )
 
     let checkChunk withConfig source =
-        let { path = path; sources = sources; projectConfig = projectConfig } = withConfig {
-            path = "C:/dir/file.lua"
-            sources = []
-            projectConfig = ProjectConfig.defaultValue
-        }
+        let { path = path; sources = sources; projectConfig = projectConfig } = withConfig CheckConfig.defaultValue
 
         let actions = [
             for s in sources do AddOrUpdate(s.path, s.source)
@@ -647,10 +673,14 @@ module Helpers =
         | [CheckResult(scheme, e, _)] -> scheme, e
         | xs -> failwithf "%A" xs
 
-    let chunkDiagnostics withConfig = checkChunk withConfig >> snd >> List.map Diagnostic.normalize
+    let chunkDiagnostics withConfig x =
+        let chunk, ds = checkChunk withConfig x
+        let subst = chunk |> Option.map (fun c -> c.typeSubstitute) |> Option.defaultValue Subst.empty
+        ds |> List.map (Diagnostic.normalize subst)
+
     let chunkSchemeAndDiagnostics withConfig source =
         match checkChunk withConfig source with
-        | Some c, es -> chunkReturnType1 c, List.map Diagnostic.normalize es
+        | Some c, es -> chunkReturnType1 c, List.map (Diagnostic.normalize c.typeSubstitute) es
         | x -> failwithf "%A" x
 
     let chunkScheme withConfig source =
@@ -683,7 +713,7 @@ module Helpers =
     }
     let private defT = {
         location = []
-        normalize = Scheme.normalize
+        normalize = Scheme.normalize Subst.empty
     }
 
     type TypeMakeOptions0 = {
@@ -721,7 +751,7 @@ module Helpers =
     let type1 makeType = type1With id makeType
 
     type MakeConstraints2 = (Type -> Type -> Constraints)
-    type TypeMakeOptions2 = {
+    type TypeMakeOptions2<'Subst> = {
         p0: TypeParameterOption<MakeConstraints2>
         p1: TypeParameterOption<MakeConstraints2>
         t: TypeMakeOptions
@@ -748,7 +778,7 @@ module Helpers =
     let type2 makeType = type2With id makeType
 
     type MakeConstraints3 = (Type -> Type -> Type -> Constraints)
-    type TypeMakeOptions3 = {
+    type TypeMakeOptions3<'Subst> = {
         p0: TypeParameterOption<MakeConstraints3>
         p1: TypeParameterOption<MakeConstraints3>
         p2: TypeParameterOption<MakeConstraints3>
@@ -783,7 +813,7 @@ module Helpers =
         let p0 = TypeParameterId.createNext kind0
         let t0 = ParameterType p0 |> Type.makeWithEmptyLocation
         let c0, t = f t0
-        scheme([TypeParameter("", p0, c0)], t) |> Scheme.normalize
+        scheme([TypeParameter("", p0, c0)], t) |> Scheme.normalize Subst.empty 
 
     let forall1 = forall1With types'.valueKind
 
@@ -793,7 +823,7 @@ module Helpers =
         let t0 = ParameterType p0 |> Type.makeWithEmptyLocation
         let t1 = ParameterType p1 |> Type.makeWithEmptyLocation
         let (c0, c1), t = f t0 t1
-        scheme([TypeParameter("", p0, c0); TypeParameter("", p1, c1)], t) |> Scheme.normalize
+        scheme([TypeParameter("", p0, c0); TypeParameter("", p1, c1)], t) |> Scheme.normalize Subst.empty
 
     let forall2 = forall2With (types'.valueKind, types'.valueKind)
 
@@ -867,7 +897,7 @@ module Helpers =
     /// ParseAndCheck
     let (&><) source path = ParseAndCheck(path, source)
 
-    let unify t1 t2 = Type.unify typeEnv' t1 t2
+    let unify t1 t2 = Type.unify { system = types'; substitute = subst'; stringTableTypes = [] } t1 t2
 
     type EmptyLocationTypes = {
         multiKind: Kind

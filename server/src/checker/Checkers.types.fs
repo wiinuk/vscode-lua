@@ -202,6 +202,7 @@ type Project = {
 type EnvNoUpdate<'Scope,'RootScope> = {
     types: TypeSystem
     typeCache: TypeCache
+    typeSubst: Type MutableSubst
     diagnostics: Diagnostic ResizeArray
     filePath: DocumentPath
     source: string Lazy
@@ -273,6 +274,7 @@ module CheckerEnv =
         {
             system = env.types
             stringTableTypes = env.defaultGlobalEnv.stringMetaTableIndexType @ env.additionalGlobalEnv.Value.stringMetaTableIndexType
+            substitute = env.typeSubst
         }
     let (|Types|) env = types env
     let (|TypeEnv|) env = typeEnv env
@@ -362,8 +364,8 @@ module CheckerEnv =
     let newMultiVarTypeWith env displayName c = newVarTypeWith env displayName (types env).multiKind c
     let newMultiVarType env displayName = newMultiVarTypeWith env displayName Constraints.any
 
-    let isMultiKind (TypeEnv env) t = Type.kind env t = env.system.multiKind
-    let isValueKind (TypeEnv env) t = Type.kind env t = env.system.valueKind
+    let isMultiKind (Types types) t = Type.kind types t = types.multiKind
+    let isValueKind (Types types) t = Type.kind types t = types.valueKind
 
     let sourceLocation env span = [Location(env.rare.noUpdate.filePath, span)]
 

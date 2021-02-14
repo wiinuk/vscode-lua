@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "LuaChecker.Checker.Tests": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

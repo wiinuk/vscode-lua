@@ -147,7 +147,7 @@ let nestedTyping() =
     " =? multi [types.number; types.string; types.boolean; types.string]
 
 [<Fact>]
-let recursiveTyping() =
+let recursiveFunctionTyping() =
     chunkScheme id "
     local function f(x)
         if true then return 'a'
@@ -394,7 +394,7 @@ let rank1Type() =
         "f1", t
         "f2", t
     ]
-    |> Scheme.normalize
+    |> Scheme.normalize subst'
 
 [<Fact>]
 let curriedFunctionGeneralize() =
@@ -420,7 +420,7 @@ let unifyVarAndTypeAbs() =
     // unify (type(y) -> fun(y) -> { x: (?x(2): 1..); y: y; }) (?a(2))
     unify with1T a =? ValueNone
 
-    Scheme.normalize a =? type1 (fun y -> [y] ->. [Type.interfaceType ["x", types.number; "y", y]])
+    Scheme.normalize subst' a =? type1 (fun y -> [y] ->. [Type.interfaceType ["x", types.number; "y", y]])
 
 [<Fact>]
 let curriedFunctionRank1() =
@@ -455,6 +455,14 @@ let unifyTypeAbstraction() =
     id = id2
     "
     =? multi []
+
+[<Fact>]
+let recursiveConstraintSimple() =
+    chunkScheme id "
+        local function getArea(s) return s:area() end
+        return getArea { area = function(self) return 10 end }
+    "
+    =? types.number
 
 [<Fact>]
 let recursiveConstraint() =
@@ -516,7 +524,7 @@ let recursiveConstraint2MissingFieldError() =
         scale = function(self, x) self._w = self._w * x; self._h = self._h * x; return self end,
     }
     "
-    =? List.map Diagnostic.normalize [
+    =? List.map (Diagnostic.normalize subst') [
         RequireField(
             Map [
                 FieldKey.String "_h", scheme1With (types.valueKind, Constraints.ofSpace([Type.numberLiteralType 5.], [types.number])) <| fun t1 -> t1
@@ -536,6 +544,18 @@ let recursiveConstraint2MissingFieldError() =
         |> K.UnifyError
         |> error (130, 329)
     ]
+
+
+[<Fact>]
+let recursiveConstraint2Simple() =
+    chunkScheme id "
+    local function f(x) x:getGreeter():greet() end
+    return f {
+        getGreeter = function(self) return self end,
+        greet = function(self) end,
+    }
+    "
+    =? types.nil
 
 [<Fact>]
 let acceptRecursiveType1() =
@@ -602,7 +622,7 @@ let localGeneralize() =
     let c = Constraints.literalsOrUpper [S.String "ok"; S.Number 123.]
     let t = type1With (fun o -> { o with t = { o.t with normalize = id }; p0 = { o.p0 with c = fun _ -> c } }) id
     multi [t; t]
-    |> Scheme.normalize
+    |> Scheme.normalize subst'
 
 [<Fact>]
 let localGeneralizeAndUnion() =
@@ -622,7 +642,7 @@ let localGeneralizeAndUnion() =
         t1
         t2
     ]
-    |> Scheme.normalize
+    |> Scheme.normalize subst'
 
 [<Fact>]
 let typeLocation() =
@@ -1133,3 +1153,10 @@ let add10() =
     =? multi [
         types.number
     ]
+
+[<Fact>]
+let tableLength() =
+    chunkResult id "
+    return #{1}
+    "
+    =? multi [types.number]
