@@ -104,22 +104,25 @@ let showParseError (Messages m) = function
 let showUnifyError (Messages m) = function
     | RequireField(x1, x2, x3) ->
         let x1 = x1 |> Seq.map (fun kv -> FieldKey.show kv.Key) |> String.concat ", "
-        String.Format(m.RequireField, x1, FieldKey.show x2, Type.show x3)
+        String.Format(m.RequireField, x1, FieldKey.show x2, Type.show Subst.empty x3)
 
     | TypeMismatch(x1, x2) ->
-        String.Format(m.TypeMismatch, Type.show x1, Type.show x2)
+        String.Format(m.TypeMismatch, Type.show Subst.empty x1, Type.show Subst.empty x2)
 
     | UndefinedField(x1, x2) ->
-        String.Format(m.UndefinedField, Type.show x1, FieldKey.show x2)
+        String.Format(m.UndefinedField, Type.show Subst.empty x1, FieldKey.show x2)
 
     | ConstraintAndTypeMismatch(x1, x2) ->
-        String.Format(m.ConstraintAndTypeMismatch, Constraints.show x1.kind, Type.show x2)
+        String.Format(m.ConstraintAndTypeMismatch, Constraints.show Subst.empty x1.kind, Type.show Subst.empty x2)
 
     | ConstraintMismatch(x1, x2) ->
-        String.Format(m.ConstraintMismatch, Constraints.show x1.kind, Constraints.show x2.kind)
+        String.Format(m.ConstraintMismatch, Constraints.show Subst.empty x1.kind, Constraints.show Subst.empty x2.kind)
 
     | KindMismatch(x1, x2) ->
-        String.Format(m.KindMismatch, Kind.show x1, Kind.show x2)
+        String.Format(m.KindMismatch, Kind.show Subst.empty x1, Kind.show Subst.empty x2)
+
+    | UnificationStackTooDeep ->
+        String.Format m.UnificationStackTooDeep
 
 let showSeverity (Messages m) = function
     | Severity.Error -> m.Error
@@ -141,7 +144,7 @@ let showDeclSummary context name { scheme = t; location = l } =
         | None -> ""
         | Some l -> sprintf " -- %s" <| showLocation context l
 
-    sprintf "%s: %s%s" name (Type.show t) location
+    sprintf "%s: %s%s" name (Type.show Subst.empty t) location
 
 let showTypeDefSummary context name { locations = ls } =
     let location =
@@ -356,7 +359,7 @@ let renderGenericAnnotationsInLua (b: Utf16ValueStringBuilder byref) (scope: _ i
     | [] -> ()
     | ps ->
         for p in ps do
-            b.Append "---@generic "; TypeParameterExtensions.Append(&b, p, &scope, &state)
+            b.Append "---@generic "; b.AppendTypeParameter(p, &scope, &state)
             b.Append '\n'
 
 let reset (x: 'T byref when 'T :> IResettableBufferWriter<_> and 'T : struct) = x.Reset()
@@ -364,15 +367,15 @@ let reset (x: 'T byref when 'T :> IResettableBufferWriter<_> and 'T : struct) = 
 let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSymbol: Utf16ValueStringBuilder inref) (genScheme: Scheme, pts) =
     use mutable b = ZString.CreateStringBuilder()
 
-    let struct(ps, t) = Scheme.takeHeadParameters [] genScheme
+    let struct(ps, t) = Scheme.takeHeadParameters Subst.empty [] genScheme
     b.Append "```lua\n"
     renderGenericAnnotationsInLua &b &scope &state ps
-    b.Append(varSymbol.AsSpan()); b.Append ": "; TypeExtensions.Append(&b, t.kind, &scope, &state); b.Append '\n'
+    b.Append(varSymbol.AsSpan()); b.Append ": "; b.AppendType(t.kind, &scope, &state); b.Append '\n'
     b.Append '\n'
     b.Append "-- "; b.Append M.GenericTypeParameters; b.Append '\n'
 
     let scope = TypePrintScope.empty
-    let mutable state = TypePrintState.create TypeWriteOptions.Default
+    let mutable state = TypePrintState.create Subst.empty TypeWriteOptions.Default
 
     use mutable b1 = ZString.CreateStringBuilder()
     use mutable b2 = ZString.CreateStringBuilder()
@@ -381,7 +384,7 @@ let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSym
     | _ ->
         for struct(TypeParameterId(id, _), { Token.kind = t }) in pts do
             b1.Append id
-            TypeExtensions.Append(&b2, t, &scope, &state)
+            b2.AppendType(t, &scope, &state)
 
             b.Append "-- "; b.AppendFormat(M.GenericTypeSubstitute, b1, b2); b.Append '\n'
             reset &b1
@@ -392,17 +395,17 @@ let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSym
 
 let renderVarCore context (varSymbol: _ inref) t info =
     let scope = TypePrintScope.empty
-    let mutable state = TypePrintState.create TypeWriteOptions.Default
+    let mutable state = TypePrintState.create Subst.empty TypeWriteOptions.Default
 
     match info with
     | ValueSome { schemeInstantiation = ValueSome x } -> renderInstantiatedVar context &scope &state &varSymbol x
     | _ ->
 
-    let struct(ps, t) = Scheme.takeHeadParameters [] t
+    let struct(ps, t) = Scheme.takeHeadParameters Subst.empty [] t
     use mutable b = ZString.CreateStringBuilder()
     b.Append "```lua\n"
     renderGenericAnnotationsInLua &b &scope &state ps
-    b.Append(varSymbol.AsSpan()); b.Append ": "; b.Append(t.kind, &scope, &state)
+    b.Append(varSymbol.AsSpan()); b.Append ": "; b.AppendType(t.kind, &scope, &state)
     b.Append "\n```"
     b.ToString()
 
@@ -438,12 +441,12 @@ let renderModulePath context modulePath =
 
 let renderSimpleType (b: Utf16ValueStringBuilder byref) t =
     let scope = TypePrintScope.empty
-    let mutable state = TypePrintState.create TypeWriteOptions.Default
+    let mutable state = TypePrintState.create Subst.empty TypeWriteOptions.Default
 
-    let struct(ps, t) = Scheme.takeHeadParameters [] t
+    let struct(ps, t) = Scheme.takeHeadParameters Subst.empty [] t
     b.Append "```lua\n"
     renderGenericAnnotationsInLua &b &scope &state ps
-    b.Append(t.kind, &scope, &state)
+    b.AppendType(t.kind, &scope, &state)
     b.Append "\n```"
 
 let renderLiteral context t info =
@@ -561,10 +564,11 @@ let semanticTokenModifiersLegend = [
 ]
 
 [<Struct>]
-type CollectSemanticsVisitor = {
+type CollectSemanticsVisitor<'Subst> when 'Subst :> LuaChecker.Type IReadonlySubst and 'Subst : struct = {
     buffer: int ResizeArray
     lineMap: LineMap
-    typeSystemEnv: TypeEnv
+    typeSystem: TypeSystem
+    subst: 'Subst
     stringSingleton: LuaChecker.TypeSet
     numberSingleton: LuaChecker.TypeSet
     mutable lastLine: int
@@ -643,10 +647,10 @@ let writeLiteralTokenSemantics (this: _ byref) { trivia = { Syntaxes.Trivia.span
 let namedTypeSemantics (this: _ byref) typeConstant = function
 
     // `fun(…): (…)`
-    | Type.Function this.typeSystemEnv (ValueSome _) -> ValueSome struct(T.``function``, M.Empty)
+    | Type.Function this.typeSystem (ValueSome _) -> ValueSome struct(T.``function``, M.Empty)
     | _ ->
 
-    let types = this.typeSystemEnv.system
+    let types = this.typeSystem
 
     // `boolean`
     if typeConstant = types.booleanConstant then
@@ -679,7 +683,7 @@ let literalTypeSemantics = function
     | S.Number _ -> T.number, M.Empty
 
 let isSuperLike types (lower, upper) super =
-    let (<=.) t1 t2 = TypeSet.isSubset types t1 t2 |> Result.defaultValue false
+    let (<=.) t1 t2 = try TypeSet.isSubset types t1 t2 with _ -> false
 
     // `number..` `(1 | 2)..`
     (lower <=. super && TypeSet.isUniversal upper) ||
@@ -695,7 +699,7 @@ let constraintsSemantics (this: _ inref) { Token.kind = constraints } =
     | InterfaceConstraint _ -> ValueSome struct(T.``interface``, M.Empty)
     | MultiElementTypeConstraint _ -> ValueNone
     | UnionConstraint(lower, upper) ->
-        let types = this.typeSystemEnv.system
+        let types = this.typeSystem
         ValueSome (
             if isSuperLike types (lower, upper) this.stringSingleton then (T.string, M.Empty)
             elif isSuperLike types (lower, upper) this.numberSingleton then (T.number, M.Empty)
@@ -744,9 +748,11 @@ let rec typeSemantics (this: _ byref) { Token.kind = type' } typeParameters type
 
     // `?a`
     | VarType v ->
-        match v.target with
-        | LuaChecker.Var(_, c) -> constraintsSemantics &this c
-        | Assigned t -> typeSemantics &this t typeParameters typeEnv
+        match Subst.tryFind this.subst v with
+        | ValueSome t -> typeSemantics &this t typeParameters typeEnv
+        | _ ->
+            let (LuaChecker.Var(constraints = c)) = v
+            constraintsSemantics &this c
 
     // `type(t) -> …`
     | TypeAbstraction(ps, t) -> typeSemantics &this t (ps @ typeParameters) typeEnv
@@ -821,7 +827,7 @@ let writeDocumentFieldIdentifierSemantics (this: _ byref) (D.Annotated(key, leaf
     writeTokenRange &this key.trivia
     writeLeafSemantics &this T.property leaf
 
-type CollectSemanticsVisitor with
+type CollectSemanticsVisitor<'Subst> when 'Subst :> LuaChecker.Type IReadonlySubst and 'Subst : struct with
     interface ITypedSyntaxVisitor with
         member v.Reserved(reserved, typeEnv) = writeReservedTokenSemantics &v reserved typeEnv
         member v.Literal(literal, type', typeEnv, leafInfo) = writeLiteralTokenSemantics &v literal type' typeEnv leafInfo

@@ -171,7 +171,7 @@ module private Type =
         aux typeParameterToType typeWithSpans
 
     let buildTypeOfAliasDefinition env name d typeArgs =
-        let struct(vs, instantiatedType) = Scheme.instantiate env.rare.typeLevel d
+        let struct(vs, instantiatedType) = Scheme.instantiate env.rare.noUpdate.typeSubst env.rare.typeLevel d
         match vs, typeArgs with
         | [], [] -> instantiatedType
         | _ ->
@@ -559,7 +559,7 @@ module private Type =
             | ValueSome expectedKind ->
 
             let (TypeEnv types) = env.env
-            let kind = Type.kind types t'
+            let kind = Type.kind types.system t'
             if kind = expectedKind then t' else
             reportKindMismatchAndNewMissingType env.env t.trivia (expectedKind, kind)
 
@@ -712,7 +712,7 @@ module private Helpers =
                 // 型変数の種を単一化する
                 // @generic T
                 // @generic T...
-                match unifyKind (Type.kind (typeEnv env) bind.varType) kind with
+                match Kind.unify (Type.kind types bind.varType) kind with
                 | ValueSome e ->
                     let (Name n) = nameToken
                     reportError env n.trivia.span <| DiagnosticKind.UnifyError e
@@ -868,7 +868,7 @@ module private Helpers =
 
         // グローバル変数宣言の型変数スコープはそのタグのみ
         let struct(t, typeSign) = Type.ofTypeSign env' typeSign
-        let t = Scheme.generalize 0 t
+        let t = Scheme.generalize env.rare.noUpdate.typeSubst 0 t
 
         let l = Some <| Location(env.rare.noUpdate.filePath, nameSpan)
         let d = {
@@ -1025,7 +1025,7 @@ module private Helpers =
             Type.ofTypeSign tempEnv typeSign, modifierTags
 
         // フィールドに @generic で明示的に指定された型変数だけが汎用化される
-        let fieldType = Scheme.generalize tempEnv.rare.typeLevel fieldType
+        let fieldType = Scheme.generalize tempEnv.rare.noUpdate.typeSubst tempEnv.rare.typeLevel fieldType
 
         // 現在交差型はないので、
         // 変換中の型は、もしインターフェース型ならインターフェース制約付き型変数に変換する
@@ -1081,16 +1081,19 @@ module private Helpers =
 
     /// `type … (a: C) … . a` で C がインターフェース制約で C の中に a がないとき、`type … . C` に変換する
     let interfaceConstraintToInterfaceType env nameSpan t =
-        let struct(_, t') = Scheme.instantiate 1 t
+        let struct(_, t') = Scheme.instantiate env.rare.noUpdate.typeSubst 1 t
         match t'.kind with
-        | VarType({ target = Var(_, ({ kind = InterfaceConstraint fs } as c)) } as r) when Constraints.hasField c ->
+        | VarType(Subst.Find env.rare.noUpdate.typeSubst (Ok({ kind = VarType(Var(constraints = { kind = InterfaceConstraint fs } as c ) as r) }))) when Constraints.hasField c ->
             let varsEnv = {
                 visitedVars = []
-                other = { level = 0 }
+                other = {
+                    level = 0
+                    subst = env.rare.noUpdate.typeSubst
+                }
             }
             let vs = Constraints.freeVars' varsEnv [] c
-            match Assoc.tryFindBy VarType.physicalEquality r vs with
-            | ValueNone -> InterfaceType fs |> Type.makeWithLocation (sourceLocation env nameSpan) |> Scheme.generalize 0
+            match Assoc.tryFind r vs with
+            | ValueNone -> InterfaceType fs |> Type.makeWithLocation (sourceLocation env nameSpan) |> Scheme.generalize env.rare.noUpdate.typeSubst 0
             | _ -> t
         | _ -> t
 
@@ -1102,7 +1105,7 @@ module private Helpers =
         // 自由変数はここで型引数に変換される
         // `---@class Vec4 : Vec2<T> @field z T @field w T` は
         // `---@generic T @class Vec4 : Vec2<T> @field z T @field w T` と同じ
-        let generalizedType = Scheme.generalize 0 tempType
+        let generalizedType = Scheme.generalize env.rare.noUpdate.typeSubst 0 tempType
 
         let generalizedType = interfaceConstraintToInterfaceType env nameToken.trivia.span generalizedType
 
@@ -1154,7 +1157,7 @@ module private Helpers =
             let env' = enterTypeScope env
             let struct(env', modifierTags) = extendTypeEnvFromGenericTags (toPendingValues modifierTags) env'
             let struct(t, typeSign) = Type.ofTypeSignCore env' expectedKind typeSign
-            let t = Scheme.generalize env.rare.typeLevel t
+            let t = Scheme.generalize env.rare.noUpdate.typeSubst env.rare.typeLevel t
 
             let typeTagTail =
                 D.TypeTag(

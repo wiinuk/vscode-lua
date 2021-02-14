@@ -66,11 +66,32 @@ module List =
             do ()
         result
 
-module Result =
-    let defaultValue value = function
-        | Ok x -> x
-        | _ -> value
+type ResultBuilder = | ResultBuilder with
+    member inline _.Return x = Ok x
+    member inline _.ReturnFrom x = x
+    member inline _.Bind(r, f) =
+        match r with
+        | Ok x -> f x
+        | Error e -> Error e
 
+module Result =
     let inline defaultWith errorChunk = function
         | Ok x -> x
         | Error e -> errorChunk e
+
+    let inline foldSequence folder state xs =
+        let mutable list = xs
+        let mutable state = state
+        let mutable result = Ok state
+        while
+            match list with
+            | [] -> result <- Ok state; false
+            | x::xs ->
+                match folder state x with
+                | Ok s -> state <- s; list <- xs; true
+                | Error e -> result <- Error e; false
+            do ()
+        result
+
+    module Operators =
+        let result = ResultBuilder

@@ -317,7 +317,7 @@ let additionalEnvironments() =
         Check "main"
     ]
     =? [
-        Scheme.normalize types.string, [
+        Scheme.normalize subst' types.string, [
             error (19, 28) <| K.NameNotFound "Lib1State"
         ]
     ]
@@ -381,7 +381,7 @@ let ancestorsModuleGlobal() =
         Check "main"
     ]
     =? [
-        Scheme.normalize types.nil, []
+        Scheme.normalize subst' types.nil, []
     ]
 
 [<Fact>]
@@ -409,7 +409,7 @@ let collisionGlobal() =
 
         Check "main"
     ] =? [
-        Scheme.normalize types.nil, [
+        Scheme.normalize subst' types.nil, [
             error (66, 68) <| K.GlobalNameCollision(
                 "Id",
                 {

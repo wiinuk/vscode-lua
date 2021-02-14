@@ -189,7 +189,7 @@ let simpleGlobalDeclare() =
     ---@global MyNaN number
     return MyNaN
     "
-    =? Scheme.normalize types.number
+    =? types.number
 
 [<Fact>]
 let globalDeclareScopeError() =
@@ -465,6 +465,18 @@ let typeParameter2() =
     =? types.table(types.string, types.boolean)
 
 [<Fact>]
+let simpleTypeParameter() =
+    chunkScheme id "
+    ---@generic T
+    ---@class PRecord
+    ---@field p T
+
+    ---@global X PRecord<number>
+    return X.p
+    "
+    =? types.number
+
+[<Fact>]
 let duplicatedTypeParameterUnify() =
     chunkScheme id "
     ---@generic V: { x: N }
@@ -643,6 +655,20 @@ let recursiveClassDefinition() =
     =? []
 
 [<Fact>]
+let recursiveClassDefinitionSimple() =
+    // Animal = type('self: { greet: fun('self): string }) -> 'self
+    chunkDiagnostics id "
+    ---@class Animal
+    ---@field greet fun(self): string
+    ---@global printGreet fun(Animal<_>): ()
+
+    printGreet {
+        greet = function(self) return '' end
+    }
+    "
+    =? []
+
+[<Fact>]
 let recursiveClassDefinitionError() =
     chunkDiagnostics id "
     ---@class Animal
@@ -653,7 +679,7 @@ let recursiveClassDefinitionError() =
         greet = function(self) return 'My name is ' .. self.name end
     }
     "
-    =? List.map Diagnostic.normalize [
+    =? List.map (Diagnostic.normalize Subst.empty) [
         RequireField(
             Map [
                 FieldKey.String "greet", scheme1With (types.valueKind, Constraints.ofFields ["name", types.string]) <| fun t1 -> [t1] ->. [types.string]
