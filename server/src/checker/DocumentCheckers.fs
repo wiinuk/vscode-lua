@@ -712,7 +712,7 @@ module private Helpers =
                 // 型変数の種を単一化する
                 // @generic T
                 // @generic T...
-                match unifyKind (Type.kind (typeEnv env) bind.varType) kind with
+                match Kind.unify (Type.kind (typeEnv env) bind.varType) kind with
                 | ValueSome e ->
                     let (Name n) = nameToken
                     reportError env n.trivia.span <| DiagnosticKind.UnifyError e

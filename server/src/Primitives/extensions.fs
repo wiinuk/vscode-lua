@@ -39,6 +39,7 @@ module Seq =
 
 module VOption =
     let box = function ValueSome x -> Some x | _ -> None
+    let toErrorOrUnit = function ValueSome x -> Error x | _ -> Ok()
 
 module Option =
     let unbox = function Some x -> ValueSome x | _ -> ValueNone
@@ -66,7 +67,19 @@ module List =
             do ()
         result
 
+type ResultBuilder = | ResultBuilder with
+    member inline _.Bind(x, f) =
+        match x with
+        | Error e -> Error e
+        | Ok x -> f x
+
+    member inline _.Return x = Ok x
+    member inline _.ReturnFrom x = x
+
 module Result =
+    module Operators =
+        let result = ResultBuilder
+
     let defaultValue value = function
         | Ok x -> x
         | _ -> value
@@ -74,3 +87,7 @@ module Result =
     let inline defaultWith errorChunk = function
         | Ok x -> x
         | Error e -> errorChunk e
+
+    let tryToErrorV = function
+        | Ok() -> ValueNone
+        | Error e -> ValueSome e
