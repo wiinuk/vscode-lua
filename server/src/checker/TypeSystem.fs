@@ -117,8 +117,13 @@ type FreeVarsEnv = {
 }
 
 [<Struct>]
-type UnifyEnv = {
+type UnifyTypeEnv = {
     visitedVarToType: Assoc<VarTypeSite, Type>
+}
+[<Struct>]
+type UnifyEnv = {
+    types: TypeEnv
+    unifyDepth: int
 }
 module UnifyEnv =
     let empty = {
@@ -133,7 +138,6 @@ let addVar v env =
     if containsVar v env.visitedVars then ValueNone else
     ValueSome { env with visitedVars = v::env.visitedVars }
 
-[<Struct>]
 type TypeEnv = {
     system: TypeSystem
     stringTableTypes: Type list
@@ -292,7 +296,11 @@ module Type =
             |> withEntity t
 
     let unify types t1 t2 =
-        match unifyType types UnifyEnv.empty UnifyEnv.empty t1 t2 |> Trampoline.run with
+        let env = {
+            types = types
+            unifyDepth = 0
+        }
+        match unifyType env UnifyEnv.empty UnifyEnv.empty t1 t2 |> Trampoline.run with
         | Ok() -> ValueNone
         | Error e -> ValueSome e
 
@@ -471,6 +479,7 @@ type UnifyError =
     | KindMismatch of Kind * Kind
     | ConstraintMismatch of Constraints * Constraints
     | ConstraintAndTypeMismatch of Constraints * Type
+    | UnificationStackTooDeep
 
 let unifyError e = Trampoline.Failure e
 
@@ -513,16 +522,16 @@ let missingFieldError fs1 fs2 =
     | Some(k2, v2) -> RequireField(fs1, k2, v2)
     | _ -> failwith ""
 
-let unifyList types env1 env2 all1 all2 ts1 ts2 = context {
+let unifyList env env1 env2 all1 all2 ts1 ts2 = context {
     match ts1, ts2 with
     | [], [] -> return ()
     | t1::ts1, t2::ts2 ->
-        do! unify types env1 env2 t1 t2
-        return! unifyList types env1 env2 all1 all2 ts1 ts2
+        do! unify env env1 env2 t1 t2
+        return! unifyList env env1 env2 all1 all2 ts1 ts2
 
     | _ -> return! unifyError(TypeMismatch(all1, all2))
 }
-let unifyMap types env1 env2 all1 all2 (e1: IEnumerator<KeyValuePair<FieldKey, Type>>) (e2: IEnumerator<KeyValuePair<FieldKey, Type>>) = context {
+let unifyMap env env1 env2 all1 all2 (e1: IEnumerator<KeyValuePair<FieldKey, Type>>) (e2: IEnumerator<KeyValuePair<FieldKey, Type>>) = context {
     match e1.MoveNext(), e2.MoveNext() with
     | false, false -> return ()
     | true, true ->
@@ -530,28 +539,31 @@ let unifyMap types env1 env2 all1 all2 (e1: IEnumerator<KeyValuePair<FieldKey, T
         let kv2 = e2.Current
         if kv1.Key <> kv2.Key then return! unifyError <| missingFieldError all1 all2 else
 
-        do! unify types env1 env2 kv1.Value kv2.Value
-        return! unifyMap types env1 env2 all1 all2 e1 e2
+        do! unify env env1 env2 kv1.Value kv2.Value
+        return! unifyMap env env1 env2 all1 all2 e1 e2
 
     | _ -> return! unifyError <| missingFieldError all1 all2
 }
 
 /// `unifyType` との違いは
 /// - 定数的なスタック消費量
-/// - 必ず `Trampoline` のためにヒープを確保する
-let unify types env1 env2 t1 t2 = Trampoline.TailCall(fun () -> unifyType types env1 env2 t1 t2)
+/// - `Trampoline` のためにヒープを確保する
+let unify env env1 env2 t1 t2 =
+    if 1024 < env.unifyDepth then unifyError UnificationStackTooDeep else
+    let env = { env with unifyDepth = env.unifyDepth + 1 }
+    Trampoline.TailCall(fun () -> unifyType env env1 env2 t1 t2)
 
 /// `unify` との違いは
 /// - 末尾再帰でないので、複雑な型を渡されるとスタックがあふれる場合がある
 /// - 単純な型を渡された場合、ヒープを確保しないため高速
-let unifyType types env1 env2 t1 t2 = context {
+let unifyType env env1 env2 t1 t2 = context {
     match t1.kind, t2.kind with
     | NamedType(n1, ts1), NamedType(n2, ts2) ->
         if n1 <> n2 then return! unifyError(TypeMismatch(t1, t2)) else
 
         match ts1, ts2 with
         | [], [] -> return ()
-        | _ -> return! unifyList types env1 env2 t1 t2 ts1 ts2
+        | _ -> return! unifyList env env1 env2 t1 t2 ts1 ts2
 
     | LiteralType v1, LiteralType v2 ->
         if Syntax.LiteralKind.equalsER v1 v2
@@ -563,7 +575,7 @@ let unifyType types env1 env2 t1 t2 = context {
 
         let e1 = (fs1 :> _ seq).GetEnumerator()
         let e2 = (fs2 :> _ seq).GetEnumerator()
-        return! unifyMap types env1 env2 fs1 fs2 e1 e2
+        return! unifyMap env env1 env2 fs1 fs2 e1 e2
 
     | ParameterType p1, ParameterType p2 ->
         if p1 = p2 then return () else
@@ -574,31 +586,31 @@ let unifyType types env1 env2 t1 t2 = context {
     | VarType r1, VarType r2 when LanguagePrimitives.PhysicalEquality r1 r2 -> return ()
 
     // unify (?x := a) x
-    | VarType({ target = Assigned at1 } as r1), _ -> return! unifyAssignedTypeAndType types env1 env2 (at1, r1, t1) t2
-    | _, VarType({ target = Assigned at2 } as r2) -> return! unifyAssignedTypeAndType types env2 env1 (at2, r2, t2) t1
+    | VarType({ target = Assigned at1 } as r1), _ -> return! unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2
+    | _, VarType({ target = Assigned at2 } as r2) -> return! unifyAssignedTypeAndType env env2 env1 (at2, r2, t2) t1
 
-    | TypeAbstraction([], t1), _ -> return! unify types env1 env2 t1 t2
-    | _, TypeAbstraction([], t2) -> return! unify types env1 env2 t1 t2
+    | TypeAbstraction([], t1), _ -> return! unify env env1 env2 t1 t2
+    | _, TypeAbstraction([], t2) -> return! unify env env1 env2 t1 t2
 
-    | VarType({ target = Var(l1, c1) } as r1), _ -> return! unifyVarAndType types env1 env2 (l1, c1, r1, t1) t2
-    | _, VarType({ target = Var(l2, c2) } as r2) -> return! unifyVarAndType types env2 env1 (l2, c2, r2, t2) t1
+    | VarType({ target = Var(l1, c1) } as r1), _ -> return! unifyVarAndType env env1 env2 (l1, c1, r1, t1) t2
+    | _, VarType({ target = Var(l2, c2) } as r2) -> return! unifyVarAndType env env2 env1 (l2, c2, r2, t2) t1
 
     // TODO:
     | TypeAbstraction(TypeParameter(_, TypeParameterId(id1, _), _)::_, _),
         TypeAbstraction(TypeParameter(_, TypeParameterId(id2, _), _)::_, _) when id1 = id2 -> return ()
 
-    | TypeAbstraction _, _ -> return! unifyAbstractionAndType types env1 env2 t1 t2
-    | _, TypeAbstraction _ -> return! unifyAbstractionAndType types env2 env1 t2 t1
+    | TypeAbstraction _, _ -> return! unifyAbstractionAndType env env1 env2 t1 t2
+    | _, TypeAbstraction _ -> return! unifyAbstractionAndType env env2 env1 t2 t1
 
     | _ -> return! unifyError(TypeMismatch(t1, t2))
 }
-let unifyAssignedTypeAndType types env1 env2 (at1, r1, t1) t2 = context {
+let unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2 = context {
     match Assoc.tryFind r1 env1.visitedVarToType with
 
     // unify (?t1 :=(not rec) at1) t2 = unify at1 t2
     | ValueNone ->
         let env1 = { env1 with visitedVarToType = Assoc.add r1 t2 env1.visitedVarToType }
-        return! unify types env1 env2 at1 t2
+        return! unify env env1 env2 at1 t2
 
     // unify (?t1 :=(rec(?fr2)) at1) t2
     | ValueSome { kind = VarType({ target = Assigned _ } as fr2) } ->
@@ -617,14 +629,14 @@ let unifyAssignedTypeAndType types env1 env2 (at1, r1, t1) t2 = context {
             // unify (?t1 :=(rec(?fr2)) at1) (?t2 =?(not rec) at2) = unify at1 at2
             | _ ->
                 let env2 = { env2 with visitedVarToType = Assoc.add r2 t1 env2.visitedVarToType }
-                return! unify types env1 env2 at1 at2
+                return! unify env env1 env2 at1 at2
 
         // unify (?t1 :=(rec(?fr2)) at1) t2 = unify at1 t2
         | _ ->
-            return! unify types env1 env2 at1 t2
+            return! unify env env1 env2 at1 t2
 
     // unify (?t1 :=(rec(ft2)) at1) t2
-    | ValueSome _ -> return! unify types env1 env2 at1 t2
+    | ValueSome _ -> return! unify env env1 env2 at1 t2
 }
 let tryAddVisitedVar env1 (r1, c1) t2 = result {
     match Assoc.tryFindBy VarType.physicalEquality r1 env1.visitedVarToType with
@@ -638,11 +650,11 @@ let tryAddVisitedVar env1 (r1, c1) t2 = result {
 
     else return { env1 with visitedVarToType = Assoc.add r1 t2 env1.visitedVarToType }
 }
-let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 = context {
+let unifyVarAndType env env1 env2 (_, c1, r1, t1) t2 = context {
     occur TypeVisitEnv.empty r1 t2 |> ignore
 
     match t2.kind with
-    | VarType({ target = Assigned at2 } as r2) -> return! unifyAssignedTypeAndType types env2 env1 (at2, r2, t2) t1
+    | VarType({ target = Assigned at2 } as r2) -> return! unifyAssignedTypeAndType env env2 env1 (at2, r2, t2) t1
     | VarType({ target = Var(l2, c2) } as r2) ->
 
         // c1 内を探索するので循環チェックが必要
@@ -659,7 +671,7 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 = context {
             | ValueSome _ as f1 -> f1, env2
             | f1 -> f1, { env2 with visitedVarToType = Assoc.add r2 t1 env2.visitedVarToType }
 
-        let! c = unifyConstraints types env1 env2 (c1, r1, t1) (c2, r2, t2)
+        let! c = unifyConstraints env env1 env2 (c1, r1, t1) (c2, r2, t2)
 
         // unify (?t1: c1) (?t2: c2) = [?t3: unify c1 c2; ?t1 := ?t3; ?t2 := ?t3]
         let location3 = t1.trivia @ t2.trivia
@@ -672,7 +684,7 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 = context {
             // TODO:
             return ()
 
-        | ValueSome f1 -> return! unify types env1 env2 f1 t2
+        | ValueSome f1 -> return! unify env env1 env2 f1 t2
         | _ -> return ()
 
     | InterfaceType _
@@ -684,8 +696,8 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 = context {
         | Error _ -> return! unifyError(TypeMismatch(t1, t2))
         | Ok env1 ->
 
-        do! unifyKind r1.varKind (Type.kind types t2)
-        do! matchConstraints types env1 env2 (c1, r1, t1) t2
+        do! unifyKind r1.varKind (Type.kind env.types t2)
+        do! matchConstraints env env1 env2 (c1, r1, t1) t2
 
         // f: type ('t: { x: number }). ('t, 't) -> 't
         // f({ x = 10, y = 20 }, { x = 10 })
@@ -704,21 +716,21 @@ let unifyVarAndType types env1 env2 (_, c1, r1, t1) t2 = context {
     // unify ?v (type 'a. t)
     | TypeAbstraction _ ->
         // ここでは直接 c1 内を探索しないので循環チェック不要
-        return! unifyAbstractionAndType types env2 env1 t2 t1
+        return! unifyAbstractionAndType env env2 env1 t2 t1
 }
 // unify ('a: { f: ?af }) ('b: { f: ?bf; g: ?bg }) = unify ?af ?bf @ ['a = 'b; 'a: { f: ?af, g: ?bg }]
 // unify ('a: { f: ?af }) { f: ?f } = unify ?af ?f @ ['a = { f: ?af }]
 // unify 'a t = ['a = t]
-let unifyConstraints types env1 env2 (c1, r1, t1) (c2, r2, t2) = context {
+let unifyConstraints ({ types = types } as env) env1 env2 (c1, r1, t1) (c2, r2, t2) = context {
     if Constraints.isAny c1 then return c2 else
     if Constraints.isAny c2 then return c1 else
 
     match c1.kind, c2.kind with
     | InterfaceConstraint fs1, InterfaceConstraint fs2 ->
-        return! unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2)
+        return! unifyInterfaceConstraint env env1 env2 (c1, fs1) (c2, fs2)
 
     | MultiElementTypeConstraint e1, MultiElementTypeConstraint e2 ->
-        do! unify types env1 env2 e1 e2
+        do! unify env env1 env2 e1 e2
         return c1
 
     | UnionConstraint(l1, u1), UnionConstraint(l2, u2) ->
@@ -739,8 +751,8 @@ let unifyConstraints types env1 env2 (c1, r1, t1) (c2, r2, t2) = context {
         | false ->
             return! ConstraintMismatch(c1, c2) |> unifyError
 
-    | UnionConstraint(l1, u1), InterfaceConstraint _ -> return! unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, u1) (c2, r2, t2)
-    | InterfaceConstraint _, UnionConstraint(l2, u2) -> return! unifyTagSpaceAndInterfaceConstraint types env2 env1 c2 (l2, u2) (c1, r1, t1)
+    | UnionConstraint(l1, u1), InterfaceConstraint _ -> return! unifyTagSpaceAndInterfaceConstraint env env1 env2 c1 (l1, u1) (c2, r2, t2)
+    | InterfaceConstraint _, UnionConstraint(l2, u2) -> return! unifyTagSpaceAndInterfaceConstraint env env2 env1 c2 (l2, u2) (c1, r1, t1)
 
     | InterfaceConstraint _, MultiElementTypeConstraint _
     | UnionConstraint _, MultiElementTypeConstraint _
@@ -768,7 +780,7 @@ let unifyInterfaceConstraint types env1 env2 (c1, fs1) (c2, fs2) = context {
         InterfaceConstraint fs
         |> Constraints.makeWithLocation (c1.trivia @ c2.trivia)
 }
-let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) = context {
+let unifyTagSpaceAndInterfaceConstraint ({ types = types } as env) env1 env2 c1 (l1, _) (c2, r2, t2) = context {
     match types.stringTableTypes with
     | [] -> return! unifyError(ConstraintMismatch(c1, c2))
     | _::_ ->
@@ -797,12 +809,12 @@ let unifyTagSpaceAndInterfaceConstraint types env1 env2 c1 (l1, _) (c2, r2, t2) 
                 |> Constraints.makeWithLocation location
 
         | stringTableType::ts ->
-            do! matchConstraints types env2 env1 (c2, r2, t2) stringTableType
+            do! matchConstraints env env2 env1 (c2, r2, t2) stringTableType
             return! aux ts
     }
     return! aux types.stringTableTypes
 }
-let matchConstraints types env1 env2 (c1, r1, t1) t2 = context {
+let matchConstraints ({ types = types } as env) env1 env2 (c1, r1, t1) t2 = context {
     if Constraints.isAny c1 then return () else
 
     match c1.kind, t2.kind with
@@ -821,7 +833,7 @@ let matchConstraints types env1 env2 (c1, r1, t1) t2 = context {
             // フィールドが両方に存在するなら単一化
             // unify (?a: { x: ?ax }) { x: ?x } = unify ?ax ?x
             | ValueSome t ->
-                do! unify types env1 env2 ckt.Value t
+                do! unify env env1 env2 ckt.Value t
                 return! aux cfs
 
             // フィールドが型制約のみに存在するならエラー
@@ -842,7 +854,7 @@ let matchConstraints types env1 env2 (c1, r1, t1) t2 = context {
                 | [] -> return ()
                 | stringTableType::ts ->
 
-                do! matchConstraints types env1 env2 (c1, r1, t1) stringTableType
+                do! matchConstraints env env1 env2 (c1, r1, t1) stringTableType
                 return! aux ts
             }
             return! aux types.stringTableTypes
@@ -871,15 +883,15 @@ let matchConstraints types env1 env2 (c1, r1, t1) t2 = context {
 
     // unify (?c...ce) (?mt, mm...) = unify ?ce ?mt && unify (?c...ce) mm...
     | MultiElementTypeConstraint ce, Type.Cons types (ValueSome(mt, mm)) ->
-        do! unify types env1 env2 ce mt
+        do! unify env env1 env2 ce mt
         let env1 = { env1 with visitedVarToType = Assoc.remove r1 env1.visitedVarToType }
-        return! unify types env1 env2 t1 mm
+        return! unify env env1 env2 t1 mm
     | _ ->
         return! unifyError(ConstraintAndTypeMismatch(c1, t2))
 }
-let unifyAbstractionAndType types env1 env2 typeAbstraction1 t2 =
+let unifyAbstractionAndType env env1 env2 typeAbstraction1 t2 =
     let struct(_, t1) = Scheme.instantiate 100000 typeAbstraction1
-    unify types env1 env2 t1 t2
+    unify env env1 env2 t1 t2
 
 module Scheme =
     let ofType t = t

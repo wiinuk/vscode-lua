@@ -121,6 +121,9 @@ let showUnifyError (Messages m) = function
     | KindMismatch(x1, x2) ->
         String.Format(m.KindMismatch, Kind.show x1, Kind.show x2)
 
+    | UnificationStackTooDeep ->
+        String.Format(m.UnificationStackTooDeep)
+
 let showSeverity (Messages m) = function
     | Severity.Error -> m.Error
     | Severity.Info -> m.Info

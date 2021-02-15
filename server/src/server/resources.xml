@@ -24,6 +24,7 @@
     <KindMismatch>KindMismatch({0}, {1})</KindMismatch>
     <ConstraintMismatch>ConstraintMismatch({0}, {1})</ConstraintMismatch>
     <ConstraintAndTypeMismatch>ConstraintAndTypeMismatch({0}, {1})</ConstraintAndTypeMismatch>
+    <UnificationStackTooDeep>UnificationStackTooDeep</UnificationStackTooDeep>
     <ParseError>ParseError({0})</ParseError>
     <UnifyError>UnifyError({0})</UnifyError>
     <ReturnValueIgnored>ReturnValueIgnored</ReturnValueIgnored>
