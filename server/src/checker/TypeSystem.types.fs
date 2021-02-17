@@ -177,14 +177,41 @@ type Var<'T,'Constraints> =
     | Var of level: int * 'Constraints
     | Assigned of 'T
 
-[<ReferenceEquality; NoComparison>]
+[<CustomEquality; CustomComparison>]
 type VarSite<'T,'Constraints,'K> = {
+    varId: int64
     mutable target: Var<'T,'Constraints>
     varKind: 'K
     varDisplayName: string
 }
+with
+    member x.Equals y = x.varId = y.varId
+    member x.CompareTo y = x.varId.CompareTo y.varId
+    override x.Equals y =
+        match y with
+        | :? VarSite<'T,'Constraints,'K> as y -> x.Equals y
+        | _ -> false
+
+    override x.GetHashCode() = x.varId.GetHashCode()
+
+    interface System.IEquatable<VarSite<'T,'Constraints,'K>> with
+        member x.Equals y = x.Equals y
+
+    interface System.IComparable<VarSite<'T,'Constraints,'K>> with
+        member x.CompareTo y = x.CompareTo y
+
+    interface System.IComparable with
+        member x.CompareTo y = x.CompareTo(y :?> VarSite<'T,'Constraints,'K>)
+
 type VarKindSite = VarSite<Kind, HEmpty, HEmpty>
 type VarTypeSite = VarSite<Type, Constraints, Kind>
+
+module Var =
+    open System.Threading
+
+    let private nextId = ref 1L
+    let newVarWith displayName level kind c = { varId = Interlocked.Increment nextId; target = Var(level, c); varKind = kind; varDisplayName = displayName }
+    let newVar displayName level kind = newVarWith displayName level kind InternalConstraints.any
 
 [<DebuggerDisplay "{_DebuggerDisplay,nq}"; StructuredFormatDisplay "{_DebuggerDisplay}">]
 type Kind =
@@ -264,10 +291,6 @@ with
 
 type TypeParameter = TypeParameter of displayName: string * TypeParameterId * Constraints
 
-module VarType =
-    let physicalEquality (v1: VarSite<_,_,_>) (v2: VarSite<_,_,_>) =
-        LanguagePrimitives.PhysicalEquality v1 v2
-
 [<Struct>]
 type TypeConstant = TypeConstant of name: string * Kind
 
@@ -339,6 +362,7 @@ with
         b.ToString()
 
 module internal InternalConstraints =
+    let any = { kind = InterfaceConstraint Map.empty; trivia = [] }
     let isAny c =
         match c.kind with
         | InterfaceConstraint fs -> Map.isEmpty fs
@@ -473,7 +497,7 @@ type TypeExtensions =
 
     [<Extension>]
     static member AppendVarType(b: _ byref, ({ varKind = kind } as r), options: _ inref, state: _ byref) =
-        if List.exists (VarType.physicalEquality r) options.visitedVars then
+        if List.contains r options.visitedVars then
             b.Append "rec "
             b.AppendVarIdAndQ(r, &state)
             b.AppendKindMark(kind, &options, &state)

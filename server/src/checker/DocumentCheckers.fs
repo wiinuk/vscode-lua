@@ -1089,7 +1089,7 @@ module private Helpers =
                 other = { level = 0 }
             }
             let vs = Constraints.freeVars' varsEnv [] c
-            match Assoc.tryFindBy VarType.physicalEquality r vs with
+            match Assoc.tryFind r vs with
             | ValueNone -> InterfaceType fs |> Type.makeWithLocation (sourceLocation env nameSpan) |> Scheme.generalize 0
             | _ -> t
         | _ -> t

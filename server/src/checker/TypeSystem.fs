@@ -38,7 +38,7 @@ module Constraints =
     let makeWithLocation location c: Constraints = { trivia = location; kind = c }
     let makeWithEmptyLocation c = makeWithLocation [] c
     let withEntity c x: Constraints = { c with kind = x }
-    let any = InterfaceConstraint Map.empty |> makeWithEmptyLocation
+    let any = InternalConstraints.any
 
     let isAny c = InternalConstraints.isAny c
     let hasField = function
@@ -130,12 +130,8 @@ module UnifyEnv =
         visitedVarToType = Assoc.empty
     }
 
-let containsVar v = function
-    | [] -> false
-    | v'::vs -> VarType.physicalEquality v' v || containsVar v vs
-
 let addVar v env =
-    if containsVar v env.visitedVars then ValueNone else
+    if List.contains v env.visitedVars then ValueNone else
     ValueSome { env with visitedVars = v::env.visitedVars }
 
 type TypeEnv = {
@@ -166,7 +162,7 @@ module Type =
         | ParameterType(TypeParameterId(_, k) as p) when k = types.system.multiKind -> ValueSome p
         | _ -> ValueNone
 
-    let newVarWith displayName level kind c = VarType { target = Var(level, c); varKind = kind; varDisplayName = displayName }
+    let newVarWith displayName level kind c = VarType(Var.newVarWith displayName level kind c)
     let newVar displayName level kind = newVarWith displayName level kind Constraints.any
 
     let freeVars' env vars t =
@@ -444,7 +440,7 @@ module TypeSet =
 let occur env r t =
     match t.kind with
     | VarType r' ->
-        if VarType.physicalEquality r' r then true else
+        if r' = r then true else
         match addVar r' env with
         | ValueNone -> false
         | ValueSome env ->
@@ -619,9 +615,9 @@ let unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2 = context {
         | VarType({ target = Assigned at2 } as r2) ->
 
             // unify (?t1 :=(rec(?fr2)) at1) ?fr2 = Ok
-            if VarType.physicalEquality fr2 r2 then return () else
+            if fr2 = r2 then return () else
 
-            match Assoc.tryFindBy VarType.physicalEquality r2 env2.visitedVarToType with
+            match Assoc.tryFind r2 env2.visitedVarToType with
 
             // unify (?t1 :=(rec(?fr2)) at1) (?t2 =?(rec) at2) = Error occur
             | ValueSome _ -> return! unifyError(TypeMismatch(t1, t2))
@@ -639,7 +635,7 @@ let unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2 = context {
     | ValueSome _ -> return! unify env env1 env2 at1 t2
 }
 let tryAddVisitedVar env1 (r1, c1) t2 = result {
-    match Assoc.tryFindBy VarType.physicalEquality r1 env1.visitedVarToType with
+    match Assoc.tryFind r1 env1.visitedVarToType with
 
     // unify [?t1,f2] (?t1: … ?t1 …)
     | ValueSome f2 -> return! Error f2
@@ -667,7 +663,7 @@ let unifyVarAndType env env1 env2 (_, c1, r1, t1) t2 = context {
 
         do! unifyKind r1.varKind r2.varKind
         let f1, env2 =
-            match Assoc.tryFindBy VarType.physicalEquality r2 env2.visitedVarToType with
+            match Assoc.tryFind r2 env2.visitedVarToType with
             | ValueSome _ as f1 -> f1, env2
             | f1 -> f1, { env2 with visitedVarToType = Assoc.add r2 t1 env2.visitedVarToType }
 
@@ -997,7 +993,7 @@ module Scheme =
         let pvs =
             ps
             |> List.map (fun (TypeParameter(n, TypeParameterId(_, k), _) as p) ->
-                struct(p, { target = Var(level, Constraints.any); varKind = k; varDisplayName = n })
+                struct(p, Var.newVar n level k)
             )
         // vs = [?0; ?1]
         let vs =

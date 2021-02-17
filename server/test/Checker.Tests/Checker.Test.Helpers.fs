@@ -27,8 +27,10 @@ module rec TypeExtensions =
         let newMultiVarWith level c = Type.newVarWith "" level types'.multiKind c |> Type.makeWithEmptyLocation
         let newVar level = TypeSystem.Type.newVar "" level types'.valueKind |> Type.makeWithEmptyLocation
         let newAssigned t =
-            VarType { target = Assigned t; varKind = Type.kind typeEnv' t; varDisplayName = "" }
-            |> Type.makeWithEmptyLocation
+            let unusedLevel = 1
+            let v = Var.newVar "" unusedLevel (Type.kind typeEnv' t)
+            v.target <- Assigned t
+            VarType v |> Type.makeWithEmptyLocation
 
     type NormalizeState = {
         mutable nextId: int64
@@ -57,7 +59,7 @@ module rec TypeExtensions =
         id'
 
     let addVar v state =
-        if List.exists (VarType.physicalEquality v) state.vs then false else
+        if List.contains v state.vs then false else
         state.vs <- v::state.vs
         true
 
