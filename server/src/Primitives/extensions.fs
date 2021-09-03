@@ -39,7 +39,6 @@ module Seq =
 
 module VOption =
     let box = function ValueSome x -> Some x | _ -> None
-    let toErrorOrUnit = function ValueSome x -> Error x | _ -> Ok()
 
 module Option =
     let unbox = function Some x -> ValueSome x | _ -> ValueNone

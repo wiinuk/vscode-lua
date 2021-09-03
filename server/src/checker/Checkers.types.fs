@@ -201,6 +201,7 @@ type Project = {
 
 type EnvNoUpdate<'Scope,'RootScope> = {
     types: TypeSystem
+    varSubstitutions: MutableVarSubstitutions
     typeCache: TypeCache
     diagnostics: Diagnostic ResizeArray
     filePath: DocumentPath
@@ -268,10 +269,13 @@ module CheckerEnv =
         let forInRestVars = "values"
 
     let types env = env.rare.noUpdate.types
+    let varSubstitutions env = env.rare.noUpdate.varSubstitutions
+    let (|VarSubstitutions|) env = varSubstitutions env
     let typeEnv env =
         let env = env.rare.noUpdate
         {
             system = env.types
+            varSubstitutions = env.varSubstitutions
             stringTableTypes = env.defaultGlobalEnv.stringMetaTableIndexType @ env.additionalGlobalEnv.Value.stringMetaTableIndexType
         }
     let (|Types|) env = types env

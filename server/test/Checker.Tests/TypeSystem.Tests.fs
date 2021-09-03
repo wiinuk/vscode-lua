@@ -77,7 +77,7 @@ let unifyNumberAndVarWithInterface() =
 
 [<Fact>]
 let typedHitTest() =
-    let normalize _ t = Type.apply { visitedVars = []; other = [] } t |> Scheme.normalize
+    let normalize _ t = Type.apply { visitedVars = []; varSubstitutions = varSubstitutions'; other = [] } t |> Scheme.normalize
     let getNormalizedType t _ _ = normalize () t
 
     let push this x = this := x::!this
@@ -269,7 +269,7 @@ let adjustLevel() =
     // ?b(1) -> int
 
     match b with
-    | { kind = VarType { target = Assigned { kind = VarType { target = LuaChecker.Var(0, _) } } } } -> ()
+    | { kind = VarType(Var.Target(Assigned { kind = VarType(Var.Target(LuaChecker.Var(0, _))) })) } -> ()
     | b -> failwithf "%A" b
 
 [<Fact(DisplayName = "instantiate `type(a) -> type(b) -> fun(a, b) -> ()` = `fun(?x, ?y) -> ()`")>]
@@ -302,7 +302,7 @@ let unifyRecursiveFunctionType() =
     let f() =
         let f = Type.newVar 1
         match f.kind with
-        | VarType r -> r.target <- Assigned([types.number] ->. [f])
+        | VarType r -> Var.assignTarget r <| Assigned([types.number] ->. [f])
         | _ -> ()
         f
 
@@ -310,7 +310,7 @@ let unifyRecursiveFunctionType() =
     let x() =
         let x = Type.newVar 1
         match x.kind with
-        | VarType r -> r.target <- Assigned([types.number] ->. [[types.number] ->. [x]])
+        | VarType r -> Var.assignTarget r <| Assigned([types.number] ->. [[types.number] ->. [x]])
         | _ -> ()
         x
 
@@ -318,7 +318,7 @@ let unifyRecursiveFunctionType() =
     let y() =
         let y = Type.newVar 1
         match y.kind with
-        | VarType r -> r.target <- Assigned([types.number] ->. [[types.string] ->. [y]])
+        | VarType r -> Var.assignTarget r <| Assigned([types.number] ->. [[types.string] ->. [y]])
         | _ -> ()
         y
 

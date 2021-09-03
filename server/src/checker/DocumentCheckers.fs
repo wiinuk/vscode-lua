@@ -171,7 +171,7 @@ module private Type =
         aux typeParameterToType typeWithSpans
 
     let buildTypeOfAliasDefinition env name d typeArgs =
-        let struct(vs, instantiatedType) = Scheme.instantiate env.rare.typeLevel d
+        let struct(vs, instantiatedType) = Scheme.instantiate (varSubstitutions env) env.rare.typeLevel d
         match vs, typeArgs with
         | [], [] -> instantiatedType
         | _ ->
@@ -868,7 +868,7 @@ module private Helpers =
 
         // グローバル変数宣言の型変数スコープはそのタグのみ
         let struct(t, typeSign) = Type.ofTypeSign env' typeSign
-        let t = Scheme.generalize 0 t
+        let t = Scheme.generalize (varSubstitutions env) 0 t
 
         let l = Some <| Location(env.rare.noUpdate.filePath, nameSpan)
         let d = {
@@ -1025,7 +1025,7 @@ module private Helpers =
             Type.ofTypeSign tempEnv typeSign, modifierTags
 
         // フィールドに @generic で明示的に指定された型変数だけが汎用化される
-        let fieldType = Scheme.generalize tempEnv.rare.typeLevel fieldType
+        let fieldType = Scheme.generalize (varSubstitutions env) tempEnv.rare.typeLevel fieldType
 
         // 現在交差型はないので、
         // 変換中の型は、もしインターフェース型ならインターフェース制約付き型変数に変換する
@@ -1080,29 +1080,30 @@ module private Helpers =
         }
 
     /// `type … (a: C) … . a` で C がインターフェース制約で C の中に a がないとき、`type … . C` に変換する
-    let interfaceConstraintToInterfaceType env nameSpan t =
-        let struct(_, t') = Scheme.instantiate 1 t
+    let interfaceConstraintToInterfaceType (VarSubstitutions varSubstitutions as env) nameSpan t =
+        let struct(_, t') = Scheme.instantiate varSubstitutions 1 t
         match t'.kind with
-        | VarType({ target = Var(_, ({ kind = InterfaceConstraint fs } as c)) } as r) when Constraints.hasField c ->
+        | VarType(Var.Target varSubstitutions (Var(_, ({ kind = InterfaceConstraint fs } as c))) as r) when Constraints.hasField c ->
             let varsEnv = {
                 visitedVars = []
+                varSubstitutions = varSubstitutions
                 other = { level = 0 }
             }
             let vs = Constraints.freeVars' varsEnv [] c
             match Assoc.tryFind r vs with
-            | ValueNone -> InterfaceType fs |> Type.makeWithLocation (sourceLocation env nameSpan) |> Scheme.generalize 0
+            | ValueNone -> InterfaceType fs |> Type.makeWithLocation (sourceLocation env nameSpan) |> Scheme.generalize varSubstitutions 0
             | _ -> t
         | _ -> t
 
     let endClass lastClass =
         let Name({ kind = n } as nameToken) as name = lastClass.typeName
         let tempType = lastClass.tempType
-        let env = lastClass.tempEnv
+        let VarSubstitutions varSubstitutions & env = lastClass.tempEnv
 
         // 自由変数はここで型引数に変換される
         // `---@class Vec4 : Vec2<T> @field z T @field w T` は
         // `---@generic T @class Vec4 : Vec2<T> @field z T @field w T` と同じ
-        let generalizedType = Scheme.generalize 0 tempType
+        let generalizedType = Scheme.generalize varSubstitutions 0 tempType
 
         let generalizedType = interfaceConstraintToInterfaceType env nameToken.trivia.span generalizedType
 
@@ -1154,7 +1155,7 @@ module private Helpers =
             let env' = enterTypeScope env
             let struct(env', modifierTags) = extendTypeEnvFromGenericTags (toPendingValues modifierTags) env'
             let struct(t, typeSign) = Type.ofTypeSignCore env' expectedKind typeSign
-            let t = Scheme.generalize env.rare.typeLevel t
+            let t = Scheme.generalize (varSubstitutions env) env.rare.typeLevel t
 
             let typeTagTail =
                 D.TypeTag(

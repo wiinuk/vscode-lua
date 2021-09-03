@@ -4,6 +4,7 @@ open LuaChecker
 open LuaChecker.Server.Log
 open LuaChecker.Server.Protocol
 open LuaChecker.Text.Json
+open LuaChecker.TypeSystem
 open System
 open System.Collections.Immutable
 open type Marshalling.CollectSemanticsVisitor
@@ -12,9 +13,7 @@ open type Marshalling.PrettyTokenVisitor
 open type ProjectAgent
 open type BackgroundAgent
 open type TypedSyntaxes.Chunk
-open type TypeSystem.TypeEnv
 type private M = Protocol.Methods
-
 
 let sendNotification agent methods parameters =
     let jsonBytes =
@@ -24,7 +23,7 @@ let sendNotification agent methods parameters =
 
     agent.writeAgent.Post <| WriteMessage jsonBytes
 
-let publishDiagnostics agent projectAgent path version document diagnostics =
+let publishDiagnostics agent projectAgent path version document varSubstitutions diagnostics =
     let diagnostics =
         match document with
         | ValueNone -> [||]
@@ -33,6 +32,7 @@ let publishDiagnostics agent projectAgent path version document diagnostics =
         let context = {
             documents = projectAgent.documents
             root = projectAgent.root
+            varSubstitutions = varSubstitutions
         }
         Seq.toArray <| Marshalling.marshalDocumentDiagnostics context path document diagnostics
 
@@ -45,11 +45,12 @@ let publishDiagnostics agent projectAgent path version document diagnostics =
     |> sendNotification agent
         M.``textDocument/publishDiagnostics``
 
-let hoverHitTestAndResponse requestId projectAgent document { TypedSyntaxes.semanticTree = tree } position =
+let hoverHitTestAndResponse requestId projectAgent document { TypedSyntaxes.semanticTree = tree; varSubstitutions = varSubstitutions } position =
     let index = Document.positionToIndex position document
     let context = {
         root = projectAgent.root
         documents = projectAgent.documents
+        varSubstitutions = varSubstitutions
     }
     let mutable this = {
         marshallingContext = context
@@ -88,13 +89,14 @@ let responseSemanticTokens ({ semanticTokensDataBuffer = buffer } as agent) x =
         stringTableTypes =
             tree.additionalGlobalEnv.stringMetaTableIndexType @
             initialGlobal.initialGlobalEnv.stringMetaTableIndexType
+        varSubstitutions = tree.varSubstitutions
     }
     let mutable this = {
         buffer = buffer
         lineMap = lineMap
         typeSystemEnv = typeEnv
-        stringSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation typeEnv.system.string]
-        numberSingleton = TypeSet [TypeSystem.Type.makeWithEmptyLocation typeEnv.system.number]
+        stringSingleton = TypeSet [Type.makeWithEmptyLocation typeEnv.system.string]
+        numberSingleton = TypeSet [Type.makeWithEmptyLocation typeEnv.system.number]
         lastLine = 0
         lastStartChar = 0
     }
@@ -110,8 +112,8 @@ let create agent = new MailboxProcessor<_>(fun inbox ->
     let rec loop agent = async {
         match! inbox.Receive() with
         | QuitBackgroundAgent -> return ()
-        | PublishDiagnostics(projectAgent, path, version, document, diagnostics) ->
-            publishDiagnostics agent projectAgent path version document diagnostics
+        | PublishDiagnostics(projectAgent, path, version, document, varSubstitutions, diagnostics) ->
+            publishDiagnostics agent projectAgent path version document varSubstitutions diagnostics
             return! loop agent
 
         | HoverHitTestAndResponse(id, projectAgent, document, tree, position) ->

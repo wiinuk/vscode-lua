@@ -5,6 +5,8 @@ open LuaChecker.TypeWriteHelpers
 open System.Diagnostics
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
+open System.Threading
+
 module Name = Syntax.Name
 module S = Syntaxes
 
@@ -65,11 +67,12 @@ type TypePrintOptions = {
     showId: bool
 }
 [<Struct>]
-type TypePrintScope = {
+type TypePrintScope<'VarSubst> = {
     visitedVars: VarTypeSite list
+    varSubstitutions: VarSubstitutions<'VarSubst>
 }
 module TypePrintScope =
-    let empty = { visitedVars = [] }
+    let empty varSubstitutions = { visitedVars = []; varSubstitutions = varSubstitutions }
 
 [<Struct>]
 type IndexedName = IndexedName of baseName: string * index: uint64
@@ -177,12 +180,55 @@ type Var<'T,'Constraints> =
     | Var of level: int * 'Constraints
     | Assigned of 'T
 
+type IReadOnlySubst<'K,'V> when 'K : comparison =
+    abstract TryFind: 'K -> 'V voption
+    abstract ToImmutable: unit -> Subst<'K,'V>
+
+module Subst =
+    let empty = ImmutableSubst Map.empty
+
+    let create() = { keyToValue = ref Map.empty }
+    let tryFind (s: 'Subst when 'Subst :> IReadOnlySubst<_,_> and 'Subst : struct) var = s.TryFind var
+    let toImmutable (s: 'Subst when 'Subst :> IReadOnlySubst<_,_> and 'Subst : struct) = s.ToImmutable()
+
+    let rec assign subst k v =
+        let location = &subst.keyToValue.contents
+        let oldMap = Volatile.Read &location
+        let newMap = Map.add k v oldMap
+        if not <| LanguagePrimitives.PhysicalEquality oldMap (Interlocked.CompareExchange(&location, newMap, oldMap)) then
+            assign subst k v
+
+[<Struct; NoEquality; NoComparison>]
+type MutableSubst<'K,'V> when 'K : comparison = private {
+    keyToValue: Map<'K,'V> ref
+} with
+    interface IReadOnlySubst<'K,'V> with
+        member x.TryFind k = Map.tryFind k x.keyToValue.contents
+        member x.ToImmutable() = ImmutableSubst x.keyToValue.contents
+
+/// immutable
+[<Struct>]
+type Subst<'K,'V> when 'K : comparison = private ImmutableSubst of Map<'K,'V> with
+    interface IReadOnlySubst<'K,'V> with
+        member x.TryFind k =
+            let (ImmutableSubst xs) = x
+            Map.tryFind k xs
+
+        member x.ToImmutable() = x
+
+[<Struct>]
+type VarSubstitutions<'VarSubst> = {
+    varSubst: 'VarSubst
+}
+type VarSubstitutions = VarSubstitutions<Subst<VarTypeSite, TypeVar>>
+type MutableVarSubstitutions = VarSubstitutions<MutableSubst<VarTypeSite, TypeVar>>
+
 [<CustomEquality; CustomComparison>]
 type VarSite<'T,'Constraints,'K> = {
-    varId: int64
-    mutable target: Var<'T,'Constraints>
-    varKind: 'K
     varDisplayName: string
+    varId: int64
+    varKind: 'K
+    initialTarget: Var<'T,'Constraints>
 }
 with
     member x.Equals y = x.varId = y.varId
@@ -205,13 +251,36 @@ with
 
 type VarKindSite = VarSite<Kind, HEmpty, HEmpty>
 type VarTypeSite = VarSite<Type, Constraints, Kind>
+type TypeVar = Var<Type, Constraints>
+
+module VarSubstitutions =
+    let empty: VarSubstitutions = { varSubst = Subst.empty }
+    let newEmpty() = { varSubst = Subst.create() }
+    let toImmutable c = {
+        varSubst = Subst.toImmutable c.varSubst
+    }
+
 
 module Var =
-    open System.Threading
-
     let private nextId = ref 1L
-    let newVarWith displayName level kind c = { varId = Interlocked.Increment nextId; target = Var(level, c); varKind = kind; varDisplayName = displayName }
+    let newVarWith displayName level kind c = {
+        varId = Interlocked.Increment nextId
+        varKind = kind
+        varDisplayName = displayName
+        initialTarget = Var(level, c)
+    }
+
     let newVar displayName level kind = newVarWith displayName level kind InternalConstraints.any
+
+    let assignTarget substitutions v t =
+        Subst.assign substitutions.varSubst v t
+
+    let target substitutions v =
+        match Subst.tryFind substitutions.varSubst v with
+        | ValueSome t -> t
+        | _ -> v.initialTarget
+
+    let (|Target|) substitutions v = target substitutions v
 
 [<DebuggerDisplay "{_DebuggerDisplay,nq}"; StructuredFormatDisplay "{_DebuggerDisplay}">]
 type Kind =
@@ -231,7 +300,7 @@ with
         use mutable b = ZString.CreateStringBuilder()
         let options = TypeWriteOptions.Debugger
         let mutable state = TypePrintState.create options
-        let scope = TypePrintScope.empty
+        let scope = TypePrintScope.empty VarSubstitutions.empty
         KindExtensions.Append(&b, x, &scope, &state)
         b.ToString()
 
@@ -315,7 +384,7 @@ with
     member private x._DebuggerDisplay =
         use mutable b = ZString.CreateStringBuilder()
         let mutable state = TypePrintState.create TypeWriteOptions.Debugger
-        let options = { visitedVars = [] }
+        let options = { visitedVars = []; varSubstitutions = VarSubstitutions.empty }
         TypeExtensions.Append(&b, x, &options, &state)
         b.ToString()
 
@@ -357,7 +426,7 @@ with
         use mutable b = ZString.CreateStringBuilder()
         let options = TypeWriteOptions.Debugger
         let mutable state = TypePrintState.create options
-        let scope = TypePrintScope.empty
+        let scope = TypePrintScope.empty VarSubstitutions.empty
         ConstraintsExtensions.AppendConstraints(&b, x, &scope, &state)
         b.ToString()
 
@@ -503,7 +572,7 @@ type TypeExtensions =
             b.AppendKindMark(kind, &options, &state)
         else
             let options = { options with visitedVars = r::options.visitedVars }
-            match r.target with
+            match Var.target options.varSubstitutions r with
             | Assigned t ->
                 if state.style.showAssign then
                     b.Append "("
@@ -643,12 +712,12 @@ type MultiTypeExtensions =
 
     [<Extension>]
     static member AppendRest(b: _ byref, m, options: _ inref, state: _ byref) =
-        let rec isEmpty showAssign = function
+        let rec isEmpty varSubstitutions showAssign = function
             | IsEmptyType true -> true
-            | MultiVarType(ValueSome { target = Assigned m }) -> if showAssign then false else isEmpty showAssign m.kind
+            | MultiVarType(ValueSome(Var.Target varSubstitutions (Assigned m))) -> if showAssign then false else isEmpty varSubstitutions showAssign m.kind
             | _ -> false
 
-        if not <| isEmpty state.style.showAssign m then b.Append ", "
+        if not <| isEmpty options.varSubstitutions state.style.showAssign m then b.Append ", "
         b.AppendNoWrap(m, &options, &state)
 
     [<Extension>]
@@ -660,17 +729,17 @@ type MultiTypeExtensions =
         [<Optional; DefaultParameterValue(false)>] singleElementNoWrap: bool,
         [<Optional; DefaultParameterValue(false)>] singleElementNoQuote: bool
         ) =
-        let rec isSingle = function
+        let rec isSingle varSubstitutions = function
             // m... := m2
-            | MultiVarType(ValueSome { target = Assigned m }) -> isSingle m.kind
+            | MultiVarType(ValueSome(Var.Target varSubstitutions (Assigned m))) -> isSingle varSubstitutions m.kind
             // ...et
-            | MultiVarType(ValueSome { target = Var(_, IsAnyConstraint true) })
+            | MultiVarType(ValueSome(Var.Target varSubstitutions (Var(_, IsAnyConstraint true))))
             // 'm...
             | MultiParameterType(ValueSome _)
             // (t,)
             | ConsType(ValueSome(_, { kind = IsEmptyType true }))
             // 'm...et
-            | MultiVarType(ValueSome { target = Var(_, { kind = MultiElementTypeConstraint _ }) }) -> true
+            | MultiVarType(ValueSome(Var.Target varSubstitutions (Var(_, { kind = MultiElementTypeConstraint _ })))) -> true
             // ()
             | IsEmptyType true
             // (t, m)
@@ -679,7 +748,7 @@ type MultiTypeExtensions =
             // without multi kind
             | _ -> false
 
-        let isSingle = isSingle m
+        let isSingle = isSingle options.varSubstitutions m
         if not isSingle || not singleElementNoWrap then b.Append '('
         b.AppendNoWrap(m, &options, &state)
         if isSingle && not singleElementNoQuote then b.Append ','

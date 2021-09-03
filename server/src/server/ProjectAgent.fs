@@ -52,7 +52,7 @@ module private Helpers =
 
         ifDebug { Log.Format(resources.LogMessages.BeginCheck, DocumentPath.toUriString path) }
         ifDebug { agent.watch.Restart() }
-        let _, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path source
+        let chunk, diagnostics, project, descendants = Checker.parseAndCheckCached agent.project path source
         ifDebug { Log.Format(resources.LogMessages.EndCheck, agent.watch.ElapsedMilliseconds, DocumentPath.toUriString path) }
 
         let agent = { agent with project = project }
@@ -65,7 +65,7 @@ module private Helpers =
 
             | ValueSome document ->
                 let struct(version, agent) = nextDiagnosticsVersion agent
-                postToBackgroundAgent agent <| PublishDiagnostics(agent, path, version, ValueSome document, diagnostics)
+                postToBackgroundAgent agent <| PublishDiagnostics(agent, path, version, ValueSome document, chunk.varSubstitutions, diagnostics)
                 agent
 
         agent, descendants
@@ -193,7 +193,7 @@ let didCloseTextDocument agent (p: DidCloseTextDocumentParams) =
     let path = DocumentPath.ofRelativeUri agent.root p.textDocument.uri
     let agent = { agent with documents = Documents.close path agent.documents }
     let struct(varsion, agent) = nextDiagnosticsVersion agent
-    postToBackgroundAgent agent <| PublishDiagnostics(agent, path, varsion, ValueNone, [])
+    postToBackgroundAgent agent <| PublishDiagnostics(agent, path, varsion, ValueNone, VarSubstitutions.empty, [])
     agent
 
 let didSaveTextDocument agent { DidSaveTextDocumentParams.textDocument = textDocument } =

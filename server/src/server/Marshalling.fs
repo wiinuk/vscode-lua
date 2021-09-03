@@ -18,6 +18,7 @@ type private L = LuaChecker.LeafFlags
 type MarshallingContext = {
     root: Uri
     documents: Documents
+    varSubstitutions: VarSubstitutions
 }
 
 Utf16ValueStringBuilder.RegisterTryFormat(fun (value: _ ReadOnlyMemory) output written _ ->
@@ -78,6 +79,7 @@ let showRelativePath context path =
     else pathInRoot.ToString()
 
 let (|Messages|) _ = ServerResources.resources.DiagnosticMessages
+let (|VarSubstitutions|) { MarshallingContext.varSubstitutions = varSubstitutions } = varSubstitutions
 type private P = Syntax.ParseError
 type private K = LuaChecker.DiagnosticKind
 module D = Documents
@@ -101,25 +103,25 @@ let showParseError (Messages m) = function
     | P.RequireNameOrDot3 -> m.RequireNameOrDot3
     | P.RequireNameOrLBracket -> m.RequireNameOrLBracket
 
-let showUnifyError (Messages m) = function
+let showUnifyError (Messages m & VarSubstitutions varSubstitutions) = function
     | RequireField(x1, x2, x3) ->
         let x1 = x1 |> Seq.map (fun kv -> FieldKey.show kv.Key) |> String.concat ", "
-        String.Format(m.RequireField, x1, FieldKey.show x2, Type.show x3)
+        String.Format(m.RequireField, x1, FieldKey.show x2, Type.show varSubstitutions x3)
 
     | TypeMismatch(x1, x2) ->
-        String.Format(m.TypeMismatch, Type.show x1, Type.show x2)
+        String.Format(m.TypeMismatch, Type.show varSubstitutions x1, Type.show varSubstitutions x2)
 
     | UndefinedField(x1, x2) ->
-        String.Format(m.UndefinedField, Type.show x1, FieldKey.show x2)
+        String.Format(m.UndefinedField, Type.show varSubstitutions x1, FieldKey.show x2)
 
     | ConstraintAndTypeMismatch(x1, x2) ->
-        String.Format(m.ConstraintAndTypeMismatch, Constraints.show x1.kind, Type.show x2)
+        String.Format(m.ConstraintAndTypeMismatch, Constraints.show varSubstitutions x1.kind, Type.show varSubstitutions x2)
 
     | ConstraintMismatch(x1, x2) ->
-        String.Format(m.ConstraintMismatch, Constraints.show x1.kind, Constraints.show x2.kind)
+        String.Format(m.ConstraintMismatch, Constraints.show varSubstitutions x1.kind, Constraints.show varSubstitutions x2.kind)
 
     | KindMismatch(x1, x2) ->
-        String.Format(m.KindMismatch, Kind.show x1, Kind.show x2)
+        String.Format(m.KindMismatch, Kind.show varSubstitutions x1, Kind.show varSubstitutions x2)
 
     | UnificationStackTooDeep ->
         String.Format(m.UnificationStackTooDeep)
@@ -138,13 +140,13 @@ let showSpan { start = s; end' = e } = sprintf "(%d, %d)" s e
 let showLocation context (Location(path, { start = s; end' = e })) =
     sprintf "%s(%d, %d)" (showRelativePath context path) s e
 
-let showDeclSummary context name { scheme = t; location = l } =
+let showDeclSummary (VarSubstitutions varSubstitutions & context) name { scheme = t; location = l } =
     let location =
         match l with
         | None -> ""
         | Some l -> sprintf " -- %s" <| showLocation context l
 
-    sprintf "%s: %s%s" name (Type.show t) location
+    sprintf "%s: %s%s" name (Type.show varSubstitutions t) location
 
 let showTypeDefSummary context name { locations = ls } =
     let location =
@@ -364,17 +366,17 @@ let renderGenericAnnotationsInLua (b: Utf16ValueStringBuilder byref) (scope: _ i
 
 let reset (x: 'T byref when 'T :> IResettableBufferWriter<_> and 'T : struct) = x.Reset()
 
-let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSymbol: Utf16ValueStringBuilder inref) (genScheme: Scheme, pts) =
+let renderInstantiatedVar (Messages M & VarSubstitutions varSubstitutions) (scope: _ inref) (state: _ byref) (varSymbol: Utf16ValueStringBuilder inref) (genScheme: Scheme, pts) =
     use mutable b = ZString.CreateStringBuilder()
 
-    let struct(ps, t) = Scheme.takeHeadParameters [] genScheme
+    let struct(ps, t) = Scheme.takeHeadParameters varSubstitutions [] genScheme
     b.Append "```lua\n"
     renderGenericAnnotationsInLua &b &scope &state ps
     b.Append(varSymbol.AsSpan()); b.Append ": "; TypeExtensions.Append(&b, t.kind, &scope, &state); b.Append '\n'
     b.Append '\n'
     b.Append "-- "; b.Append M.GenericTypeParameters; b.Append '\n'
 
-    let scope = TypePrintScope.empty
+    let scope = TypePrintScope.empty varSubstitutions
     let mutable state = TypePrintState.create TypeWriteOptions.Default
 
     use mutable b1 = ZString.CreateStringBuilder()
@@ -393,15 +395,15 @@ let renderInstantiatedVar (Messages M) (scope: _ inref) (state: _ byref) (varSym
     b.Append "```"
     b.ToString()
 
-let renderVarCore context (varSymbol: _ inref) t info =
-    let scope = TypePrintScope.empty
+let renderVarCore (VarSubstitutions varSubstitutions & context) (varSymbol: _ inref) t info =
+    let scope = TypePrintScope.empty varSubstitutions
     let mutable state = TypePrintState.create TypeWriteOptions.Default
 
     match info with
     | ValueSome { schemeInstantiation = ValueSome x } -> renderInstantiatedVar context &scope &state &varSymbol x
     | _ ->
 
-    let struct(ps, t) = Scheme.takeHeadParameters [] t
+    let struct(ps, t) = Scheme.takeHeadParameters varSubstitutions [] t
     use mutable b = ZString.CreateStringBuilder()
     b.Append "```lua\n"
     renderGenericAnnotationsInLua &b &scope &state ps
@@ -439,11 +441,11 @@ let renderModulePath context modulePath =
 
     b.ToString()
 
-let renderSimpleType (b: Utf16ValueStringBuilder byref) t =
-    let scope = TypePrintScope.empty
+let renderSimpleType (VarSubstitutions varSubstitutions) (b: Utf16ValueStringBuilder byref) t =
+    let scope = TypePrintScope.empty varSubstitutions
     let mutable state = TypePrintState.create TypeWriteOptions.Default
 
-    let struct(ps, t) = Scheme.takeHeadParameters [] t
+    let struct(ps, t) = Scheme.takeHeadParameters varSubstitutions [] t
     b.Append "```lua\n"
     renderGenericAnnotationsInLua &b &scope &state ps
     b.Append(t.kind, &scope, &state)
@@ -455,7 +457,7 @@ let renderLiteral context t info =
     | _ ->
 
     use mutable b = ZString.CreateStringBuilder()
-    renderSimpleType &b t
+    renderSimpleType context &b t
     b.ToString()
 
 [<Struct>]
@@ -567,7 +569,7 @@ let semanticTokenModifiersLegend = [
 type CollectSemanticsVisitor = {
     buffer: int ResizeArray
     lineMap: LineMap
-    typeSystemEnv: TypeEnv
+    typeSystemEnv: TypeEnv<Subst<VarTypeSite, TypeVar>>
     stringSingleton: LuaChecker.TypeSet
     numberSingleton: LuaChecker.TypeSet
     mutable lastLine: int
@@ -747,7 +749,7 @@ let rec typeSemantics (this: _ byref) { Token.kind = type' } typeParameters type
 
     // `?a`
     | VarType v ->
-        match v.target with
+        match Var.target this.typeSystemEnv.varSubstitutions v with
         | LuaChecker.Var(_, c) -> constraintsSemantics &this c
         | Assigned t -> typeSemantics &this t typeParameters typeEnv
 

@@ -29,7 +29,7 @@ type ResponseSemanticTokens = {
     writeAgent: WriteAgentMessage MailboxProcessor
 }
 type BackgroundAgentMessage =
-    | PublishDiagnostics of ProjectAgent * DocumentPath * version: int * Document voption * LuaChecker.Diagnostic seq
+    | PublishDiagnostics of ProjectAgent * DocumentPath * version: int * Document voption * VarSubstitutions * LuaChecker.Diagnostic seq
     | EnumerateFiles of FileSystem * Uri * destination: ProjectAgentMessage MailboxProcessor
     | HoverHitTestAndResponse of requestId: int * agent: ProjectAgent * document: Document * tree: TypedSyntaxes.Chunk * position: Position
     | ResponseSemanticTokens of ResponseSemanticTokens

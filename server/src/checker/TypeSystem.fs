@@ -19,18 +19,18 @@ module TypeParameter =
     let createNext displayName kind = createNextWith displayName kind Constraints.any
 
 let context = trampoline
-let adjustVarLevel v v2 =
-    match v.target, v2.target with
+let adjustVarLevel varSubstitutions v v2 =
+    match Var.target varSubstitutions v, Var.target varSubstitutions v2 with
     | Var(l, _), Var(l2, c2) when l < l2 ->
         let level = l
-        v2.target <- Var(level, c2)
+        Var.assignTarget varSubstitutions v2 <| Var(level, c2)
     | _ -> ()
 
 module Fields =
-    let show fields =
+    let show varSubstitutions fields =
         use mutable b = ZString.CreateStringBuilder()
         let mutable state = TypePrintState.create TypeWriteOptions.Default
-        let scope = TypePrintScope.empty
+        let scope = TypePrintScope.empty varSubstitutions
         FieldsExtensions.Append(&b, fields, &scope, &state)
         b.ToString()
 
@@ -86,30 +86,31 @@ module Constraints =
 
         |> withEntity c
 
-    let show c =
+    let show varSubstitutions c =
         use mutable b = ZString.CreateStringBuilder()
         let mutable state = TypePrintState.create TypeWriteOptions.Default
-        let scope = TypePrintScope.empty
+        let scope = TypePrintScope.empty varSubstitutions
         ConstraintsExtensions.AppendConstraints(&b, c, &scope, &state)
         b.ToString()
 
 module Kind =
     let unify k1 k2 = unifyKind k1 k2 |> Trampoline.run |> Result.tryToErrorV
-    let show kind =
+    let show varSubstitutions kind =
         use mutable b = ZString.CreateStringBuilder()
         let options = TypeWriteOptions.Default
         let mutable state = TypePrintState.create options
-        let scope = TypePrintScope.empty
+        let scope = TypePrintScope.empty varSubstitutions
         KindExtensions.Append(&b, kind, &scope, &state)
         b.ToString()
 
 [<Struct>]
-type TypeVisitEnv<'T> = {
+type TypeVisitEnv<'T,'VarSubst> = {
     visitedVars: VarTypeSite list
+    varSubstitutions: VarSubstitutions<'VarSubst>
     other: 'T
 }
 module TypeVisitEnv =
-    let empty = { visitedVars = []; other = () }
+    let empty varSubstitutions = { visitedVars = []; varSubstitutions = varSubstitutions; other = () }
 
 [<Struct>]
 type FreeVarsEnv = {
@@ -121,8 +122,8 @@ type UnifyTypeEnv = {
     visitedVarToType: Assoc<VarTypeSite, Type>
 }
 [<Struct>]
-type UnifyEnv = {
-    types: TypeEnv
+type UnifyEnv<'VarSubst> = {
+    types: TypeEnv<'VarSubst>
     unifyDepth: int
 }
 module UnifyEnv =
@@ -134,9 +135,10 @@ let addVar v env =
     if List.contains v env.visitedVars then ValueNone else
     ValueSome { env with visitedVars = v::env.visitedVars }
 
-type TypeEnv = {
+type TypeEnv<'VarSubst> = {
     system: TypeSystem
     stringTableTypes: Type list
+    varSubstitutions: VarSubstitutions<'VarSubst>
 }
 
 module Type =
@@ -177,7 +179,7 @@ module Type =
             | ValueNone -> vars
             | ValueSome env ->
 
-            match r.target with
+            match Var.target env.varSubstitutions r with
             | Assigned t -> freeVars' env vars t
             | Var(l, c) ->
 
@@ -195,74 +197,75 @@ module Type =
             let vars = List.fold (fun vars (TypeParameter(_, _, c)) -> Constraints.freeVars' env vars c) vars ps
             freeVars' env vars t
 
-    let freeVars level t =
+    let freeVars varSubstitutions level t =
         let env = {
             other = { level = level }
+            varSubstitutions = varSubstitutions
             visitedVars = []
         }
         List.rev <| freeVars' env [] t
 
-    let apply vs t =
+    let apply env t =
         match t.kind with
         | NamedType(_, []) -> t
-        | NamedType(n, ts) -> NamedType(n, List.map (apply vs) ts) |> withEntity t
+        | NamedType(n, ts) -> NamedType(n, List.map (apply env) ts) |> withEntity t
         | LiteralType _ -> t
-        | InterfaceType fs -> Map.map (fun _ -> apply vs) fs |> InterfaceType |> withEntity t
+        | InterfaceType fs -> Map.map (fun _ -> apply env) fs |> InterfaceType |> withEntity t
         | VarType r ->
-            match addVar r vs with
+            match addVar r env with
             | ValueNone -> t
-            | ValueSome vs ->
+            | ValueSome env ->
 
-            match r.target with
-            | Assigned t -> apply vs t
+            match Var.target env.varSubstitutions r with
+            | Assigned t -> apply env t
             | Var _ ->
 
-            match Assoc.tryFind r vs.other with
+            match Assoc.tryFind r env.other with
             | ValueSome(TypeParameter(_, p, _)) -> ParameterType p |> withEntity t
             | _ -> t
 
         | ParameterType _ -> t
-        | TypeAbstraction([], t) -> apply vs t
+        | TypeAbstraction([], t) -> apply env t
         | TypeAbstraction(ps, t) ->
-            let ps = List.map (fun (TypeParameter(n, id, c)) -> TypeParameter(n, id, Constraints.apply vs c)) ps
-            match apply vs t with
+            let ps = List.map (fun (TypeParameter(n, id, c)) -> TypeParameter(n, id, Constraints.apply env c)) ps
+            match apply env t with
             | { kind = TypeAbstraction(ps', et) } as t -> TypeAbstraction(ps@ps', et) |> withEntity t
             | et -> TypeAbstraction(ps, et) |> withEntity t
 
-    let assign vs t =
+    let assign varSubstitutions vs t =
         match t.kind with
-        | NamedType(_, ts) -> for t in ts do assign vs t
+        | NamedType(_, ts) -> for t in ts do assign varSubstitutions vs t
         | LiteralType _ -> ()
-        | InterfaceType fs -> for kv in fs do assign vs kv.Value
+        | InterfaceType fs -> for kv in fs do assign varSubstitutions vs kv.Value
         | VarType r ->
             match Assoc.tryFind r vs with
             | ValueSome(TypeParameter(_, p, _)) ->
-                r.target <- Assigned <| makeWithEmptyLocation (ParameterType p)
+                Var.assignTarget varSubstitutions r <| Assigned (makeWithEmptyLocation (ParameterType p))
             | _ -> ()
 
         | ParameterType _ -> ()
-        | TypeAbstraction([], t) -> assign vs t
+        | TypeAbstraction([], t) -> assign varSubstitutions vs t
         | TypeAbstraction(ps, t) ->
             for TypeParameter(_, _, c) in ps do
                 match c.kind with
-                | MultiElementTypeConstraint t -> assign vs t
+                | MultiElementTypeConstraint t -> assign varSubstitutions vs t
                 | InterfaceConstraint fs ->
-                    for kv in fs do assign vs kv.Value
+                    for kv in fs do assign varSubstitutions vs kv.Value
 
                 | UnionConstraint(lower, upper) ->
-                    for t in TypeSet.toList lower do assign vs t
-                    for t in TypeSet.toList upper do assign vs t
+                    for t in TypeSet.toList lower do assign varSubstitutions vs t
+                    for t in TypeSet.toList upper do assign varSubstitutions vs t
 
-            assign vs t
+            assign varSubstitutions vs t
 
-    let show t =
+    let show varSubstitutions t =
         match t.kind with
-        | VarType { target = Assigned t } -> show t
+        | VarType(Var.Target varSubstitutions (Assigned t)) -> show varSubstitutions t
         | NamedType(TypeConstant(name, _), []) -> name
         | t ->
             use mutable b = ZString.CreateStringBuilder()
             let mutable state = TypePrintState.create TypeWriteOptions.Default
-            let scope = TypePrintScope.empty
+            let scope = TypePrintScope.empty varSubstitutions
             b.Append(t, &scope, &state)
             b.ToString()
 
@@ -276,7 +279,7 @@ module Type =
             | ValueNone -> t
             | ValueSome vs ->
 
-            match r.target with
+            match Var.target vs.varSubstitutions r with
             | Assigned t -> instantiate' vs t
             | Var _ -> t
 
@@ -445,8 +448,8 @@ let occur env r t =
         | ValueNone -> false
         | ValueSome env ->
 
-        match r'.target with
-        | Var _  -> adjustVarLevel r r'; false
+        match Var.target env.varSubstitutions r' with
+        | Var _  -> adjustVarLevel env.varSubstitutions r r'; false
         | Assigned t -> occur env r t
 
     | NamedType(_, ts) -> List.exists (occur env r) ts
@@ -552,7 +555,7 @@ let unify env env1 env2 t1 t2 =
 /// `unify` との違いは
 /// - 末尾再帰でないので、複雑な型を渡されるとスタックがあふれる場合がある
 /// - 単純な型を渡された場合、ヒープを確保しないため高速
-let unifyType env env1 env2 t1 t2 = context {
+let unifyType ({ types = { varSubstitutions = varSubstitutions } } as env) env1 env2 t1 t2 = context {
     match t1.kind, t2.kind with
     | NamedType(n1, ts1), NamedType(n2, ts2) ->
         if n1 <> n2 then return! unifyError(TypeMismatch(t1, t2)) else
@@ -582,14 +585,14 @@ let unifyType env env1 env2 t1 t2 = context {
     | VarType r1, VarType r2 when LanguagePrimitives.PhysicalEquality r1 r2 -> return ()
 
     // unify (?x := a) x
-    | VarType({ target = Assigned at1 } as r1), _ -> return! unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2
-    | _, VarType({ target = Assigned at2 } as r2) -> return! unifyAssignedTypeAndType env env2 env1 (at2, r2, t2) t1
+    | VarType(Var.Target varSubstitutions (Assigned at1) as r1), _ -> return! unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2
+    | _, VarType(Var.Target varSubstitutions (Assigned at2) as r2) -> return! unifyAssignedTypeAndType env env2 env1 (at2, r2, t2) t1
 
     | TypeAbstraction([], t1), _ -> return! unify env env1 env2 t1 t2
     | _, TypeAbstraction([], t2) -> return! unify env env1 env2 t1 t2
 
-    | VarType({ target = Var(l1, c1) } as r1), _ -> return! unifyVarAndType env env1 env2 (l1, c1, r1, t1) t2
-    | _, VarType({ target = Var(l2, c2) } as r2) -> return! unifyVarAndType env env2 env1 (l2, c2, r2, t2) t1
+    | VarType(Var.Target varSubstitutions (Var(l1, c1)) as r1), _ -> return! unifyVarAndType env env1 env2 (l1, c1, r1, t1) t2
+    | _, VarType(Var.Target varSubstitutions (Var(l2, c2)) as r2) -> return! unifyVarAndType env env2 env1 (l2, c2, r2, t2) t1
 
     // TODO:
     | TypeAbstraction(TypeParameter(_, TypeParameterId(id1, _), _)::_, _),
@@ -600,7 +603,7 @@ let unifyType env env1 env2 t1 t2 = context {
 
     | _ -> return! unifyError(TypeMismatch(t1, t2))
 }
-let unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2 = context {
+let unifyAssignedTypeAndType ({ types = { varSubstitutions = varSubstitutions } } as env) env1 env2 (at1, r1, t1) t2 = context {
     match Assoc.tryFind r1 env1.visitedVarToType with
 
     // unify (?t1 :=(not rec) at1) t2 = unify at1 t2
@@ -609,10 +612,10 @@ let unifyAssignedTypeAndType env env1 env2 (at1, r1, t1) t2 = context {
         return! unify env env1 env2 at1 t2
 
     // unify (?t1 :=(rec(?fr2)) at1) t2
-    | ValueSome { kind = VarType({ target = Assigned _ } as fr2) } ->
+    | ValueSome { kind = VarType(Var.Target varSubstitutions (Assigned _) as fr2) } ->
 
         match t2.kind with
-        | VarType({ target = Assigned at2 } as r2) ->
+        | VarType(Var.Target varSubstitutions (Assigned at2) as r2) ->
 
             // unify (?t1 :=(rec(?fr2)) at1) ?fr2 = Ok
             if fr2 = r2 then return () else
@@ -646,12 +649,14 @@ let tryAddVisitedVar env1 (r1, c1) t2 = result {
 
     else return { env1 with visitedVarToType = Assoc.add r1 t2 env1.visitedVarToType }
 }
-let unifyVarAndType env env1 env2 (_, c1, r1, t1) t2 = context {
-    occur TypeVisitEnv.empty r1 t2 |> ignore
+let unifyVarAndType ({ types = { varSubstitutions = varSubstitutions } } as env) env1 env2 (_, c1, r1, t1) t2 = context {
+    occur (TypeVisitEnv.empty varSubstitutions) r1 t2 |> ignore
 
     match t2.kind with
-    | VarType({ target = Assigned at2 } as r2) -> return! unifyAssignedTypeAndType env env2 env1 (at2, r2, t2) t1
-    | VarType({ target = Var(l2, c2) } as r2) ->
+    | VarType(r2) ->
+        match Var.target varSubstitutions r2 with
+        | Assigned at2 -> return! unifyAssignedTypeAndType env env2 env1 (at2, r2, t2) t1
+        | Var(l2, c2) ->
 
         // c1 内を探索するので循環チェックが必要
         match tryAddVisitedVar env1 (r1, c1) t2 with
@@ -672,8 +677,8 @@ let unifyVarAndType env env1 env2 (_, c1, r1, t1) t2 = context {
         // unify (?t1: c1) (?t2: c2) = [?t3: unify c1 c2; ?t1 := ?t3; ?t2 := ?t3]
         let location3 = t1.trivia @ t2.trivia
         let t3 = Type.newVarWith "" l2 r2.varKind c |> Type.makeWithLocation location3
-        r2.target <- Assigned t3
-        r1.target <- Assigned t3
+        Var.assignTarget varSubstitutions r2 <| Assigned t3
+        Var.assignTarget varSubstitutions r1 <| Assigned t3
 
         match f1 with
         | ValueSome { kind = TypeAbstraction _ } ->
@@ -701,7 +706,7 @@ let unifyVarAndType env env1 env2 (_, c1, r1, t1) t2 = context {
         // [generalize] f: (?a, ?a) -> (?a: { x: number })
         // [unify] (?a: { x: number }) { x: number, y: number } => [?a = { x: number, y: number }]
         // [unify] (?a := { x: number, y: number }) { x: number } = Some(RequireField("y"))
-        r1.target <- Assigned t2
+        Var.assignTarget varSubstitutions r1 <| Assigned t2
         return ()
 
     // unify ?v 'a
@@ -886,15 +891,16 @@ let matchConstraints ({ types = types } as env) env1 env2 (c1, r1, t1) t2 = cont
         return! unifyError(ConstraintAndTypeMismatch(c1, t2))
 }
 let unifyAbstractionAndType env env1 env2 typeAbstraction1 t2 =
-    let struct(_, t1) = Scheme.instantiate 100000 typeAbstraction1
+    let struct(_, t1) = Scheme.instantiate env.types.varSubstitutions 100000 typeAbstraction1
     unify env env1 env2 t1 t2
 
 module Scheme =
     let ofType t = t
 
-    let generalizeTypeParameterConstraints vps =
+    let generalizeTypeParameterConstraints varSubstitutions vps =
         let env = {
             visitedVars = []
+            varSubstitutions = varSubstitutions
             other = vps
         }
         vps
@@ -941,13 +947,13 @@ module Scheme =
         | { kind = TypeAbstraction(ps', et) } -> TypeAbstraction(ps@ps', et) |> Type.withEntity t
         | _ -> TypeAbstraction(ps, t) |> Type.withEntity t
 
-    let generalizeAndAssign level t =
-        match Type.freeVars level t with
-        | [] -> Type.apply { visitedVars = []; other = [] } t
+    let generalizeAndAssign varSubstitutions level t =
+        match Type.freeVars varSubstitutions level t with
+        | [] -> Type.apply { visitedVars = []; varSubstitutions = varSubstitutions; other = [] } t
         | vars ->
 
         let vars = createTypeParameters vars
-        let ps = generalizeTypeParameterConstraints vars
+        let ps = generalizeTypeParameterConstraints varSubstitutions vars
 
         // 汎用化された型引数で型変数を置き換える
         // 例：
@@ -955,35 +961,37 @@ module Scheme =
         // 汎用化された型 `type ('0: { x: '1 }) '1. '0 -> '0` を得る
         // その型引数を元の型に代入すると
         // 元の型は `(?a := '0) -> (?r := '0)` になる
-        Type.assign vars t
+        Type.assign varSubstitutions vars t
         let vars = {
             visitedVars = []
+            varSubstitutions = varSubstitutions
             other = vars
         }
         createAbstraction vars ps t
 
-    let generalize level t =
-        match Type.freeVars level t with
-        | [] -> Type.apply { visitedVars = []; other = [] } t
+    let generalize varSubstitutions level t =
+        match Type.freeVars varSubstitutions level t with
+        | [] -> Type.apply { visitedVars = []; varSubstitutions = varSubstitutions; other = [] } t
         | vars ->
 
         let vars = createTypeParameters vars
-        let ps = generalizeTypeParameterConstraints vars
+        let ps = generalizeTypeParameterConstraints varSubstitutions vars
         let vars = {
             visitedVars = []
+            varSubstitutions = varSubstitutions
             other = vars
         }
         createAbstraction vars ps t
 
-    let takeHeadParameters ps t =
+    let takeHeadParameters varSubstitutions ps t =
         match t.kind with
-        | TypeAbstraction([], t) -> takeHeadParameters ps t
-        | TypeAbstraction(ps', t) -> takeHeadParameters (ps @ ps') t
-        | VarType { target = Assigned t } -> takeHeadParameters ps t
+        | TypeAbstraction([], t) -> takeHeadParameters varSubstitutions ps t
+        | TypeAbstraction(ps', t) -> takeHeadParameters varSubstitutions (ps @ ps') t
+        | VarType(Var.Target varSubstitutions (Assigned t)) -> takeHeadParameters varSubstitutions ps t
         | _ -> struct(ps, t)
 
-    let instantiate level t =
-        let struct(ps, t) = takeHeadParameters [] t
+    let instantiate varSubstitutions level t =
+        let struct(ps, t) = takeHeadParameters varSubstitutions [] t
         match ps with
         | [] -> struct([], t)
         | _ ->
@@ -1004,6 +1012,7 @@ module Scheme =
 
         let env = {
             visitedVars = []
+            varSubstitutions = varSubstitutions
             other = vs
         }
         for TypeParameter(_, _, c), v in pvs do
@@ -1029,7 +1038,7 @@ module Scheme =
                     UnionConstraint(lower, upper)
                     |> Constraints.makeWithLocation c.trivia
 
-            v.target <- Var(level, c)
+            Var.assignTarget varSubstitutions v <| Var(level, c)
 
         // vs = [(?0: { x: ?1 }); ?1]
         struct(vs, Type.instantiate' env t)

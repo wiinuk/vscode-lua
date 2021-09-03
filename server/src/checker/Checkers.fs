@@ -331,7 +331,7 @@ module private Helpers =
         | e -> struct(e, instantiated)
 
     let instantiate env struct(e, scheme) =
-        let struct(tvs, instantiated) = Scheme.instantiate env.rare.typeLevel scheme
+        let struct(tvs, instantiated) = Scheme.instantiate (varSubstitutions env) env.rare.typeLevel scheme
         match tvs with
         | _::_ -> trySetSchemeInstantiationInfo scheme tvs instantiated e
         | _ -> struct(e, instantiated)
@@ -379,17 +379,18 @@ module private Helpers =
             report env <| Diagnostic(span, s, DiagnosticKind.ExternalModuleError(modulePath, e))
         | _ -> ()
 
-    let missingChunk (Types types as env) syntaxSpan functionTypeLocations = {
+    let missingChunk (Types types & VarSubstitutions varSubstitutions as env) syntaxSpan functionTypeLocations = {
         T.semanticTree = {
             kind = { T.stats = []; T.lastStat = None }
             trivia = syntaxSpan, emptyNeighbourTags
         }
+        T.varSubstitutions = VarSubstitutions.empty
         T.functionType =
             types.fn(
                 newMultiVarType env TypeNames.lostByError |@ functionTypeLocations,
                 newMultiVarType env TypeNames.lostByError |@ functionTypeLocations
             ) |@ functionTypeLocations
-            |> Scheme.generalize env.rare.typeLevel
+            |> Scheme.generalize varSubstitutions env.rare.typeLevel
 
         T.ancestorModulePaths = Set.empty
         T.additionalGlobalEnv = Env.empty
@@ -559,7 +560,7 @@ let exp env x =
 
     | Function(functionKeyword, body) ->
         let struct(body, functionType) = funcBody (enterTypeScope env) ValueNone functionKeyword None [] body
-        let functionType = Scheme.generalizeAndAssign env.rare.typeLevel functionType
+        let functionType = Scheme.generalizeAndAssign (varSubstitutions env) env.rare.typeLevel functionType
         withSpan x.trivia <| T.Function body, functionType
 
     | PrefixExp x -> prefixExp env x
@@ -1044,7 +1045,7 @@ let processRequireCall env callSpan (moduleName, nameSpan) =
 
     // 戻り値型を求める
     let resultType =
-        let struct(_, t) = Scheme.instantiate env.rare.typeLevel chunk.functionType
+        let struct(_, t) = Scheme.instantiate (varSubstitutions env) env.rare.typeLevel chunk.functionType
         let typeEnv = typeEnv env
         match t.kind with
         | Type.Function typeEnv (ValueSome(_, r)) -> r
@@ -1168,7 +1169,7 @@ let local env state span (modifierTags, names, values) =
     let nameAndTypes2 =
         nameAndTypes
         |> NonEmptyList.map (fun struct(n, t) ->
-            let t = Scheme.generalizeAndAssign env.rare.typeLevel t
+            let t = Scheme.generalizeAndAssign (varSubstitutions env) env.rare.typeLevel t
             struct(n, t)
         )
 
@@ -1294,10 +1295,10 @@ let ifStat env state (cond, ifTrue, elseIfClauses, elseClause) =
     stat, env, state'
 
 // for var: (?var: number..) = start: (?start: ..number), stop: (?stop: ..number), step: (?step: ..number) do … end
-let forStat (TypeCache typeCache as env) state (Name { kind = name; trivia = { span = nameSpan } } & var, start, stop, step, body) =
+let forStat (TypeCache typeCache & VarSubstitutions varSubstitutions as env) state (Name { kind = name; trivia = { span = nameSpan } } & var, start, stop, step, body) =
     let env' = enterChunkLocal env
     let varL = sourceLocation env nameSpan
-    let struct(_, varV) = Scheme.instantiate env.rare.typeLevel (newValueVarTypeWith env TypeNames.forVar (typeCache.numberOrUpperConstraint |@ varL) |@ varL)
+    let struct(_, varV) = Scheme.instantiate varSubstitutions env.rare.typeLevel (newValueVarTypeWith env TypeNames.forVar (typeCache.numberOrUpperConstraint |@ varL) |@ varL)
     let var = makeVar S.Local I.Variable R.Definition var varV
     let struct(start', startType) = exp env' start
     let startL = sourceLocation env start.trivia
@@ -1398,7 +1399,7 @@ let functionDecl env state (functionKeyword, { kind = FuncName(var, path, method
     let stat = T.FunctionDecl(var', path', self', body')
     stat, env, state
 
-let localFunction (Types types & env) state (modifierTags, functionKeyword, Name { kind = name; trivia = nameTrivia } & var, body) =
+let localFunction (Types types & VarSubstitutions varSubstitutions & env) state (modifierTags, functionKeyword, Name { kind = name; trivia = nameTrivia } & var, body) =
     let annotation = DocumentCheckers.parseTagsToType env (ValueSome types.valueKind) modifierTags
     let modifierTags = annotation |> VOption.map (fun struct(ts, _) -> ts) |> VOption.defaultWith (fun _ -> Token.make Span.empty [])
     let annotationType = annotation |> VOption.map (fun struct(_, t) -> t)
@@ -1406,7 +1407,7 @@ let localFunction (Types types & env) state (modifierTags, functionKeyword, Name
     let env' = enterTypeScope env
     let nameLocation = Some <| Location(env.rare.noUpdate.filePath, nameTrivia.span)
     let struct(body, functionType) = funcBody env' annotationType functionKeyword (Some(nameLocation, S.Local, R.Definition, name)) [] body
-    let functionScheme = Scheme.generalizeAndAssign env.rare.typeLevel functionType
+    let functionScheme = Scheme.generalizeAndAssign varSubstitutions env.rare.typeLevel functionType
     let env = extend nameLocation S.Local I.Variable R.Definition name functionScheme env
     let stat = T.LocalFunction(modifierTags, makeVar S.Local I.Variable R.Definition var functionScheme, body)
     stat, env, state
@@ -1476,6 +1477,7 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
     Local.modify (Set.add filePath) visitedSources
 
     let diagnostics = ResizeArray()
+    let varSubstitutions = VarSubstitutions.newEmpty()
     let fs = project.projectRare.fileSystem
     let project = Local.create scope project
     let ancestorModulePaths = Local.create scope Set.empty
@@ -1502,6 +1504,7 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
             noUpdate = {
                 types = types
                 typeCache = env.derivedTypes
+                varSubstitutions = varSubstitutions
                 diagnostics = diagnostics
                 filePath = filePath
                 source = lazy fetchSourceContents fs source
@@ -1522,10 +1525,11 @@ let chunkWithScope<'Scope,'RootScope> (scope: 'Scope Scope) (visitedSources: Loc
         reportIfUnifyError env x.trivia.span env.rare.returnType (nilOrUppers env [])
 
     let chunkFunctionType = types.fn(env.rare.varArgType, env.rare.returnType) |@ []
-    let functionScheme = Scheme.generalizeAndAssign chunkTypeLevel chunkFunctionType
+    let functionScheme = Scheme.generalizeAndAssign varSubstitutions chunkTypeLevel chunkFunctionType
     let kind = {
         T.semanticTree = body
         T.functionType = functionScheme
+        T.varSubstitutions = VarSubstitutions.toImmutable varSubstitutions
         T.ancestorModulePaths = Local.get ancestorModulePaths
         T.additionalGlobalEnv = Local.get additionalGlobalEnv
     }
