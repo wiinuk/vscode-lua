@@ -7,6 +7,7 @@
     <Compile Include="extensions.fs" />
     <Compile Include="The.fs" />
     <Compile Include="NonEmptyList.fs" />
+    <Compile Include="Trampoline.fs" />
   </ItemGroup>
 
 </Project>

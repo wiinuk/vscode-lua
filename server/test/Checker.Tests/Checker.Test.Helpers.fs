@@ -27,8 +27,10 @@ module rec TypeExtensions =
         let newMultiVarWith level c = Type.newVarWith "" level types'.multiKind c |> Type.makeWithEmptyLocation
         let newVar level = TypeSystem.Type.newVar "" level types'.valueKind |> Type.makeWithEmptyLocation
         let newAssigned t =
-            VarType { target = Assigned t; varKind = Type.kind typeEnv' t; varDisplayName = "" }
-            |> Type.makeWithEmptyLocation
+            let unusedLevel = 1
+            let v = Var.newVar "" unusedLevel (Type.kind typeEnv' t)
+            v.target <- Assigned t
+            VarType v |> Type.makeWithEmptyLocation
 
     type NormalizeState = {
         mutable nextId: int64
@@ -57,7 +59,7 @@ module rec TypeExtensions =
         id'
 
     let addVar v state =
-        if List.exists (VarType.physicalEquality v) state.vs then false else
+        if List.contains v state.vs then false else
         state.vs <- v::state.vs
         true
 
@@ -431,7 +433,8 @@ module rec TypeExtensions =
             | TypeMismatch(t1, t2) -> TypeMismatch(Scheme.normalize t1, Scheme.normalize t2)
             | UndefinedField(t, k) -> UndefinedField(Scheme.normalize t, k)
 
-            | KindMismatch _ as x -> x
+            | KindMismatch _
+            | UnificationStackTooDeep as x -> x
 
     module DiagnosticKind =
         let normalize = function
@@ -899,7 +902,7 @@ module Helpers =
             override _.Var(x1, x2) = visitor.Var(x1, x2)
             override _.Reserved(x1, x2) = visitor.Reserved(x1, x2)
             override _.Literal(x1, x2, x3, x4) = visitor.Literal(x1, x2, x3, x4)
-    
+
             override _.DocumentReserved x = visitor.DocumentReserved x
             override _.DocumentIdentifier x = visitor.DocumentIdentifier x
             override _.DocumentFieldSeparator x = visitor.DocumentFieldSeparator x
@@ -911,14 +914,14 @@ module Helpers =
     [<AbstractClass>]
     type TypedSyntaxVisitorBase() =
         abstract Visit: unit -> unit
-    
+
         abstract Var: Var * TypeEnvironment -> unit
         default v.Var(_, _) = v.Visit()
         abstract Reserved: ReservedVar * TypeEnvironment -> unit
         default v.Reserved(_, _) = v.Visit()
         abstract Literal: Syntaxes.Literal * Type * TypeEnvironment * LeafInfo voption -> unit
         default v.Literal(_, _, _, _) = v.Visit()
-        
+
         abstract DocumentReserved: LeafSemantics D.Reserved -> unit
         default v.DocumentReserved _ = v.Visit()
         abstract DocumentIdentifier: LeafSemantics D.Identifier -> unit
@@ -929,12 +932,12 @@ module Helpers =
         default v.DocumentFieldIdentifier _ = v.Visit()
         abstract DocumentFieldVisibility: LeafSemantics D.FieldVisibility -> unit
         default v.DocumentFieldVisibility _ = v.Visit()
-    
+
         interface ITypedSyntaxVisitor with
             override v.Var(x1, x2) = v.Var(x1, x2)
             override v.Reserved(x1, x2) = v.Reserved(x1, x2)
             override v.Literal(x1, x2, x3, x4) = v.Literal(x1, x2, x3, x4)
-    
+
             override v.DocumentReserved x = v.DocumentReserved x
             override v.DocumentIdentifier x = v.DocumentIdentifier x
             override v.DocumentFieldSeparator x = v.DocumentFieldSeparator x
