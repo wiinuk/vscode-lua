@@ -446,7 +446,7 @@ and ifStat s =
         option (eqToken K.Else) elseClause s,
         end' s
     )
-and forAssignStateTail for' name s =
+and forAssignStatTail for' name s =
     For(
         for', name, assign s, exp s, comma s, exp s,
         option (eqToken K.Comma) (tuple2 (comma, exp)) s,
@@ -463,7 +463,7 @@ and forAssignOrForInStat s =
     let for' = for' s
     let name1 = name s
     match Scanner.tokenKind s with
-    | K.Assign -> forAssignStateTail for' name1 s
+    | K.Assign -> forAssignStatTail for' name1 s
     | _ -> forInStatTail for' name1 s
 
 and functionStat s = FunctionDecl(function' s, funcName s, funcBody s)
